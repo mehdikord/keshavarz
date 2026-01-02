@@ -1,0 +1,9 @@
+---
+alwaysApply: true
+---
+این پروژه از vue 3 و navie UI ساخته شده است 
+نکته خیلی مهم :‌
+در هنگام طراحی و توسعه پروژه کاملا از کامپوننت های خود کتابخانه navi ui استفاده کن 
+از نوشتن style های دلخواه و inline در صفحات خود داری کن 
+و از کلاس های css که در navi ui تعریف شده برای طراحی ها استفاده کن 
+برای مثال : color - buttons - cards - inputs - selects - autocomplete and ... 

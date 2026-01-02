@@ -1,0 +1,73 @@
+/* PrimeFlex */
+@import 'primeflex/primeflex.css';
+
+/* PrimeIcons */
+@import 'primeicons/primeicons.css';
+
+/* Vazirmatn Font */
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap');
+
+/* Global Styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  font-family: 'Vazirmatn', 'Arial', sans-serif;
+  direction: rtl;
+  text-align: right;
+  height: 100%;
+}
+
+#__nuxt {
+  min-height: 100vh;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Mobile Container Styles */
+.mobile-app-wrapper {
+  min-height: 100vh !important;
+  background-color: #f5f5f5 !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: flex-start !important;
+  padding: 0 !important;
+  width: 100% !important;
+  margin: 0 !important;
+}
+
+.mobile-container {
+  width: 100% !important;
+  max-width: 428px !important;
+  min-height: 100vh !important;
+  background-color: #ffffff !important;
+  margin: 0 auto !important;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.1) !important;
+  position: relative !important;
+  padding-top: 60px !important; /* Space for fixed navbar */
+}
+
+/* در موبایل: full width بدون shadow */
+@media (max-width: 428px) {
+  .mobile-app-wrapper {
+    padding: 0 !important;
+    background-color: #ffffff !important;
+  }
+  
+  .mobile-container {
+    box-shadow: none !important;
+    max-width: 100% !important;
+  }
+}
+
+/* Custom Colors */
+:root {
+  --primary-color: #1e6b3f;
+  --primary-color-text: #ffffff;
+  --secondary-color: #4ade80;
+  --accent-color: #f59e0b;
+}
