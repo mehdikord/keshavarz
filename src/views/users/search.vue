@@ -1,5 +1,6 @@
 <template>
-  <n-space vertical :size="16" style="padding: 0.75rem;">
+  <!-- Search Form -->
+  <n-space v-if="!showResults" vertical :size="16" style="padding: 0.75rem;">
     <!-- Title -->
     <n-text strong style="font-size: 16px;">
       انتخاب خدمت مورد نظر
@@ -105,7 +106,9 @@
         size="large"
         block
         strong
-        
+        :loading="searchLoading"
+        :disabled="!selectedLandId || !selectedServiceId || !workArea || selectedDates.length === 0"
+        @click="handleSearch"
         style="font-size: 1rem; gap: 10px; margin-top: 40px;"
       >
         <template #icon>
@@ -115,11 +118,242 @@
       </n-button>
     </n-space>
   </n-space>
+
+  <!-- Search Results -->
+  <n-space v-else vertical :size="16" style="padding: 0.75rem;">
+    <!-- Header -->
+    <n-text strong type="error" style="font-size: 1.25rem;">
+      نتایج جستجو
+    </n-text>
+
+    <!-- Subtitle -->
+    <n-space vertical :size="4">
+      <n-text depth="3" style="font-size: 0.875rem;">
+        برای : {{ searchResults?.implement?.name }}
+      </n-text>
+      <n-text depth="3" style="font-size: 0.875rem;">
+        زمین : {{ searchResults?.land?.name }} ({{ formatNumber(searchResults?.land?.area || 0) }})
+      </n-text>
+    </n-space>
+
+    <!-- Provider Cards -->
+    <n-space vertical :size="20">
+      <n-card
+        v-for="(item, index) in searchResults?.data"
+        :key="index"
+       :bordered="false"
+        hoverable
+       
+        :content-style="{ padding: '1rem', border: '1px solid rgba(55, 123, 78, 0.32)', borderRadius: '15px' }"
+      >
+        <n-space vertical :size="16">
+          <!-- Header: User Name with Avatar -->
+          <n-space align="center" :size="12">
+            <n-avatar
+              v-if="item.user.image"
+              :src="item.user.image"
+              round
+              size="small"
+            />
+            <n-icon
+              v-else
+              size="28"
+              color="#1e6b3f"
+            >
+              <i class="fa-duotone fa-user"></i>
+            </n-icon>
+            <n-text strong style="font-size: 0.9375rem;">
+              {{ item.user.name }}
+            </n-text>
+          </n-space>
+
+          <!-- Details Row -->
+          <n-space vertical :size="8">
+            <!-- Implement Name -->
+            <n-space align="center" :size="8">
+              <n-icon size="20" color="#f59e0b">
+                <i class="fa-solid fa-tractor"></i>
+              </n-icon>
+              <n-text style="font-size: 0.875rem; color: #000; padding-right: 8px;">
+                {{ item.implement.name }}
+              </n-text>
+            </n-space>
+
+            <!-- Distance -->
+            <n-space align="center" :size="8">
+              <n-icon size="20" color="#d03050">
+                <i class="fa-solid fa-location-dot"></i>
+              </n-icon>
+              <n-text style="font-size: 0.875rem; color: #000;padding-right: 8px;">
+                {{ item.dis }} کیلومتر
+              </n-text>
+            </n-space>
+
+            <!-- Price -->
+            <n-space align="center" :size="8">
+              <n-icon size="20" color="#18a058">
+                <i class="fa-solid fa-money-bill"></i>
+              </n-icon>
+              <n-space align="baseline" :size="4">
+                <n-text strong style="font-size: 0.9rem; font-weight: 600; color: #d03050; padding-right: 8px;">
+                  {{ formatNumber(parseInt(item.price)) }}
+                </n-text>
+                <n-text style="font-size: 0.75rem; color: #000;">
+                  تومان {{ item.price_type }}
+                </n-text>
+              </n-space>
+            </n-space>
+          </n-space>
+
+          <!-- Card Footer Buttons -->
+          <n-space justify="center" :size="12" style=" border-top: 1px solid var(--n-dividerColor); margin-top: 0.5rem;">
+            <n-button
+              secondary
+              type="success"
+              round
+              size="medium"
+              strong
+            >
+              <template #icon>
+                <i class="fa-solid fa-check" style="padding-left:5px;"></i>
+              </template>
+              ارسال درخواست
+            </n-button>
+            <n-button
+              secondary
+              type="error"
+              round
+              size="medium"
+              strong
+            >
+              <template #icon>
+                <i class="fa-solid fa-trash" style="padding-left:5px;"></i>
+              </template>
+              حذف از لیست
+            </n-button>
+          </n-space>
+        </n-space>
+      </n-card>
+    </n-space>
+
+    <!-- Action Buttons -->
+    <n-space justify="center" :size="12" style="margin-top: 1.5rem;">
+      <n-button
+        secondary
+        type="error"
+        round
+        size="large"
+        strong
+      >
+        <template #icon>
+          <i class="fa-solid fa-times"></i>
+        </template>
+        لغو درخواست
+      </n-button>
+      <n-button
+        secondary
+        type="info"
+        round
+        size="large"
+        strong
+        @click="handleNewRequest"
+      >
+        <template #icon>
+          <i class="fa-solid fa-plus"></i>
+        </template>
+        درخواست جدید
+      </n-button>
+    </n-space>
+  </n-space>
+
+  <!-- No Results Modal -->
+  <n-modal
+    v-model:show="showNoResultsModal"
+    preset="card"
+    title="نتیجه جستجو"
+    :bordered="false"
+    size="medium"
+    :mask-closable="false"
+  >
+    <template #header>
+      <n-space vertical :size="16" style="text-align: center; width: 100%;">
+        <n-icon size="64" color="#d03050">
+          <i class="fa-solid fa-circle-exclamation"></i>
+        </n-icon>
+        <n-text strong style="font-size: 1.125rem;">
+          نتیجه جستجو
+        </n-text>
+      </n-space>
+    </template>
+
+    <n-space vertical :size="16" style="text-align: center; padding: 1rem 0;">
+      <n-text style="font-size: 1rem;">
+        متاسفانه هیچ خدمات دهنده ای برای خدمت مورد نظر در محدوده شما یافت نشد
+      </n-text>
+    </n-space>
+
+    <template #footer>
+      <n-space justify="center" style="width: 100%;">
+        <n-button
+          secondary
+          round
+          size="large"
+          strong
+          @click="showNoResultsModal = false"
+        >
+          بستن
+        </n-button>
+      </n-space>
+    </template>
+  </n-modal>
+
+  <!-- Error Modal (409) -->
+  <n-modal
+    v-model:show="showErrorModal"
+    preset="card"
+    title="خطا"
+    :bordered="false"
+    size="medium"
+    :mask-closable="false"
+    style="max-width: calc(100% - 3rem); margin: 0 1.5rem;"
+  >
+    <template #header>
+      <n-space vertical :size="16" style="text-align: center; width: 100%;">
+        <n-icon size="64" color="#d03050">
+          <i class="fa-solid fa-circle-exclamation"></i>
+        </n-icon>
+        <n-text strong type="error" style="font-size: 1.125rem;">
+          خطا
+        </n-text>
+      </n-space>
+    </template>
+
+    <n-space vertical :size="16" style="text-align: center; padding: 1rem 0;">
+      <n-text style="font-size: 1rem;">
+        {{ errorMessage }}
+      </n-text>
+    </n-space>
+
+    <template #footer>
+      <n-space justify="center" style="width: 100%;">
+        <n-button
+          secondary
+          type="error"
+          round
+          size="large"
+          strong
+          @click="showErrorModal = false"
+        >
+          بستن
+        </n-button>
+      </n-space>
+    </template>
+  </n-modal>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, computed, h } from 'vue'
-import { NSpace, NText, NSelect, NInputNumber, NButton, NIcon, NAvatar, useMessage } from 'naive-ui'
+import { NSpace, NText, NSelect, NInputNumber, NButton, NIcon, NAvatar, NCard, NModal, useMessage } from 'naive-ui'
 import type { SelectOption, SelectRenderLabel, SelectRenderTag } from 'naive-ui'
 import DatePicker from 'vue3-persian-datetime-picker'
 // @ts-ignore - moment-jalaali doesn't have type definitions
@@ -161,11 +395,74 @@ interface Land {
   updated_at: string
 }
 
+interface SearchResultUser {
+  id: number
+  name: string
+  phone: string | null
+  image: string | null
+}
+
+interface SearchResultCategory {
+  id: number
+  name: string
+  description: string | null
+  image: string | null
+  num: number
+  created_at: string
+  updated_at: string
+}
+
+interface SearchResultImplement {
+  id: number
+  name: string
+  code: string | null
+  image: string
+  category: SearchResultCategory
+}
+
+interface SearchResultItem {
+  dis: number
+  price_type: string
+  price: string
+  implement: SearchResultImplement
+  user: SearchResultUser
+}
+
+interface SearchResultLand {
+  id: number
+  name: string
+  area: number
+}
+
+interface SearchResultImplementInfo {
+  id: number
+  name: string
+  image: string
+  form_ids: number[]
+}
+
+interface SearchResponse {
+  result: {
+    data: SearchResultItem[]
+    land: SearchResultLand
+    implement: SearchResultImplementInfo
+  }
+  message: string | null
+}
+
 const selectedCategoryId = ref<number | null>(null)
 const selectedServiceId = ref<number | null>(null)
 const selectedLandId = ref<number | null>(null)
 const workArea = ref<number | null>(null)
 const selectedDates = ref<string[]>([])
+
+// Search state
+const showResults = ref(false)
+const searchResults = ref<SearchResponse['result'] | null>(null)
+const searchLoading = ref(false)
+const showNoResultsModal = ref(false)
+const showErrorModal = ref(false)
+const errorMessage = ref<string>('')
 
 // Get today's date in Jalali format (jYYYY/jMM/jDD)
 const minDate = computed(() => {
@@ -420,6 +717,58 @@ const renderServiceTag: SelectRenderTag = ({ option }) => {
       }, service.name)
     ]
   )
+}
+
+// Handle search
+const handleSearch = async () => {
+  if (!selectedLandId.value || !selectedServiceId.value || !workArea.value || selectedDates.value.length === 0) {
+    message.warning('لطفا تمام فیلدها را پر کنید')
+    return
+  }
+
+  searchLoading.value = true
+
+  try {
+    const requestData = {
+      user_land_id: selectedLandId.value,
+      area: workArea.value.toString(),
+      implement_id: selectedServiceId.value,
+      dates: datesForServer.value
+    }
+
+    const response = await api.post<SearchResponse>('/users/search/providers', requestData)
+
+    if (response.data && response.data.result) {
+      if (response.data.result.data && response.data.result.data.length > 0) {
+        // Has results - show results view
+        searchResults.value = response.data.result
+        showResults.value = true
+      } else {
+        // No results - show modal
+        showNoResultsModal.value = true
+      }
+    } else {
+      message.error('خطا در دریافت نتایج جستجو')
+    }
+  } catch (error: any) {
+    console.error('Error searching providers:', error)
+    
+    // Handle 409 status code
+    if (error.response?.status === 409 && error.response?.data?.error) {
+      errorMessage.value = error.response.data.error
+      showErrorModal.value = true
+    } else {
+      message.error('خطا در جستجو خدمات. لطفا دوباره تلاش کنید.')
+    }
+  } finally {
+    searchLoading.value = false
+  }
+}
+
+// Handle new request - return to search form
+const handleNewRequest = () => {
+  showResults.value = false
+  searchResults.value = null
 }
 
 onMounted(() => {
