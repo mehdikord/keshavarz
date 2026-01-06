@@ -70,6 +70,12 @@
             <div v-if="errorMessage" class="error-message">
               {{ errorMessage }}
             </div>
+
+            <!-- لینک ویرایش شماره موبایل -->
+            <div class="edit-phone-link" @click="handleEditPhone">
+              <i class="fa-solid fa-pen-to-square"></i>
+              <span>ویرایش شماره موبایل</span>
+            </div>
           </div>
         </div>
       </div>
@@ -185,6 +191,20 @@ const handleOtpInput = (event: Event) => {
   const target = event.target as HTMLInputElement
   // فقط اعداد را قبول کن
   otpCode.value = target.value.replace(/\D/g, '')
+}
+
+// فانکشن برگشت به مرحله وارد کردن شماره موبایل
+const handleEditPhone = () => {
+  // پاک کردن شماره موبایل از localStorage
+  localStorage.removeItem('keshvarz_auth_phone')
+  
+  // ریست کردن فرم
+  phoneNumber.value = ''
+  otpCode.value = ''
+  errorMessage.value = ''
+  
+  // برگشت به مرحله اول
+  step.value = 'phone'
 }
 
 const handleVerifyCode = async () => {
@@ -494,6 +514,28 @@ onMounted(() => {
   border-radius: 0.5rem;
   border: 1px solid #fecaca;
   margin-top: 0.5rem;
+}
+
+.edit-phone-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  color: #1e6b3f;
+  font-size: 0.875rem;
+  font-family: 'Vazirmatn', sans-serif;
+  cursor: pointer;
+  transition: color 0.2s, opacity 0.2s;
+}
+
+.edit-phone-link:hover {
+  color: #15803d;
+  opacity: 0.8;
+}
+
+.edit-phone-link i {
+  font-size: 0.875rem;
 }
 
 .toast-message {

@@ -25,7 +25,8 @@ export default defineConfig(({ mode }) => {
       include: ['leaflet']
     },
     define: {
-      'import.meta.env.NUXT_PUBLIC_API_BASE_URL': JSON.stringify(env.NUXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api')
+      'import.meta.env.NUXT_PUBLIC_API_BASE_URL': JSON.stringify(env.NUXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api'),
+      'import.meta.env.NUXT_PUBLIC_WEATHER_API_KEY': JSON.stringify(env.NUXT_PUBLIC_WEATHER_API_KEY || '')
     }
   }
 })

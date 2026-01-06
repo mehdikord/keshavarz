@@ -6,6 +6,7 @@ import App from './App.vue'
 import './assets/css/main.css'
 import './assets/fontawesome/css/all.css'
 import 'vue3-persian-datetime-picker/src/picker/assets/scss/style.scss'
+import 'animate.css'
 
 const app = createApp(App)
 const pinia = createPinia()

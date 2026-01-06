@@ -15,60 +15,79 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
-      component: Home
+      component: Home,
+      meta: { requiresAuth: true }
     },
     {
       path: '/auth',
       name: 'auth',
       component: Auth,
-      beforeEnter: (to, from, next) => {
-        // چک کردن اینکه آیا کاربر قبلاً احراز هویت شده است
-        const authToken = localStorage.getItem('keshavarz_auth_token')
-        if (authToken) {
-          // اگر احراز هویت شده بود، به صفحه اصلی redirect کن و history رو replace کن
-          next({ path: '/', replace: true })
-        } else {
-          // در غیر این صورت، اجازه دسترسی به صفحه auth بده
-          next()
-        }
-      }
+      meta: { requiresAuth: false }
     },
     {
       path: '/users',
       name: 'users',
-      component: UsersIndex
+      component: UsersIndex,
+      meta: { requiresAuth: true }
     },
     {
       path: '/providers',
       name: 'providers',
-      component: ProvidersIndex
+      component: ProvidersIndex,
+      meta: { requiresAuth: true }
     },
     {
       path: '/profile',
       name: 'profile',
-      component: Profile
+      component: Profile,
+      meta: { requiresAuth: true }
     },
     {
       path: '/users/lands',
       name: 'lands',
-      component: LandsIndex
+      component: LandsIndex,
+      meta: { requiresAuth: true }
     },
     {
       path: '/users/lands/add',
       name: 'lands-add',
-      component: LandsAdd
+      component: LandsAdd,
+      meta: { requiresAuth: true }
     },
     {
       path: '/users/lands/edit/:id',
       name: 'lands-edit',
-      component: LandsEdit
+      component: LandsEdit,
+      meta: { requiresAuth: true }
     },
     {
       path: '/users/search',
       name: 'users-search',
-      component: UsersSearch
+      component: UsersSearch,
+      meta: { requiresAuth: true }
     }
   ]
+})
+
+// Global navigation guard برای چک کردن احراز هویت
+router.beforeEach((to, from, next) => {
+  const authToken = localStorage.getItem('keshavarz_auth_token')
+  const isAuthenticated = !!authToken
+  
+  // اگر صفحه نیاز به احراز هویت داره و کاربر لاگین نکرده
+  if (to.meta.requiresAuth && !isAuthenticated) {
+    // redirect به صفحه auth
+    next({ name: 'auth', replace: true })
+  } 
+  // اگر کاربر لاگین کرده و می‌خواد بره صفحه auth
+  else if (to.name === 'auth' && isAuthenticated) {
+    // redirect به صفحه اصلی
+    next({ name: 'home', replace: true })
+  } 
+  else {
+    // اجازه دسترسی
+    next()
+  }
 })
 
 export default router

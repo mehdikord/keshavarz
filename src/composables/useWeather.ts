@@ -20,7 +20,7 @@ export interface ForecastDay {
   description: string
 }
 
-const API_KEY = import.meta.env.VITE_WEATHER_API_KEY || ''
+const API_KEY = import.meta.env.NUXT_PUBLIC_WEATHER_API_KEY || ''
 const API_BASE_URL = 'https://api.openweathermap.org/data/2.5/weather'
 const FORECAST_API_URL = 'https://api.openweathermap.org/data/2.5/forecast'
 

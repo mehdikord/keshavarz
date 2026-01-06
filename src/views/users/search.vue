@@ -1,6 +1,15 @@
 <template>
+  <!-- Loading State -->
+  <n-space v-if="loadingPendingRequests" vertical :size="16" style="padding: 0.75rem; align-items: center; justify-content: center; min-height: 50vh;">
+    <n-spin size="large">
+      <template #description>
+        <n-text>در حال بررسی درخواست‌های در انتظار...</n-text>
+      </template>
+    </n-spin>
+  </n-space>
+
   <!-- Search Form -->
-  <n-space v-if="!showResults" vertical :size="16" style="padding: 0.75rem;">
+  <n-space v-else-if="!showResults" vertical :size="16" style="padding: 0.75rem;">
     <!-- Title -->
     <n-text strong style="font-size: 16px;">
       انتخاب خدمت مورد نظر
@@ -136,15 +145,30 @@
       </n-text>
     </n-space>
 
+    <!-- Filter and Sort Select -->
+    <n-space vertical :size="8" style="margin-top: 1rem; margin-bottom: 1rem;">
+      <n-text strong style="color: #1e6b3f; font-weight: 600;">فیلتر و مرتب سازی</n-text>
+      <n-select
+        v-model:value="sortType"
+        :options="sortOptions"
+        placeholder="فیلتر و مرتب سازی را انتخاب کنید"
+        size="large"
+        @update:value="handleSortChange"
+      />
+    </n-space>
+
     <!-- Provider Cards -->
-    <n-space vertical :size="20">
+    <transition-group
+      name="list"
+      tag="div"
+      class="provider-cards-container"
+    >
       <n-card
-        v-for="(item, index) in searchResults?.data"
-        :key="index"
-       :bordered="false"
+        v-for="item in sortedResults"
+        :key="`${item.user.id}-${item.implement.id}`"
+        :bordered="false"
         hoverable
-       
-        :content-style="{ padding: '1rem', border: '1px solid rgba(55, 123, 78, 0.32)', borderRadius: '15px' }"
+        :content-style="{ padding: '1rem', border: '1px solid rgba(55, 123, 78, 0.32)', borderRadius: '15px', marginBottom: '1.25rem' }"
       >
         <n-space vertical :size="16">
           <!-- Header: User Name with Avatar -->
@@ -234,7 +258,7 @@
           </n-space>
         </n-space>
       </n-card>
-    </n-space>
+    </transition-group>
 
     <!-- Action Buttons -->
     <n-space justify="center" :size="12" style="margin-top: 1.5rem;">
@@ -352,8 +376,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, h } from 'vue'
-import { NSpace, NText, NSelect, NInputNumber, NButton, NIcon, NAvatar, NCard, NModal, useMessage } from 'naive-ui'
+import { ref, onMounted, computed, h, TransitionGroup } from 'vue'
+import { NSpace, NText, NSelect, NInputNumber, NButton, NIcon, NAvatar, NCard, NModal, NSpin, useMessage } from 'naive-ui'
 import type { SelectOption, SelectRenderLabel, SelectRenderTag } from 'naive-ui'
 import DatePicker from 'vue3-persian-datetime-picker'
 // @ts-ignore - moment-jalaali doesn't have type definitions
@@ -450,6 +474,42 @@ interface SearchResponse {
   message: string | null
 }
 
+interface PendingRequestItem {
+  id: number
+  user_id: number
+  implement_id: number
+  user_land_id: number
+  provider_id: number | null
+  location: string
+  area: string
+  price: string | null
+  status: string
+  search_result: SearchResultItem[]
+  code: string
+  dates: string[]
+  done_at: string | null
+  created_at: string
+  updated_at: string
+  users_count: number
+  implement: Service
+  land: {
+    id: number
+    user_id: number
+    title: string
+    description: string | null
+    image: string | null
+    area: number
+    location: string
+    created_at: string
+    updated_at: string
+  }
+}
+
+interface PendingRequestsResponse {
+  result: PendingRequestItem[]
+  message: string | null
+}
+
 const selectedCategoryId = ref<number | null>(null)
 const selectedServiceId = ref<number | null>(null)
 const selectedLandId = ref<number | null>(null)
@@ -463,6 +523,17 @@ const searchLoading = ref(false)
 const showNoResultsModal = ref(false)
 const showErrorModal = ref(false)
 const errorMessage = ref<string>('')
+const loadingPendingRequests = ref(false)
+
+// Sort state
+const sortType = ref<string>('random')
+const sortOptions = [
+  { label: 'تصادفی', value: 'random' },
+  { label: 'کمترین فاصله', value: 'distance_asc' },
+  { label: 'کمترین هزینه', value: 'price_asc' },
+  { label: 'بیشترین هزینه', value: 'price_desc' },
+  { label: 'بیشترین فاصله', value: 'distance_desc' }
+]
 
 // Get today's date in Jalali format (jYYYY/jMM/jDD)
 const minDate = computed(() => {
@@ -742,6 +813,7 @@ const handleSearch = async () => {
       if (response.data.result.data && response.data.result.data.length > 0) {
         // Has results - show results view
         searchResults.value = response.data.result
+        sortType.value = 'random' // Reset sort to default
         showResults.value = true
       } else {
         // No results - show modal
@@ -769,11 +841,152 @@ const handleSearch = async () => {
 const handleNewRequest = () => {
   showResults.value = false
   searchResults.value = null
+  sortType.value = 'random'
 }
 
-onMounted(() => {
+// Sorted results based on sort type
+const sortedResults = computed(() => {
+  if (!searchResults.value || !searchResults.value.data) {
+    return []
+  }
+
+  const data = [...searchResults.value.data]
+
+  switch (sortType.value) {
+    case 'distance_asc':
+      // کمترین فاصله (از کم به زیاد)
+      return data.sort((a, b) => a.dis - b.dis)
+    
+    case 'distance_desc':
+      // بیشترین فاصله (از زیاد به کم)
+      return data.sort((a, b) => b.dis - a.dis)
+    
+    case 'price_asc':
+      // کمترین هزینه (از کم به زیاد)
+      return data.sort((a, b) => parseInt(a.price) - parseInt(b.price))
+    
+    case 'price_desc':
+      // بیشترین هزینه (از زیاد به کم)
+      return data.sort((a, b) => parseInt(b.price) - parseInt(a.price))
+    
+    case 'random':
+    default:
+      // تصادفی (حالت اصلی - بدون تغییر)
+      return data
+  }
+})
+
+// Handle sort change (optional - for any side effects if needed)
+const handleSortChange = () => {
+  // Computed property will automatically update
+}
+
+// Map pending request to search results format
+const mapPendingRequestToSearchResults = (pendingRequest: PendingRequestItem): SearchResponse['result'] => {
+  return {
+    data: pendingRequest.search_result || [],
+    land: {
+      id: pendingRequest.land.id,
+      name: pendingRequest.land.title,
+      area: pendingRequest.land.area
+    },
+    implement: {
+      id: pendingRequest.implement.id,
+      name: pendingRequest.implement.name,
+      image: pendingRequest.implement.image || '',
+      form_ids: pendingRequest.implement.form_ids || []
+    }
+  }
+}
+
+// Fetch pending requests
+const fetchPendingRequests = async () => {
+  loadingPendingRequests.value = true
+  try {
+    const response = await api.get<PendingRequestsResponse>('/users/search/requests/pending')
+    
+    if (response.data && response.data.result && response.data.result.length > 0) {
+      // Get first pending request
+      const firstPendingRequest = response.data.result[0]
+      
+      // Map to search results format
+      const mappedResults = mapPendingRequestToSearchResults(firstPendingRequest)
+      
+      // Set search results
+      searchResults.value = mappedResults
+      sortType.value = 'random' // Reset sort to default
+      showResults.value = true
+    } else {
+      // No pending requests - show search form
+      showResults.value = false
+    }
+  } catch (error: any) {
+    console.error('Error fetching pending requests:', error)
+    // On error, show search form
+    showResults.value = false
+  } finally {
+    loadingPendingRequests.value = false
+  }
+}
+
+onMounted(async () => {
+  // First check for pending requests
+  await fetchPendingRequests()
+  
+  // Always fetch categories and lands (needed for search form)
   fetchCategories()
   fetchLands()
 })
 </script>
 
+<style scoped>
+/* Provider Cards Container */
+.provider-cards-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+/* List Transition Animations */
+.list-move,
+.list-enter-active,
+.list-leave-active {
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.list-enter-from {
+  opacity: 0;
+  transform: translateY(30px) scale(0.95);
+}
+
+.list-leave-to {
+  opacity: 0;
+  transform: translateX(-30px) scale(0.95);
+}
+
+.list-leave-active {
+  position: absolute;
+  width: 100%;
+}
+
+/* Smooth move animation for reordering */
+.list-move {
+  transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Add a subtle scale effect on hover during transition */
+.list-enter-active .n-card {
+  animation: slideInUp 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+</style>

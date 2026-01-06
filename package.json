@@ -17,6 +17,7 @@
     "@capacitor/status-bar": "^8.0.0",
     "@vicons/ionicons5": "^0.12.0",
     "@vue-leaflet/vue-leaflet": "^0.10.0",
+    "animate.css": "^4.1.1",
     "axios": "^1.13.2",
     "dayjs": "^1.11.13",
     "leaflet": "^1.9.4",
