@@ -143,6 +143,9 @@
       <n-text depth="3" style="font-size: 0.875rem;">
         زمین : {{ searchResults?.land?.name }} ({{ formatNumber(searchResults?.land?.area || 0) }})
       </n-text>
+      <n-text depth="3" style="font-size: 0.875rem;">
+        تعداد <n-text type="error" strong>{{ searchResults?.data?.length || 0 }}</n-text> نفر برای انجام این خدمت یافت شد
+      </n-text>
     </n-space>
 
     <!-- Filter and Sort Select -->
@@ -229,14 +232,28 @@
             </n-space>
           </n-space>
 
+          <!-- در انتظار تایید (بعد از ارسال درخواست) -->
+          <n-space v-if="isRequestSentForUser(item.user.id)" align="center" :size="8">
+            <n-icon size="20" color="#f59e0b">
+              <i class="fa-solid fa-spinner fa-spin"></i>
+            </n-icon>
+            <n-text strong style="font-size: 0.875rem;">
+              در انتظار تایید خدمات دهنده
+            </n-text>
+          </n-space>
+
           <!-- Card Footer Buttons -->
-          <n-space justify="center" :size="12" style=" border-top: 1px solid var(--n-dividerColor); margin-top: 0.5rem;">
+          <n-space vertical :size="8" style="border-top: 1px solid var(--n-dividerColor); margin-top: 0.5rem;">
             <n-button
+              v-if="!isRequestSentForUser(item.user.id)"
               secondary
               type="success"
               round
               size="medium"
               strong
+              block
+              :loading="sendRequestLoadingUserId === item.user.id"
+              @click="handleSendRequest(item)"
             >
               <template #icon>
                 <i class="fa-solid fa-check" style="padding-left:5px;"></i>
@@ -244,11 +261,14 @@
               ارسال درخواست
             </n-button>
             <n-button
+              v-else
               secondary
               type="error"
               round
               size="medium"
               strong
+              block
+              @click="openDeleteConfirm(item)"
             >
               <template #icon>
                 <i class="fa-solid fa-trash" style="padding-left:5px;"></i>
@@ -373,6 +393,43 @@
       </n-space>
     </template>
   </n-modal>
+
+  <!-- Delete from list confirmation modal -->
+  <n-modal
+    v-model:show="showDeleteConfirmModal"
+    preset="card"
+    title="تأیید حذف"
+    :bordered="false"
+    size="medium"
+    :mask-closable="!cancelLoading"
+    :close-on-esc="!cancelLoading"
+  >
+    <n-text>
+      آیا از حذف {{ deleteTargetItem?.user?.name }} از لیست جستجو اطمینان دارید؟
+    </n-text>
+    <template #footer>
+      <n-space justify="center" :size="12" style="width: 100%;">
+        <n-button
+          secondary
+          round
+          size="large"
+          :disabled="cancelLoading"
+          @click="showDeleteConfirmModal = false; deleteTargetItem = null"
+        >
+          خیر
+        </n-button>
+        <n-button
+          type="error"
+          round
+          size="large"
+          :loading="cancelLoading"
+          @click="confirmRemoveFromList"
+        >
+          بله
+        </n-button>
+      </n-space>
+    </template>
+  </n-modal>
 </template>
 
 <script setup lang="ts">
@@ -470,6 +527,7 @@ interface SearchResponse {
     data: SearchResultItem[]
     land: SearchResultLand
     implement: SearchResultImplementInfo
+    request_id?: number
   }
   message: string | null
 }
@@ -510,6 +568,24 @@ interface PendingRequestsResponse {
   message: string | null
 }
 
+/** آیتم برگشتی از GET /users/search/requests/users/{request-id} */
+interface RequestUserItem {
+  id: number
+  request_id: number
+  user_id: number
+  user_implement_id: number
+  price: string
+  distance: string
+  status: string
+  created_at: string
+  updated_at: string
+}
+
+interface RequestUsersResponse {
+  result: RequestUserItem[]
+  message: string | null
+}
+
 const selectedCategoryId = ref<number | null>(null)
 const selectedServiceId = ref<number | null>(null)
 const selectedLandId = ref<number | null>(null)
@@ -519,11 +595,21 @@ const selectedDates = ref<string[]>([])
 // Search state
 const showResults = ref(false)
 const searchResults = ref<SearchResponse['result'] | null>(null)
+const currentRequestId = ref<number | null>(null)
 const searchLoading = ref(false)
 const showNoResultsModal = ref(false)
 const showErrorModal = ref(false)
 const errorMessage = ref<string>('')
 const loadingPendingRequests = ref(false)
+
+// Delete from list (cancel user) state
+const showDeleteConfirmModal = ref(false)
+const deleteTargetItem = ref<SearchResultItem | null>(null)
+const cancelLoading = ref(false)
+
+// ارسال درخواست به خدمات‌دهنده: کاربرانی که درخواست براشون ارسال شده
+const requestSentUserIds = ref<number[]>([])
+const sendRequestLoadingUserId = ref<number | null>(null)
 
 // Sort state
 const sortType = ref<string>('random')
@@ -813,6 +899,8 @@ const handleSearch = async () => {
       if (response.data.result.data && response.data.result.data.length > 0) {
         // Has results - show results view
         searchResults.value = response.data.result
+        currentRequestId.value = response.data.result.request_id ?? null
+        requestSentUserIds.value = []
         sortType.value = 'random' // Reset sort to default
         showResults.value = true
       } else {
@@ -841,6 +929,8 @@ const handleSearch = async () => {
 const handleNewRequest = () => {
   showResults.value = false
   searchResults.value = null
+  currentRequestId.value = null
+  requestSentUserIds.value = []
   sortType.value = 'random'
 }
 
@@ -881,6 +971,63 @@ const handleSortChange = () => {
   // Computed property will automatically update
 }
 
+// ارسال درخواست به خدمات‌دهنده (یک آیتم)
+const handleSendRequest = async (item: SearchResultItem) => {
+  if (!currentRequestId.value) return
+  const userId = item.user.id
+  sendRequestLoadingUserId.value = userId
+  try {
+    await api.post('/users/search/requests', {
+      request_id: currentRequestId.value,
+      user_id: userId
+    })
+    message.success('درخواست با موفقیت ارسال شد')
+    requestSentUserIds.value = [...requestSentUserIds.value, userId]
+  } catch (err: any) {
+    if (err.response?.status === 409 && err.response?.data?.error) {
+      message.error(err.response.data.error)
+    } else {
+      message.error(err.response?.data?.message || 'خطا در ارسال درخواست')
+    }
+  } finally {
+    sendRequestLoadingUserId.value = null
+  }
+}
+
+const isRequestSentForUser = (userId: number) => requestSentUserIds.value.includes(userId)
+
+// Open delete-from-list confirmation for an item
+const openDeleteConfirm = (item: SearchResultItem) => {
+  deleteTargetItem.value = item
+  showDeleteConfirmModal.value = true
+}
+
+// Confirm remove user from list: call cancel API then remove item from list
+const confirmRemoveFromList = async () => {
+  if (!currentRequestId.value || !deleteTargetItem.value || !searchResults.value?.data) return
+  const requestId = currentRequestId.value
+  const userId = deleteTargetItem.value.user.id
+
+  cancelLoading.value = true
+  try {
+    await api.post('/users/search/requests/user/cancel', {
+      request_id: requestId,
+      user_id: userId
+    })
+    searchResults.value.data = searchResults.value.data.filter(
+      (i) => i.user.id !== userId
+    )
+    requestSentUserIds.value = requestSentUserIds.value.filter((id) => id !== userId)
+    message.success('حذف با موفقیت انجام شد')
+    showDeleteConfirmModal.value = false
+    deleteTargetItem.value = null
+  } catch (err: any) {
+    message.error(err.response?.data?.message || 'خطا در حذف از لیست')
+  } finally {
+    cancelLoading.value = false
+  }
+}
+
 // Map pending request to search results format
 const mapPendingRequestToSearchResults = (pendingRequest: PendingRequestItem): SearchResponse['result'] => {
   return {
@@ -895,7 +1042,8 @@ const mapPendingRequestToSearchResults = (pendingRequest: PendingRequestItem): S
       name: pendingRequest.implement.name,
       image: pendingRequest.implement.image || '',
       form_ids: pendingRequest.implement.form_ids || []
-    }
+    },
+    request_id: pendingRequest.id
   }
 }
 
@@ -914,8 +1062,26 @@ const fetchPendingRequests = async () => {
       
       // Set search results
       searchResults.value = mappedResults
+      currentRequestId.value = firstPendingRequest.id
       sortType.value = 'random' // Reset sort to default
       showResults.value = true
+
+      // دریافت لیست کاربرانی که برایشان درخواست ارسال شده (وضعیت در انتظار تایید)
+      try {
+        const usersRes = await api.get<RequestUsersResponse>(
+          `/users/search/requests/users/${firstPendingRequest.id}`
+        )
+        if (usersRes.data?.result?.length) {
+          const sentIds = usersRes.data.result
+            .filter((row) => row.status === 'pending')
+            .map((row) => row.user_id)
+          requestSentUserIds.value = sentIds
+        } else {
+          requestSentUserIds.value = []
+        }
+      } catch (_) {
+        requestSentUserIds.value = []
+      }
     } else {
       // No pending requests - show search form
       showResults.value = false
