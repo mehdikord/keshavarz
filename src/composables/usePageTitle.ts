@@ -17,6 +17,8 @@ export const usePageTitle = () => {
     '/users/lands/add': 'ثبت زمین جدید',
     '/users/lands/edit': 'ویرایش زمین',
     '/users/search': 'جستجو خدمات',
+    '/users/providers': 'پروفایل خدمات دهنده',
+    '/news': 'اخبار',
   }
   
   const pageTitle = computed(() => {
@@ -49,6 +51,8 @@ export const usePageTitle = () => {
         'lands-add': 'ثبت زمین جدید',
         'lands-edit': 'ویرایش زمین',
         'users-search': 'جستجو خدمات',
+        'provider-profile': 'پروفایل خدمات دهنده',
+        'news': 'اخبار',
       }
       
       if (nameTitleMap[route.name]) {

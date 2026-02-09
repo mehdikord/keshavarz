@@ -1,5 +1,5 @@
 <template>
-  <n-config-provider rtl :theme-overrides="themeOverrides">
+  <n-config-provider :theme-overrides="themeOverrides">
     <n-message-provider>
       <n-dialog-provider>
         <AppLayout v-if="!isAuthRoute">

@@ -8,6 +8,8 @@ import LandsIndex from '../views/users/lands/index.vue'
 import LandsAdd from '../views/users/lands/add.vue'
 import LandsEdit from '../views/users/lands/edit.vue'
 import UsersSearch from '../views/users/search.vue'
+import ProviderProfile from '../views/users/providers/profile.vue'
+import News from '../views/News.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -64,6 +66,18 @@ const router = createRouter({
       path: '/users/search',
       name: 'users-search',
       component: UsersSearch,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/users/providers/:id',
+      name: 'provider-profile',
+      component: ProviderProfile,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/news',
+      name: 'news',
+      component: News,
       meta: { requiresAuth: true }
     }
   ]

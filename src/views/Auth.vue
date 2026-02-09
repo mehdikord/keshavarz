@@ -4,7 +4,7 @@
       <!-- Top Section: Logo and App Info -->
       <div class="top-section">
         <div class="icon-placeholder">
-          <i class="fa-solid fa-seedling"></i>
+          <i class="fa-solid fa-seedling fa-flip" style="--fa-animation-duration: 3s;"></i>
         </div>
         <h1 class="app-name">کشاورز</h1>
         <p class="tagline">کشاورز همراه هوشمند شما از کاشت تا برداشت</p>

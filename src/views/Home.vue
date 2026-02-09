@@ -32,6 +32,19 @@
             <i class="fa-solid fa-arrow-left"></i>
           </div>
         </router-link>
+
+        <router-link to="/news" class="section-button news-button">
+          <div class="button-icon">
+            <i class="fa-solid fa-newspaper"></i>
+          </div>
+          <div class="button-content">
+            <h2 class="button-title">اخبار کشاورزی</h2>
+            <p class="button-description">آخرین اخبار در حوزه کشاورزی</p>
+          </div>
+          <div class="button-arrow">
+            <i class="fa-solid fa-arrow-left"></i>
+          </div>
+        </router-link>
       </div>
     </div>
   </div>
@@ -128,6 +141,22 @@
 
 .providers-button:hover {
   border-color: #f59e0b;
+}
+
+.news-button:hover {
+  border-color: #2563eb;
+}
+
+.news-button .button-icon {
+  color: #2563eb;
+}
+
+.news-button .button-title {
+  color: #1e40af;
+}
+
+.news-button:hover .button-arrow {
+  color: #2563eb;
 }
 
 .button-icon {

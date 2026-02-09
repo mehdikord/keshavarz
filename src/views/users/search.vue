@@ -148,6 +148,11 @@
       </n-text>
     </n-space>
 
+    <!-- Hint Text -->
+    <n-text depth="2" style="font-size: 0.8rem;">
+      برای مشاهده پروفایل خدمات دهنده روی نام آن کلیک کنید
+    </n-text>
+
     <!-- Filter and Sort Select -->
     <n-space vertical :size="8" style="margin-top: 1rem; margin-bottom: 1rem;">
       <n-text strong style="color: #1e6b3f; font-weight: 600;">فیلتر و مرتب سازی</n-text>
@@ -189,9 +194,11 @@
             >
               <i class="fa-duotone fa-user"></i>
             </n-icon>
-            <n-text strong style="font-size: 0.9375rem;">
-              {{ item.user.name }}
-            </n-text>
+            <router-link :to="`/users/providers/${item.user.id}`" style="text-decoration: none;">
+              <n-text strong style="font-size: 0.9375rem; color: #1e6b3f; cursor: pointer;">
+                {{ item.user.name }}
+              </n-text>
+            </router-link>
           </n-space>
 
           <!-- Details Row -->

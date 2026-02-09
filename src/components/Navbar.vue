@@ -10,7 +10,7 @@
       <h1 class="navbar-title">{{ pageTitle }}</h1>
       
       <button
-        v-if="isProfilePage"
+        v-if="showBackButton"
         class="back-button"
         @click="handleBack"
         aria-label="بازگشت"
@@ -31,8 +31,8 @@ const route = useRoute()
 const router = useRouter()
 const { pageTitle } = usePageTitle()
 
-const isProfilePage = computed(() => {
-  return route.path === '/profile'
+const showBackButton = computed(() => {
+  return route.path === '/profile' || route.path === '/news' || route.path.startsWith('/users/providers/')
 })
 
 const toggleMenu = () => {
@@ -41,7 +41,11 @@ const toggleMenu = () => {
 }
 
 const handleBack = () => {
-  router.push('/')
+  if (route.path.startsWith('/users/providers/')) {
+    router.back()
+  } else {
+    router.push('/')
+  }
 }
 </script>
 
