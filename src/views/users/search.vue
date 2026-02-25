@@ -295,6 +295,8 @@
         round
         size="large"
         strong
+        :loading="cancelRequestLoading"
+        @click="openCancelRequestModal"
       >
         <template #icon>
           <i class="fa-solid fa-times"></i>
@@ -396,6 +398,43 @@
           @click="showErrorModal = false"
         >
           بستن
+        </n-button>
+      </n-space>
+    </template>
+  </n-modal>
+
+  <!-- Cancel whole request confirmation modal -->
+  <n-modal
+    v-model:show="showCancelRequestModal"
+    preset="card"
+    title="تأیید لغو درخواست"
+    :bordered="false"
+    size="medium"
+    :mask-closable="!cancelRequestLoading"
+    :close-on-esc="!cancelRequestLoading"
+  >
+    <n-text>
+      آیا برای لغو این درخواست ({{ searchResults?.implement?.name }}) اطمینان دارید؟
+    </n-text>
+    <template #footer>
+      <n-space justify="center" :size="12" style="width: 100%;">
+        <n-button
+          secondary
+          round
+          size="large"
+          :disabled="cancelRequestLoading"
+          @click="showCancelRequestModal = false"
+        >
+          خیر
+        </n-button>
+        <n-button
+          type="error"
+          round
+          size="large"
+          :loading="cancelRequestLoading"
+          @click="confirmCancelRequest"
+        >
+          بله
         </n-button>
       </n-space>
     </template>
@@ -608,6 +647,10 @@ const showNoResultsModal = ref(false)
 const showErrorModal = ref(false)
 const errorMessage = ref<string>('')
 const loadingPendingRequests = ref(false)
+
+// Cancel whole request state
+const showCancelRequestModal = ref(false)
+const cancelRequestLoading = ref(false)
 
 // Delete from list (cancel user) state
 const showDeleteConfirmModal = ref(false)
@@ -1002,6 +1045,28 @@ const handleSendRequest = async (item: SearchResultItem) => {
 }
 
 const isRequestSentForUser = (userId: number) => requestSentUserIds.value.includes(userId)
+
+// Open cancel-whole-request confirmation
+const openCancelRequestModal = () => {
+  showCancelRequestModal.value = true
+}
+
+// Confirm cancel whole request: DELETE then go back to search form
+const confirmCancelRequest = async () => {
+  if (!currentRequestId.value) return
+  const requestId = currentRequestId.value
+  cancelRequestLoading.value = true
+  try {
+    await api.delete(`/users/search/requests/cancel/${requestId}`)
+    message.success('درخواست با موفقیت لغو شد')
+    showCancelRequestModal.value = false
+    handleNewRequest()
+  } catch (err: any) {
+    message.error(err.response?.data?.message || 'خطا در لغو درخواست')
+  } finally {
+    cancelRequestLoading.value = false
+  }
+}
 
 // Open delete-from-list confirmation for an item
 const openDeleteConfirm = (item: SearchResultItem) => {

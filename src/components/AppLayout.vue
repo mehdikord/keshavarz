@@ -17,8 +17,8 @@ import DockMenu from './DockMenu.vue'
 const route = useRoute()
 
 const showDockMenu = computed(() => {
-  // نمایش منو فقط در صفحات users
-  return route.path.startsWith('/users')
+  // نمایش منو در صفحات users و providers
+  return route.path.startsWith('/users') || route.path.startsWith('/providers')
 })
 </script>
 

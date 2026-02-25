@@ -18,13 +18,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 
 const router = useRouter()
 const route = useRoute()
 
-const menuItems = [
+const usersMenuItems = [
   { icon: 'fa-solid fa-user', label: 'پروفایل', route: '/profile' },
   { icon: 'fa-solid fa-search', label: 'جستجو خدمات', route: '/users/search' },
   { icon: 'fa-solid fa-seedling', label: 'کشاورز', route: '/users' },
@@ -32,24 +32,35 @@ const menuItems = [
   { icon: 'fa-solid fa-arrow-right-arrow-left', label: 'تغییر پنل', route: '/' }
 ]
 
-// محاسبه activeIndex بر اساس route فعلی
+const providersMenuItems = [
+  { icon: 'fa-solid fa-user', label: 'پروفایل', route: '/profile' },
+  { icon: 'fa-solid fa-tractor', label: 'خدمات من', route: '/providers/services' },
+  { icon: 'fa-solid fa-seedling', label: 'کشاورز', route: '/providers' },
+  { icon: 'fa-solid fa-list', label: 'درخواست‌ها', route: '/providers/requests' },
+  { icon: 'fa-solid fa-arrow-right-arrow-left', label: 'تغییر پنل', route: '/' }
+]
+
+const menuItems = computed(() => {
+  return route.path.startsWith('/providers') ? providersMenuItems : usersMenuItems
+})
+
 const activeIndex = computed(() => {
   const currentPath = route.path
-  const index = menuItems.findIndex(item => item.route === currentPath)
-  return index >= 0 ? index : -1
+  const items = menuItems.value
+  const index = items.findIndex(item => item.route === currentPath)
+  if (index >= 0) return index
+  // برای مسیرهای فرعی مثل /users/requests/123 یا /providers/requests/...
+  if (currentPath.startsWith('/users/requests')) return items.findIndex(item => item.route === '/users/requests')
+  if (currentPath.startsWith('/providers/requests')) return items.findIndex(item => item.route === '/providers/requests')
+  return -1
 })
 
 const handleItemClick = (index: number) => {
-  const item = menuItems[index]
-  if (item.route) {
+  const item = menuItems.value[index]
+  if (item?.route) {
     router.push(item.route)
   }
 }
-
-// به‌روزرسانی activeIndex وقتی route تغییر می‌کنه
-watch(() => route.path, () => {
-  // activeIndex به صورت computed است و خودش به‌روز می‌شه
-})
 </script>
 
 <style scoped>

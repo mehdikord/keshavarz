@@ -3,12 +3,16 @@ import Home from '../views/Home.vue'
 import Auth from '../views/Auth.vue'
 import UsersIndex from '../views/users/index.vue'
 import ProvidersIndex from '../views/providers/index.vue'
+import ProvidersServices from '../views/providers/services.vue'
+import ProvidersRequests from '../views/providers/requests.vue'
 import Profile from '../views/Profile.vue'
 import LandsIndex from '../views/users/lands/index.vue'
 import LandsAdd from '../views/users/lands/add.vue'
 import LandsEdit from '../views/users/lands/edit.vue'
 import UsersSearch from '../views/users/search.vue'
 import ProviderProfile from '../views/users/providers/profile.vue'
+import UsersRequests from '../views/users/requests.vue'
+import RequestDetail from '../views/users/requests/[id].vue'
 import News from '../views/News.vue'
 
 const router = createRouter({
@@ -36,6 +40,18 @@ const router = createRouter({
       path: '/providers',
       name: 'providers',
       component: ProvidersIndex,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/providers/services',
+      name: 'providers-services',
+      component: ProvidersServices,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/providers/requests',
+      name: 'providers-requests',
+      component: ProvidersRequests,
       meta: { requiresAuth: true }
     },
     {
@@ -72,6 +88,18 @@ const router = createRouter({
       path: '/users/providers/:id',
       name: 'provider-profile',
       component: ProviderProfile,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/users/requests',
+      name: 'users-requests',
+      component: UsersRequests,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/users/requests/:id',
+      name: 'users-request-detail',
+      component: RequestDetail,
       meta: { requiresAuth: true }
     },
     {

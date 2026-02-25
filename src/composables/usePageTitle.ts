@@ -18,6 +18,10 @@ export const usePageTitle = () => {
     '/users/lands/edit': 'ویرایش زمین',
     '/users/search': 'جستجو خدمات',
     '/users/providers': 'پروفایل خدمات دهنده',
+    '/users/requests': 'درخواست‌ها',
+    '/providers': 'پنل خدمات‌دهندگان',
+    '/providers/requests': 'درخواست‌ها',
+    '/providers/services': 'خدمات من',
     '/news': 'اخبار',
   }
   
@@ -27,6 +31,10 @@ export const usePageTitle = () => {
     // Check exact match first
     if (routeTitleMap[path]) {
       return routeTitleMap[path]
+    }
+    // جزئیات درخواست: /users/requests/123
+    if (path.startsWith('/users/requests/') && path !== '/users/requests') {
+      return 'جزئیات درخواست'
     }
     
     // Check for dynamic routes (e.g., /profile/:id)
@@ -52,6 +60,11 @@ export const usePageTitle = () => {
         'lands-edit': 'ویرایش زمین',
         'users-search': 'جستجو خدمات',
         'provider-profile': 'پروفایل خدمات دهنده',
+        'users-requests': 'درخواست‌ها',
+        'users-request-detail': 'جزئیات درخواست',
+        'providers': 'پنل خدمات‌دهندگان',
+        'providers-requests': 'درخواست‌ها',
+        'providers-services': 'خدمات من',
         'news': 'اخبار',
       }
       

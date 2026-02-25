@@ -32,7 +32,11 @@ const router = useRouter()
 const { pageTitle } = usePageTitle()
 
 const showBackButton = computed(() => {
-  return route.path === '/profile' || route.path === '/news' || route.path.startsWith('/users/providers/')
+  return route.path === '/profile' ||
+    route.path === '/news' ||
+    route.path.startsWith('/users/providers/') ||
+    (route.path.startsWith('/users/requests/') && route.path !== '/users/requests') ||
+    (route.path.startsWith('/providers/requests/') && route.path !== '/providers/requests')
 })
 
 const toggleMenu = () => {
@@ -43,6 +47,10 @@ const toggleMenu = () => {
 const handleBack = () => {
   if (route.path.startsWith('/users/providers/')) {
     router.back()
+  } else if (route.path.startsWith('/users/requests/') && route.path !== '/users/requests') {
+    router.push('/users/requests')
+  } else if (route.path.startsWith('/providers/requests/') && route.path !== '/providers/requests') {
+    router.push('/providers/requests')
   } else {
     router.push('/')
   }
