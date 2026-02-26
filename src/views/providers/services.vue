@@ -1,53 +1,99 @@
 <template>
   <div class="services-page">
-    <n-space vertical :size="16" class="services-page-space">
-      <!-- محدوده جغرافیایی کار -->
-      <n-card bordered round class="service-card service-card--geo" content-style="padding: 1rem 1.25rem;">
-        <div class="service-card-inner">
-          <div class="service-card-icon service-card-icon--geo">
-            <i class="fa-solid fa-location-dot"></i>
+    <n-spin :show="loadingProfile">
+      <n-space vertical :size="16" class="services-page-space">
+        <!-- محدوده جغرافیایی کار -->
+        <n-card bordered round class="service-card service-card--geo" content-style="padding: 1rem 1.25rem;">
+          <div class="service-card-inner">
+            <div class="service-card-icon service-card-icon--geo">
+              <i class="fa-solid fa-location-dot"></i>
+            </div>
+            <div class="service-card-body">
+              <div class="service-card-title-row">
+                <n-text strong class="service-card-title">محدوده جغرافیایی کار</n-text>
+                <i
+                  v-if="!loadingProfile && !hasSearchLocation"
+                  class="fa-solid fa-triangle-exclamation geo-warning-icon"
+                  aria-hidden="true"
+                />
+              </div>
+              <n-text depth="2" class="service-card-desc">منطقه‌های تحت پوشش خدمات شما</n-text>
+            </div>
+            <i class="fa-solid fa-chevron-left service-card-arrow"></i>
           </div>
-          <div class="service-card-body">
-            <n-text strong class="service-card-title">محدوده جغرافیایی کار</n-text>
-            <n-text depth="2" class="service-card-desc">منطقه‌های تحت پوشش خدمات شما</n-text>
-          </div>
-          <i class="fa-solid fa-chevron-left service-card-arrow"></i>
-        </div>
-      </n-card>
+        </n-card>
 
-      <!-- خدمات قابل ارائه -->
-      <n-card bordered round class="service-card service-card--services" content-style="padding: 1rem 1.25rem;">
-        <div class="service-card-inner">
-          <div class="service-card-icon service-card-icon--services">
-            <i class="fa-solid fa-screwdriver-wrench"></i>
+        <!-- خدمات قابل ارائه -->
+        <n-card bordered round class="service-card service-card--services" content-style="padding: 1rem 1.25rem;">
+          <div class="service-card-inner">
+            <div class="service-card-icon service-card-icon--services">
+              <i class="fa-solid fa-screwdriver-wrench"></i>
+            </div>
+            <div class="service-card-body">
+              <n-text strong class="service-card-title">خدمات قابل ارائه</n-text>
+              <n-text depth="2" class="service-card-desc">ادوات و خدمات کشاورزی شما</n-text>
+            </div>
+            <i class="fa-solid fa-chevron-left service-card-arrow"></i>
           </div>
-          <div class="service-card-body">
-            <n-text strong class="service-card-title">خدمات قابل ارائه</n-text>
-            <n-text depth="2" class="service-card-desc">ادوات و خدمات کشاورزی شما</n-text>
-          </div>
-          <i class="fa-solid fa-chevron-left service-card-arrow"></i>
-        </div>
-      </n-card>
+        </n-card>
 
-      <!-- گالری تصاویر -->
-      <n-card bordered round class="service-card service-card--gallery" content-style="padding: 1rem 1.25rem;">
-        <div class="service-card-inner">
-          <div class="service-card-icon service-card-icon--gallery">
-            <i class="fa-solid fa-images"></i>
+        <!-- گالری تصاویر -->
+        <n-card bordered round class="service-card service-card--gallery" content-style="padding: 1rem 1.25rem;">
+          <div class="service-card-inner">
+            <div class="service-card-icon service-card-icon--gallery">
+              <i class="fa-solid fa-images"></i>
+            </div>
+            <div class="service-card-body">
+              <n-text strong class="service-card-title">گالری تصاویر</n-text>
+              <n-text depth="2" class="service-card-desc">تصاویر دستگاه‌ها و نمونه کارها</n-text>
+            </div>
+            <i class="fa-solid fa-chevron-left service-card-arrow"></i>
           </div>
-          <div class="service-card-body">
-            <n-text strong class="service-card-title">گالری تصاویر</n-text>
-            <n-text depth="2" class="service-card-desc">تصاویر دستگاه‌ها و نمونه کارها</n-text>
-          </div>
-          <i class="fa-solid fa-chevron-left service-card-arrow"></i>
-        </div>
-      </n-card>
-    </n-space>
+        </n-card>
+
+        <!-- هشدار محدوده جغرافیایی تنظیم نشده -->
+        <n-alert
+          v-if="!loadingProfile && !hasSearchLocation"
+          type="error"
+          class="geo-alert-card"
+        >
+          برای ارائه خدمات محدود جغرافیایی کار خود را با کلیک روی قسمت مورد نظر در بالا ثبت کنید
+        </n-alert>
+      </n-space>
+    </n-spin>
   </div>
 </template>
 
 <script setup lang="ts">
-import { NSpace, NCard, NText } from 'naive-ui'
+import { ref, onMounted } from 'vue'
+import { NSpace, NCard, NText, NSpin, NAlert } from 'naive-ui'
+import api from '../../utils/api'
+
+interface ProfileResult {
+  search_location?: string | null
+}
+
+interface ProfileResponse {
+  result?: ProfileResult
+}
+
+const loadingProfile = ref(true)
+const hasSearchLocation = ref(false)
+
+async function fetchProfile() {
+  loadingProfile.value = true
+  try {
+    const { data } = await api.get<ProfileResponse>('/users/profile')
+    const loc = data?.result?.search_location
+    hasSearchLocation.value = !!loc && String(loc).trim() !== ''
+  } catch {
+    hasSearchLocation.value = false
+  } finally {
+    loadingProfile.value = false
+  }
+}
+
+onMounted(fetchProfile)
 </script>
 
 <style scoped>
@@ -105,10 +151,32 @@ import { NSpace, NCard, NText } from 'naive-ui'
   min-width: 0;
 }
 
+.service-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
 .service-card-title {
   font-size: 1rem;
   display: block;
-  margin-bottom: 0.25rem;
+}
+
+.geo-warning-icon {
+  color: var(--n-error-color, #d03050);
+  font-size: 1.125rem;
+  flex-shrink: 0;
+  animation: geo-blink 1.2s ease-in-out infinite;
+}
+
+@keyframes geo-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.geo-alert-card {
+  border-radius: 12px;
 }
 
 .service-card-desc {
