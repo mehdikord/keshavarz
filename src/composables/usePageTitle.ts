@@ -22,6 +22,7 @@ export const usePageTitle = () => {
     '/providers': 'پنل خدمات‌دهندگان',
     '/providers/requests': 'درخواست‌ها',
     '/providers/services': 'خدمات من',
+    '/providers/services/offerings': 'ادوات و خدمات من',
     '/news': 'اخبار',
   }
   
@@ -65,6 +66,7 @@ export const usePageTitle = () => {
         'providers': 'پنل خدمات‌دهندگان',
         'providers-requests': 'درخواست‌ها',
         'providers-services': 'خدمات من',
+        'providers-my-services': 'ادوات و خدمات من',
         'news': 'اخبار',
       }
       

@@ -4,6 +4,7 @@ import Auth from '../views/Auth.vue'
 import UsersIndex from '../views/users/index.vue'
 import ProvidersIndex from '../views/providers/index.vue'
 import ProvidersServices from '../views/providers/services.vue'
+import ProvidersMyServices from '../views/providers/my-services.vue'
 import ProvidersRequests from '../views/providers/requests.vue'
 import Profile from '../views/Profile.vue'
 import LandsIndex from '../views/users/lands/index.vue'
@@ -46,6 +47,12 @@ const router = createRouter({
       path: '/providers/services',
       name: 'providers-services',
       component: ProvidersServices,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/providers/services/offerings',
+      name: 'providers-my-services',
+      component: ProvidersMyServices,
       meta: { requiresAuth: true }
     },
     {

@@ -36,7 +36,8 @@ const showBackButton = computed(() => {
     route.path === '/news' ||
     route.path.startsWith('/users/providers/') ||
     (route.path.startsWith('/users/requests/') && route.path !== '/users/requests') ||
-    (route.path.startsWith('/providers/requests/') && route.path !== '/providers/requests')
+    (route.path.startsWith('/providers/requests/') && route.path !== '/providers/requests') ||
+    (route.path.startsWith('/providers/services/') && route.path !== '/providers/services')
 })
 
 const toggleMenu = () => {
@@ -51,6 +52,8 @@ const handleBack = () => {
     router.push('/users/requests')
   } else if (route.path.startsWith('/providers/requests/') && route.path !== '/providers/requests') {
     router.push('/providers/requests')
+  } else if (route.path.startsWith('/providers/services/') && route.path !== '/providers/services') {
+    router.push('/providers/services')
   } else {
     router.push('/')
   }

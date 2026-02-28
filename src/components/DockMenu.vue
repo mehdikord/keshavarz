@@ -52,6 +52,8 @@ const activeIndex = computed(() => {
   // برای مسیرهای فرعی مثل /users/requests/123 یا /providers/requests/...
   if (currentPath.startsWith('/users/requests')) return items.findIndex(item => item.route === '/users/requests')
   if (currentPath.startsWith('/providers/requests')) return items.findIndex(item => item.route === '/providers/requests')
+  // ادوات و خدمات من زیرمجموعه خدمات من
+  if (currentPath.startsWith('/providers/services')) return items.findIndex(item => item.route === '/providers/services')
   return -1
 })
 
