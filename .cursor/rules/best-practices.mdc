@@ -1,0 +1,23 @@
+---
+alwaysApply: true
+---
+
+
+قبل از هر کدنویسی، حتما best practice مرتبط بهش رو در این پوشه بخون :
+@docs/Best Practices
+
+این best practice مرتبط به آخرین نسخه های فعلی مواردی که استفاده میکنیم هستش .
+
+مدیریت پکیج در پوشه `next`: **pnpm**.
+
+Next.js 16.2.0
+React 19.2.3
+typescript 5.9.3
+shadcn 3.6.2
+zod 4.2.1
+Prisma 7.2.0
+tailwindcss 4.1.18
+zustand 5.0.9
+eslint 9.39.2
+
+اگر نسخه های برنامه ها مشابه نیست. بروز کن.

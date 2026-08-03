@@ -1,0 +1,211 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "leaflet/dist/leaflet.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-earth: var(--earth);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --font-sans: "Vazirmatn Variable", "Vazirmatn", ui-sans-serif, system-ui, sans-serif;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+}
+
+:root {
+  --background: #f8faf5;
+  --foreground: #1a2e1a;
+  --surface: #ffffff;
+  --card: #ffffff;
+  --card-foreground: #1a2e1a;
+  --popover: #ffffff;
+  --popover-foreground: #1a2e1a;
+  --primary: #2d6a4f;
+  --primary-foreground: #ffffff;
+  --secondary: #95d5b2;
+  --secondary-foreground: #1a3d2e;
+  --muted: #e8f0e8;
+  --muted-foreground: #5c6b5c;
+  --accent: #f4a261;
+  --accent-foreground: #3d2914;
+  --destructive: #e76f51;
+  --success: #40916c;
+  --earth: #8b7355;
+  --border: #d8e2d8;
+  --input: #d8e2d8;
+  --ring: #2d6a4f;
+  --chart-1: #2d6a4f;
+  --chart-2: #40916c;
+  --chart-3: #95d5b2;
+  --chart-4: #f4a261;
+  --chart-5: #8b7355;
+  --outer-bg: #e8f0e8;
+  --gradient-hero: linear-gradient(135deg, #2d6a4f 0%, #40916c 50%, #95d5b2 100%);
+  --gradient-card: linear-gradient(180deg, #ffffff 0%, #f8faf5 100%);
+  --gradient-dock: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(248, 250, 245, 0.96) 100%);
+  --shadow-sm: 0 1px 2px rgba(45, 106, 79, 0.06);
+  --shadow-md: 0 4px 12px rgba(45, 106, 79, 0.08);
+  --shadow-lg: 0 8px 24px rgba(45, 106, 79, 0.12);
+  --shadow-dock: 0 -4px 20px rgba(45, 106, 79, 0.1);
+  --shadow-shell: 0 0 60px rgba(45, 106, 79, 0.15);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply bg-[var(--outer-bg)] text-foreground font-sans antialiased;
+    font-feature-settings: "ss01";
+  }
+}
+
+@layer utilities {
+  .gradient-hero {
+    background: var(--gradient-hero);
+  }
+
+  .gradient-card {
+    background: var(--gradient-card);
+  }
+
+  .glass-dock {
+    background: var(--gradient-dock);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: var(--shadow-dock);
+  }
+
+  .card-elevated {
+    box-shadow: var(--shadow-md);
+  }
+
+  .shadow-shell {
+    box-shadow: var(--shadow-shell);
+  }
+
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  .animate-fade-in {
+    animation: fade-in 200ms ease-out both;
+  }
+
+  .animate-slide-up {
+    animation: slide-up 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .animate-scale-in {
+    animation: scale-in 200ms ease-out both;
+  }
+
+  .hero-pattern {
+    background-image: radial-gradient(circle at 20% 80%, rgba(45, 106, 79, 0.04) 0%, transparent 50%),
+      radial-gradient(circle at 80% 20%, rgba(149, 213, 178, 0.05) 0%, transparent 50%);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+
+.leaflet-container {
+  font-family: var(--font-sans);
+  direction: ltr;
+}
+
+.leaflet-control-attribution {
+  font-size: 9px !important;
+}
+
+.memaps-location-marker {
+  background: transparent;
+  border: 0;
+}
+
+.memaps-location-marker span {
+  position: relative;
+  display: block;
+  width: 32px;
+  height: 32px;
+  border: 4px solid white;
+  border-radius: 50% 50% 50% 0;
+  background: var(--primary);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  transform: rotate(-45deg);
+}
+
+.memaps-location-marker span::after {
+  content: "";
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  margin: 8px;
+  border-radius: 999px;
+  background: white;
+}
