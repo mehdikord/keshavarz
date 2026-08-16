@@ -1,17 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { SearchX } from "lucide-react";
 
 import {
-  getProviderResultState,
   ProviderResultCard,
+  type ProviderResultState,
 } from "@/components/consumer-panel/provider-result-card";
 import { PageContainer } from "@/components/layout/page-container";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
+import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -21,74 +22,188 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getServiceById } from "@/lib/mock/catalog";
 import {
-  searchProviders,
-  sortSearchResults,
-  type SearchSortOption,
-} from "@/lib/search/search-providers";
+  addAppRequestProviders,
+  createAppServiceRequest,
+  fetchConsumerRequest,
+  type AppConsumerRequestDetail,
+} from "@/lib/api/app-requests";
+import {
+  fetchAppSearchProviders,
+  uiSortToApiSort,
+  type AppSearchContext,
+  type AppSearchProvider,
+} from "@/lib/api/app-search";
+import { isApiClientError } from "@/lib/api/envelope";
 import { toast } from "@/lib/toast";
-import {
-  getLandTitle,
-  getServiceLabel,
-} from "@/lib/utils/consumer-requests";
 import { toPersianDigits } from "@/lib/utils/format";
 import { useAuthStore } from "@/stores/auth-store";
-import { useConsumerStore } from "@/stores/consumer-store";
-import { useRequestStore } from "@/stores/request-store";
+
+type SearchSortOption =
+  | "price-asc"
+  | "price-desc"
+  | "distance-asc"
+  | "distance-desc";
+
+function getApiProviderResultState(
+  provider: AppSearchProvider,
+  sentLocally: ReadonlySet<string>,
+  requestDetail: AppConsumerRequestDetail | null,
+): ProviderResultState {
+  if (requestDetail) {
+    if (
+      requestDetail.status === "in_progress" ||
+      requestDetail.status === "completed"
+    ) {
+      return requestDetail.assignedProviderId === provider.providerId
+        ? "accepted"
+        : "removed";
+    }
+
+    if (requestDetail.status === "cancelled") {
+      return "removed";
+    }
+
+    const link = requestDetail.providers.find(
+      (item) => item.providerId === provider.providerId,
+    );
+
+    if (link) {
+      if (link.status === "sent") return "sent";
+      if (link.status === "rejected") return "rejected";
+      if (link.status === "removed") return "removed";
+      if (link.status === "accepted") return "accepted";
+    }
+  }
+
+  if (sentLocally.has(provider.providerId)) return "sent";
+  if (provider.previousStatus === "sent") return "sent";
+  if (provider.previousStatus === "rejected") return "rejected";
+
+  return "idle";
+}
 
 export default function SearchResultsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const requestId = searchParams.get("requestId") ?? "";
+  const searchId = searchParams.get("searchId") ?? "";
   const user = useAuthStore((state) => state.user);
-  const lands = useConsumerStore((state) => state.lands);
-  const request = useRequestStore((state) => state.getRequestById(requestId));
-  const requestProviders = useRequestStore((state) => state.requestProviders);
-  const sendToProvider = useRequestStore((state) => state.sendToProvider);
-  const [sort, setSort] = useState<SearchSortOption>("price-asc");
 
-  const land = useMemo(
-    () => lands.find((item) => item.id === request?.landId),
-    [lands, request?.landId],
+  const [searchContext, setSearchContext] = useState<AppSearchContext | null>(
+    null,
+  );
+  const [providers, setProviders] = useState<AppSearchProvider[]>([]);
+  const [requestId, setRequestId] = useState<string | null>(null);
+  const [requestDetail, setRequestDetail] =
+    useState<AppConsumerRequestDetail | null>(null);
+  const [sentLocally, setSentLocally] = useState<Set<string>>(() => new Set());
+  const [sort, setSort] = useState<SearchSortOption>("price-asc");
+  const [loading, setLoading] = useState(() => Boolean(searchId));
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const loadProviders = useCallback(
+    (signal: AbortSignal) => {
+      if (!searchId) return;
+
+      void fetchAppSearchProviders({
+        searchId,
+        sort: uiSortToApiSort(sort),
+        limit: 50,
+        signal,
+      })
+        .then((result) => {
+          if (signal.aborted) return;
+          setSearchContext(result.search);
+          setProviders(result.items);
+        })
+        .catch((cause: unknown) => {
+          if (signal.aborted) return;
+          setSearchContext(null);
+          setProviders([]);
+          toast.error(
+            isApiClientError(cause)
+              ? cause.message
+              : "بارگذاری نتایج جستجو ناموفق بود",
+          );
+        })
+        .finally(() => {
+          if (!signal.aborted) setLoading(false);
+        });
+    },
+    [searchId, sort],
   );
 
-  const results = useMemo(() => {
-    if (!request || !land || !user) return [];
+  useEffect(() => {
+    if (!searchId) return;
 
-    const raw = searchProviders({
-      land,
-      serviceId: request.serviceId,
-      consumerId: user.id,
-    });
+    const controller = new AbortController();
+    loadProviders(controller.signal);
+    return () => controller.abort();
+  }, [searchId, sort, reloadKey, loadProviders]);
 
-    return sortSearchResults(raw, sort);
-  }, [land, request, sort, user]);
+  useEffect(() => {
+    if (!requestId) return;
+
+    const controller = new AbortController();
+
+    void fetchConsumerRequest(requestId, controller.signal)
+      .then((detail) => {
+        if (controller.signal.aborted) return;
+        setRequestDetail(detail);
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setRequestDetail(null);
+      });
+
+    return () => controller.abort();
+  }, [requestId, reloadKey]);
+
+  const activeRequestDetail = requestId ? requestDetail : null;
 
   const visibleResults = useMemo(() => {
-    if (!request) return [];
+    return providers
+      .map((provider) => ({
+        provider,
+        state: getApiProviderResultState(
+          provider,
+          sentLocally,
+          activeRequestDetail,
+        ),
+      }))
+      .filter((item) => item.state !== "removed");
+  }, [providers, activeRequestDetail, sentLocally]);
 
-    return results.filter((result) => {
-      const state = getProviderResultState(
-        request,
-        requestProviders,
-        result.providerId,
+  const handleSend = async (providerId: string) => {
+    if (!searchId) return;
+
+    try {
+      if (!requestId) {
+        const created = await createAppServiceRequest({
+          searchId,
+          providerIds: [providerId],
+        });
+        setRequestId(created.requestId);
+      } else {
+        await addAppRequestProviders({
+          requestId,
+          providerIds: [providerId],
+        });
+      }
+
+      setSentLocally((current) => new Set(current).add(providerId));
+      setReloadKey((key) => key + 1);
+      toast.success("درخواست ارسال شد", "منتظر تأیید خدمات‌دهنده باشید");
+    } catch (cause: unknown) {
+      toast.error(
+        isApiClientError(cause) ? cause.message : "ارسال درخواست ناموفق بود",
       );
-      return state !== "removed";
-    });
-  }, [request, requestProviders, results]);
-
-  const handleSend = (providerId: string) => {
-    if (!request) return;
-    const error = sendToProvider(request.id, providerId);
-    if (error) {
-      toast.error(error.message);
-      return;
     }
-    toast.success("درخواست ارسال شد", "منتظر تأیید خدمات‌دهنده باشید");
   };
 
-  if (!user || !request || !land) {
+  if (!user) return null;
+
+  if (!searchId) {
     return (
       <PageContainer withDock>
         <PageHeader title="نتایج جستجو" backHref="/users/search" />
@@ -101,13 +216,33 @@ export default function SearchResultsPage() {
     );
   }
 
-  const service = getServiceById(request.serviceId);
+  if (loading) {
+    return (
+      <PageContainer withDock>
+        <PageHeader title="نتایج جستجو" backHref="/users/search" />
+        <LoadingSpinner className="py-16" />
+      </PageContainer>
+    );
+  }
+
+  if (!searchContext) {
+    return (
+      <PageContainer withDock>
+        <PageHeader title="نتایج جستجو" backHref="/users/search" />
+        <Card>
+          <CardContent className="py-8 text-center text-sm text-muted-foreground">
+            جستجو یافت نشد. دوباره تلاش کنید.
+          </CardContent>
+        </Card>
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer withDock>
       <PageHeader
         title="نتایج جستجو"
-        description={`${service?.name ?? getServiceLabel(request.serviceId)} · ${getLandTitle(request.landId, lands)}`}
+        description={`${searchContext.serviceName} · ${searchContext.landTitle}`}
         backHref="/users/search"
       />
 
@@ -123,7 +258,10 @@ export default function SearchResultsPage() {
           </div>
           <Select
             value={sort}
-            onValueChange={(value) => setSort(value as SearchSortOption)}
+            onValueChange={(value) => {
+              setLoading(true);
+              setSort(value as SearchSortOption);
+            }}
           >
             <SelectTrigger className="h-10 w-[170px] rounded-xl">
               <SelectValue />
@@ -147,28 +285,24 @@ export default function SearchResultsPage() {
         />
       ) : (
         <div className="space-y-3">
-          {visibleResults.map((result) => (
+          {visibleResults.map(({ provider, state }) => (
             <ProviderResultCard
-              key={result.providerId}
-              providerId={result.providerId}
-              displayName={result.displayName}
-              distanceKm={result.distanceKm}
-              price={result.price}
-              state={getProviderResultState(
-                request,
-                requestProviders,
-                result.providerId,
-              )}
-              onSend={() => handleSend(result.providerId)}
+              key={provider.providerId}
+              providerId={provider.providerId}
+              displayName={provider.name ?? "خدمات‌دهنده"}
+              distanceKm={provider.distanceKm}
+              price={provider.priceToman}
+              state={state}
+              onSend={() => void handleSend(provider.providerId)}
             />
           ))}
         </div>
       )}
 
-      {request.status === "in_progress" ? (
+      {requestDetail?.status === "in_progress" && requestId ? (
         <Button
           className="mt-4 h-11 w-full rounded-xl"
-          onClick={() => router.push(`/users/requests/${request.id}`)}
+          onClick={() => router.push(`/users/requests/${requestId}`)}
         >
           مشاهده درخواست تأییدشده
         </Button>

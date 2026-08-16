@@ -1,12 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { CalendarDays, MapPin, UserRound } from "lucide-react";
+import {
+  CalendarDays,
+  LoaderCircle,
+  MapPin,
+  Phone,
+  ShieldAlert,
+  UserRound,
+} from "lucide-react";
 
 import { PageContainer } from "@/components/layout/page-container";
 import { PageHeader } from "@/components/layout/page-header";
-import { ContactPhoneDisplay } from "@/components/shared/contact-phone-display";
 import { MapPicker } from "@/components/shared/map-picker";
 import { PriceDisplay } from "@/components/shared/price-display";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -22,16 +28,21 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { getCategoryById, getServiceById } from "@/lib/mock/catalog";
-import { getLandsForUser } from "@/lib/mock/users";
-import { toast } from "@/lib/toast";
-import { toPersianDigits } from "@/lib/utils/format";
+import { canShowPhone } from "@/lib/contact-privacy";
+import { isApiClientError } from "@/lib/api/envelope";
 import {
-  getUserDisplayName,
-} from "@/lib/utils/provider-requests";
+  acceptProviderRequest,
+  cancelProviderRequest,
+  fetchProviderRequest,
+  rejectProviderRequest,
+  viewProviderRequest,
+  type AppProviderRequestDetail,
+} from "@/lib/api/app-requests";
+import { toast } from "@/lib/toast";
+import { cn } from "@/lib/utils";
+import { toPersianDigits } from "@/lib/utils/format";
 import { useAuthStore } from "@/stores/auth-store";
-import { useProviderStore } from "@/stores/provider-store";
-import { useRequestStore } from "@/stores/request-store";
+import type { GeoLocation, RequestStatus } from "@/types";
 
 function formatDate(date: string): string {
   return new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
@@ -42,29 +53,158 @@ function formatDate(date: string): string {
   }).format(new Date(date));
 }
 
+function landToLocation(
+  land: AppProviderRequestDetail["land"],
+): GeoLocation | null {
+  if (!land.latitude || !land.longitude) return null;
+  return {
+    lat: Number(land.latitude),
+    lng: Number(land.longitude),
+  };
+}
+
+function ProviderConsumerPhone({
+  detail,
+  className,
+}: {
+  detail: AppProviderRequestDetail;
+  className?: string;
+}) {
+  const maskedMessage = "پس از قبول درخواست، شماره تماس نمایش داده می‌شود";
+
+  if (!canShowPhone(detail.status as RequestStatus)) {
+    return (
+      <div
+        className={cn(
+          "inline-flex items-center gap-2 rounded-xl border border-dashed border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground",
+          className,
+        )}
+      >
+        <ShieldAlert className="size-4 shrink-0 text-accent" />
+        {maskedMessage}
+      </div>
+    );
+  }
+
+  if (detail.consumer.phone) {
+    return (
+      <a
+        href={`tel:${detail.consumer.phone}`}
+        dir="ltr"
+        className={cn(
+          "inline-flex items-center gap-2 rounded-xl bg-primary/10 px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/15",
+          className,
+        )}
+      >
+        <Phone className="size-4 shrink-0" />
+        {detail.consumer.phone}
+      </a>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        "inline-flex items-center gap-2 rounded-xl border border-dashed border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground",
+        className,
+      )}
+    >
+      <ShieldAlert className="size-4 shrink-0 text-accent" />
+      {maskedMessage}
+    </div>
+  );
+}
+
 export default function ProviderRequestDetailPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const user = useAuthStore((state) => state.user);
-  const request = useRequestStore((state) =>
-    state.getRequestById(params.id),
-  );
-  const acceptRequest = useRequestStore((state) => state.acceptRequest);
-  const rejectRequest = useRequestStore((state) => state.rejectRequest);
-  const cancelRequest = useRequestStore((state) => state.cancelRequest);
-  const offeredServices = useProviderStore((state) => state.offeredServices);
 
+  const [detail, setDetail] = useState<AppProviderRequestDetail | null>(null);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "not_found">(
+    "loading",
+  );
+  const [actionBusy, setActionBusy] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const viewedRef = useRef(false);
 
-  const land = useMemo(() => {
-    if (!request) return null;
-    return getLandsForUser(request.consumerId).find(
-      (item) => item.id === request.landId,
+  const reloadDetail = useCallback(async (signal?: AbortSignal) => {
+    return fetchProviderRequest(params.id, signal);
+  }, [params.id]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let cancelled = false;
+    viewedRef.current = false;
+
+    void (async () => {
+      try {
+        const nextDetail = await reloadDetail(controller.signal);
+        if (cancelled) return;
+
+        setDetail(nextDetail);
+        setLoadState("ready");
+
+        if (
+          !viewedRef.current &&
+          nextDetail.linkStatus === "sent" &&
+          !nextDetail.viewedAt
+        ) {
+          viewedRef.current = true;
+          try {
+            await viewProviderRequest(nextDetail.requestId);
+            const refreshed = await reloadDetail(controller.signal);
+            if (!cancelled) setDetail(refreshed);
+          } catch {
+            // Non-blocking: viewing is best-effort.
+          }
+        }
+      } catch (cause: unknown) {
+        if (cancelled || controller.signal.aborted) return;
+
+        if (isApiClientError(cause) && cause.status === 404) {
+          setLoadState("not_found");
+          return;
+        }
+
+        toast.error(
+          isApiClientError(cause)
+            ? cause.message
+            : "بارگذاری جزئیات درخواست ناموفق بود.",
+        );
+        setLoadState("not_found");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [reloadDetail]);
+
+  const landLocation = useMemo(
+    () => (detail ? landToLocation(detail.land) : null),
+    [detail],
+  );
+
+  const displayPrice =
+    detail?.agreedPriceToman ?? detail?.priceToman ?? 0;
+
+  if (!user) return null;
+
+  if (loadState === "loading") {
+    return (
+      <PageContainer withDock>
+        <PageHeader title="جزئیات درخواست" backHref="/providers/requests" />
+        <div className="flex justify-center py-16">
+          <LoaderCircle className="size-8 animate-spin text-primary" />
+        </div>
+      </PageContainer>
     );
-  }, [request]);
+  }
 
-  if (!user || !request) {
+  if (loadState === "not_found" || !detail) {
     return (
       <PageContainer withDock>
         <PageHeader title="جزئیات درخواست" backHref="/providers/requests" />
@@ -77,59 +217,80 @@ export default function ProviderRequestDetailPage() {
     );
   }
 
-  const service = getServiceById(request.serviceId);
-  const category = service ? getCategoryById(service.categoryId) : null;
+  const canRespond =
+    detail.linkStatus === "sent" && detail.status === "pending_provider";
+  const canCancel =
+    detail.status === "in_progress" && detail.isAssigned;
 
-  const handleAccept = () => {
-    const price =
-      offeredServices.find((item) => item.serviceId === request.serviceId)
-        ?.price ?? 0;
-
-    if (!price) {
-      toast.error("قیمت این خدمت در پروفایل شما ثبت نشده");
-      return;
+  const handleAccept = async () => {
+    setActionBusy(true);
+    try {
+      await acceptProviderRequest(detail.requestId, {
+        expectedVersion: detail.version,
+      });
+      const refreshed = await reloadDetail();
+      setDetail(refreshed);
+      toast.success("درخواست پذیرفته شد");
+      router.push("/providers/requests");
+    } catch (cause: unknown) {
+      toast.error(
+        isApiClientError(cause) ? cause.message : "پذیرش درخواست ناموفق بود.",
+      );
+    } finally {
+      setActionBusy(false);
     }
-
-    const error = acceptRequest(request.id, user.id, price);
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-    toast.success("درخواست پذیرفته شد");
-    router.push("/providers/requests");
   };
 
-  const handleReject = () => {
-    const error = rejectRequest(request.id, user.id);
-    if (error) {
-      toast.error(error.message);
-      return;
+  const handleReject = async () => {
+    setActionBusy(true);
+    try {
+      await rejectProviderRequest(detail.requestId, {
+        expectedVersion: detail.version,
+      });
+      const refreshed = await reloadDetail();
+      setDetail(refreshed);
+      toast.info("درخواست رد شد");
+      router.push("/providers/requests");
+    } catch (cause: unknown) {
+      toast.error(
+        isApiClientError(cause) ? cause.message : "رد درخواست ناموفق بود.",
+      );
+    } finally {
+      setActionBusy(false);
     }
-    toast.info("درخواست رد شد");
-    router.push("/providers/requests");
   };
 
-  const handleCancel = () => {
+  const handleCancel = async () => {
     if (cancelReason.trim().length < 3) {
       toast.error("دلیل لغو را وارد کنید");
       return;
     }
 
-    const error = cancelRequest(request.id, "provider", cancelReason.trim());
-    if (error) {
-      toast.error(error.message);
-      return;
+    setActionBusy(true);
+    try {
+      await cancelProviderRequest(detail.requestId, {
+        expectedVersion: detail.version,
+        reason: cancelReason.trim(),
+      });
+      const refreshed = await reloadDetail();
+      setDetail(refreshed);
+      setCancelOpen(false);
+      toast.success("درخواست لغو شد");
+      router.push("/providers/requests");
+    } catch (cause: unknown) {
+      toast.error(
+        isApiClientError(cause) ? cause.message : "لغو درخواست ناموفق بود.",
+      );
+    } finally {
+      setActionBusy(false);
     }
-    setCancelOpen(false);
-    toast.success("درخواست لغو شد");
-    router.push("/providers/requests");
   };
 
   return (
     <PageContainer withDock>
       <PageHeader
         title="جزئیات درخواست"
-        description={service?.name}
+        description={detail.serviceName}
         backHref="/providers/requests"
       />
 
@@ -139,82 +300,101 @@ export default function ProviderRequestDetailPage() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm text-muted-foreground">
-                  {category?.name}
+                  {detail.serviceCategoryName}
                 </p>
-                <h2 className="text-lg font-bold">{service?.name}</h2>
+                <h2 className="text-lg font-bold">{detail.serviceName}</h2>
               </div>
-              <StatusBadge status={request.status} />
+              <StatusBadge status={detail.status as RequestStatus} />
             </div>
 
             <div className="grid gap-3 text-sm">
               <div className="flex items-center gap-2 text-muted-foreground">
                 <UserRound className="size-4 text-primary" />
-                {getUserDisplayName(request.consumerId)}
+                {detail.consumer.name}
               </div>
-              <ContactPhoneDisplay request={request} viewerRole="provider" />
+              <ProviderConsumerPhone detail={detail} />
               <div className="flex items-center gap-2 text-muted-foreground">
                 <MapPin className="size-4 text-primary" />
-                {land?.title ?? "زمین نامشخص"}
-                {land ? ` · ${toPersianDigits(land.areaSqm)} m²` : ""}
+                {detail.land.title}
+                {detail.land.areaSquareMeters
+                  ? ` · ${toPersianDigits(detail.land.areaSquareMeters)} m²`
+                  : ""}
+                {detail.distanceKm > 0
+                  ? ` · ${toPersianDigits(detail.distanceKm.toFixed(1))} km`
+                  : ""}
               </div>
               <div className="flex items-center gap-2 text-muted-foreground">
                 <CalendarDays className="size-4 text-primary" />
-                {request.scheduledDates.map((date) => formatDate(date)).join(" · ")}
+                {detail.dates.map((date) => formatDate(date)).join(" · ")}
               </div>
             </div>
 
+            {detail.consumerNote ? (
+              <div className="rounded-xl bg-muted/50 px-3 py-2 text-sm">
+                <p className="text-xs text-muted-foreground">یادداشت مشتری</p>
+                <p className="mt-1">{detail.consumerNote}</p>
+              </div>
+            ) : null}
+
             <div className="rounded-xl bg-muted/50 px-3 py-2">
               <p className="text-xs text-muted-foreground">قیمت</p>
-              <PriceDisplay
-                amount={request.price > 0 ? request.price : 0}
-                size="lg"
-              />
+              <PriceDisplay amount={displayPrice > 0 ? displayPrice : 0} size="lg" />
             </div>
 
             <p className="text-xs text-muted-foreground">
-              ایجاد: {formatDate(request.createdAt)}
+              ایجاد: {formatDate(detail.createdAt)}
             </p>
           </CardContent>
         </Card>
 
-        {land ? (
+        {landLocation ? (
           <Card className="overflow-hidden border-border/70">
             <CardContent className="p-4">
               <p className="mb-3 text-sm font-semibold">موقعیت زمین</p>
-              <MapPicker value={land.location} interactive={false} />
+              <MapPicker value={landLocation} interactive={false} />
             </CardContent>
           </Card>
         ) : null}
 
-        {request.status === "cancelled" && request.cancelReason ? (
+        {detail.status === "cancelled" && detail.cancelReason ? (
           <Card className="border-destructive/20 bg-destructive/5">
             <CardContent className="p-4 text-sm">
               <p className="font-semibold text-destructive">دلیل لغو</p>
-              <p className="mt-1 text-muted-foreground">{request.cancelReason}</p>
+              <p className="mt-1 text-muted-foreground">{detail.cancelReason}</p>
             </CardContent>
           </Card>
         ) : null}
 
-        {request.status === "pending_provider" ? (
+        {canRespond ? (
           <div className="grid grid-cols-2 gap-3">
-            <Button className="h-11 rounded-xl" onClick={handleAccept}>
-              قبول درخواست
+            <Button
+              className="h-11 rounded-xl"
+              onClick={() => void handleAccept()}
+              disabled={actionBusy}
+            >
+              {actionBusy ? (
+                <LoaderCircle className="size-4 animate-spin" />
+              ) : (
+                "قبول درخواست"
+              )}
             </Button>
             <Button
               variant="outline"
               className="h-11 rounded-xl border-destructive/30 text-destructive"
-              onClick={handleReject}
+              onClick={() => void handleReject()}
+              disabled={actionBusy}
             >
               رد درخواست
             </Button>
           </div>
         ) : null}
 
-        {request.status === "in_progress" ? (
+        {canCancel ? (
           <Button
             variant="destructive"
             className="h-11 w-full rounded-xl"
             onClick={() => setCancelOpen(true)}
+            disabled={actionBusy}
           >
             لغو درخواست
           </Button>
@@ -242,7 +422,11 @@ export default function ProviderRequestDetailPage() {
             <Button variant="outline" onClick={() => setCancelOpen(false)}>
               انصراف
             </Button>
-            <Button variant="destructive" onClick={handleCancel}>
+            <Button
+              variant="destructive"
+              onClick={() => void handleCancel()}
+              disabled={actionBusy}
+            >
               تأیید لغو
             </Button>
           </DialogFooter>

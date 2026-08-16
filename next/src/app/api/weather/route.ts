@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { DEFAULT_MAP_CENTER } from "@/lib/mock/constants";
+import { DEFAULT_MAP_CENTER } from "@/lib/maps/defaults";
 import type { WeatherForecastResponse } from "@/types/weather";
 
 const WEATHER_API_BASE = "https://api.weatherapi.com/v1/forecast.json";

@@ -6,7 +6,7 @@ import { MapPicker } from "@/components/shared/map-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { DEFAULT_MAP_CENTER } from "@/lib/mock/constants";
+import { DEFAULT_MAP_CENTER } from "@/lib/maps/defaults";
 import { landFormSchema, type LandFormValues } from "@/lib/validators/land";
 import { toLatinDigits } from "@/lib/utils/format";
 import type { Land } from "@/types";
@@ -14,12 +14,14 @@ import type { Land } from "@/types";
 interface LandFormProps {
   initialValues?: Partial<Land>;
   submitLabel: string;
+  isSubmitting?: boolean;
   onSubmit: (values: LandFormValues) => void;
 }
 
 export function LandForm({
   initialValues,
   submitLabel,
+  isSubmitting = false,
   onSubmit,
 }: LandFormProps) {
   const [title, setTitle] = useState(initialValues?.title ?? "");
@@ -96,7 +98,11 @@ export function LandForm({
         ) : null}
       </div>
 
-      <Button type="submit" className="h-11 w-full rounded-xl">
+      <Button
+        type="submit"
+        className="h-11 w-full rounded-xl"
+        disabled={isSubmitting}
+      >
         {submitLabel}
       </Button>
     </form>

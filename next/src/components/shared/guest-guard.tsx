@@ -11,14 +11,19 @@ interface GuestGuardProps {
 }
 
 export function GuestGuard({ children }: GuestGuardProps) {
+  const status = useAuthStore((state) => state.status);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const router = useRouter();
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (status === "ready" && isAuthenticated) {
       router.replace("/");
     }
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, router, status]);
+
+  if (status !== "ready") {
+    return <LoadingSpinner fullPage label="در حال بررسی دسترسی..." />;
+  }
 
   if (isAuthenticated) {
     return <LoadingSpinner fullPage label="در حال انتقال..." />;

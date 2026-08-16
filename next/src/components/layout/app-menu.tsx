@@ -59,10 +59,11 @@ export function AppMenu() {
   const logout = useAuthStore((state) => state.logout);
 
   const handleLogout = () => {
-    logout();
-    close();
-    toast.info("خروج از حساب");
-    router.replace("/auth");
+    void logout().finally(() => {
+      close();
+      toast.info("خروج از حساب");
+      router.replace("/auth");
+    });
   };
 
   const handleItemClick = (

@@ -2,63 +2,98 @@
 
 import Link from "next/link";
 import {
-  ClipboardClock,
-  LocateFixed,
   MapPin,
   Pencil,
   Plus,
   Ruler,
   Trash2,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { PageContainer } from "@/components/layout/page-container";
 import { PageHeader } from "@/components/layout/page-header";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
+import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  deleteAppLand,
+  fetchAppLands,
+  mapAppLandToUi,
+} from "@/lib/api/app-lands";
+import { isApiClientError } from "@/lib/api/envelope";
 import { toast } from "@/lib/toast";
-import { toPersianDigits } from "@/lib/utils/format";
 import { useAuthStore } from "@/stores/auth-store";
-import { useConsumerStore } from "@/stores/consumer-store";
-import { useRequestStore } from "@/stores/request-store";
+import type { Land } from "@/types";
 
 export default function ConsumerLandsPage() {
   const user = useAuthStore((state) => state.user);
-  const lands = useConsumerStore((state) => state.lands);
-  const deleteLand = useConsumerStore((state) => state.deleteLand);
-  const requests = useRequestStore((state) => state.requests);
+  const [lands, setLands] = useState<Land[]>([]);
+  const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  const userLands = useMemo(
-    () => (user ? lands.filter((land) => land.userId === user.id) : []),
-    [lands, user],
+  const loadLands = useCallback(
+    (signal: AbortSignal) => {
+      if (!user) return;
+
+      void fetchAppLands({ limit: 50, signal })
+        .then((result) => {
+          if (signal.aborted) return;
+          setLands(result.items.map((land) => mapAppLandToUi(land, user.id)));
+        })
+        .catch((cause: unknown) => {
+          if (signal.aborted) return;
+          setLands([]);
+          toast.error(
+            isApiClientError(cause) ? cause.message : "بارگذاری زمین‌ها ناموفق بود",
+          );
+        })
+        .finally(() => {
+          if (!signal.aborted) setLoading(false);
+        });
+    },
+    [user],
   );
 
-  const activeRequestForLand = deleteTarget
-    ? requests.some(
-        (request) =>
-          request.landId === deleteTarget &&
-          (request.status === "pending_provider" ||
-            request.status === "in_progress"),
-      )
-    : false;
+  useEffect(() => {
+    if (!user) return;
 
-  const handleDelete = () => {
+    const controller = new AbortController();
+    loadLands(controller.signal);
+    return () => controller.abort();
+  }, [user, loadLands]);
+
+  const handleDelete = async () => {
     if (!deleteTarget) return;
 
-    if (activeRequestForLand) {
-      toast.error("این زمین در درخواست فعال استفاده شده و قابل حذف نیست");
+    setDeleting(true);
+    try {
+      await deleteAppLand(deleteTarget);
+      setLands((current) => current.filter((land) => land.id !== deleteTarget));
       setDeleteTarget(null);
-      return;
+      toast.success("زمین حذف شد");
+    } catch (cause: unknown) {
+      toast.error(
+        isApiClientError(cause) ? cause.message : "حذف زمین ناموفق بود",
+      );
+    } finally {
+      setDeleting(false);
     }
-
-    deleteLand(deleteTarget);
-    setDeleteTarget(null);
-    toast.success("زمین حذف شد");
   };
+
+  if (!user) return null;
+
+  if (loading) {
+    return (
+      <PageContainer withDock>
+        <PageHeader title="زمین‌های من" />
+        <LoadingSpinner className="py-16" />
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer withDock>
@@ -75,7 +110,7 @@ export default function ConsumerLandsPage() {
         }
       />
 
-      {userLands.length === 0 ? (
+      {lands.length === 0 ? (
         <EmptyState
           icon={MapPin}
           title="هنوز زمینی ثبت نکرده‌اید"
@@ -84,14 +119,7 @@ export default function ConsumerLandsPage() {
         />
       ) : (
         <div className="space-y-3">
-          {userLands.map((land) => {
-            const activeRequests = requests.filter(
-              (request) =>
-                request.landId === land.id &&
-                (request.status === "pending_provider" ||
-                  request.status === "in_progress"),
-            );
-            const hasActiveRequest = activeRequests.length > 0;
+          {lands.map((land) => {
             const formattedArea = new Intl.NumberFormat("fa-IR").format(
               land.areaSqm,
             );
@@ -102,74 +130,59 @@ export default function ConsumerLandsPage() {
                 className="group overflow-hidden border-primary/15 bg-surface shadow-[0_6px_20px_rgba(45,106,79,0.07)] transition-all duration-200 hover:border-primary/25 hover:shadow-[0_10px_26px_rgba(45,106,79,0.11)]"
               >
                 <CardContent className="p-0">
-                  <div className="p-3.5">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <h2 className="truncate text-sm font-bold text-foreground">
-                            {land.title}
-                          </h2>
-                          {land.description ? (
-                            <p className="mt-1 truncate text-[11px] text-muted-foreground">
-                              {land.description}
-                            </p>
-                          ) : null}
-                        </div>
-
-                        <Badge
-                          className={
-                            hasActiveRequest
-                              ? "shrink-0 border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] text-amber-800"
-                              : "shrink-0 border-primary/15 bg-primary/5 px-2 py-0.5 text-[10px] text-primary"
-                          }
-                        >
-                          {hasActiveRequest ? "فعال" : "آماده"}
-                        </Badge>
+                  <div className="p-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h2 className="truncate text-sm font-bold text-foreground">
+                          {land.title}
+                        </h2>
+                        {land.description ? (
+                          <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                            {land.description}
+                          </p>
+                        ) : null}
                       </div>
 
-                      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-muted-foreground">
-                        <span className="inline-flex items-center gap-1.5">
-                          <Ruler className="size-3.5 text-primary" />
-                          <strong className="font-semibold text-foreground">
-                            {formattedArea}
-                          </strong>
-                          متر مربع
-                        </span>
-                        <span className="inline-flex items-center gap-1.5">
-                          <ClipboardClock className="size-3.5 text-accent" />
-                          {toPersianDigits(activeRequests.length)} درخواست
-                        </span>
-                        <span className="inline-flex min-w-0 items-center gap-1.5" dir="ltr">
-                          <LocateFixed className="size-3.5 shrink-0 text-primary" />
-                          <span className="max-w-32 truncate">
-                            {toPersianDigits(land.location.lat)}, {" "}
-                            {toPersianDigits(land.location.lng)}
-                          </span>
-                        </span>
-                      </div>
+                      <Badge className="shrink-0 border-primary/15 bg-primary/5 px-2 py-0.5 text-[10px] text-primary">
+                        آماده
+                      </Badge>
+                    </div>
 
-                      <div className="mt-3 flex items-center gap-2 border-t border-border/60 pt-3">
-                        <Button
-                          asChild
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 flex-1 justify-center rounded-lg bg-primary/7 text-xs text-primary hover:bg-primary/12 hover:text-primary"
+                    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-muted-foreground">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Ruler className="size-3.5 text-primary" />
+                        <strong className="font-semibold text-foreground">
+                          {formattedArea}
+                        </strong>
+                        متر مربع
+                      </span>
+                    </div>
+
+                    <div className="mt-2 flex items-center gap-2 border-t border-border/60 pt-2">
+                      <Button
+                        asChild
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 rounded-lg text-primary hover:bg-primary/10 hover:text-primary"
+                      >
+                        <Link
+                          href={`/users/lands/${land.id}/edit`}
+                          aria-label={`ویرایش ${land.title}`}
                         >
-                          <Link href={`/users/lands/${land.id}/edit`}>
-                            <Pencil className="size-3.5" />
-                            ویرایش
-                          </Link>
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="size-8 rounded-lg text-destructive hover:bg-destructive/5 hover:text-destructive"
-                          onClick={() => setDeleteTarget(land.id)}
-                          aria-label={`حذف ${land.title}`}
-                        >
-                          <Trash2 className="size-3.5" />
-                        </Button>
-                      </div>
+                          <Pencil className="size-3.5" />
+                        </Link>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 rounded-lg text-destructive hover:bg-destructive/5 hover:text-destructive"
+                        onClick={() => setDeleteTarget(land.id)}
+                        aria-label={`حذف ${land.title}`}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -182,14 +195,11 @@ export default function ConsumerLandsPage() {
         open={deleteTarget !== null}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         title="حذف زمین"
-        description={
-          activeRequestForLand
-            ? "این زمین در درخواست فعال استفاده شده. ابتدا درخواست را لغو کنید."
-            : "آیا از حذف این زمین مطمئن هستید؟"
-        }
+        description="آیا از حذف این زمین مطمئن هستید؟"
         confirmLabel="حذف"
         variant="destructive"
-        onConfirm={handleDelete}
+        loading={deleting}
+        onConfirm={() => void handleDelete()}
       />
     </PageContainer>
   );

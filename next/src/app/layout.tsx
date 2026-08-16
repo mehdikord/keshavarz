@@ -3,8 +3,7 @@ import "@fontsource-variable/vazirmatn/wght.css";
 
 import { ToastProvider } from "@/components/providers/toast-provider";
 import { AppProvider } from "@/components/providers/app-provider";
-import { AppShell } from "@/components/layout/app-shell";
-import { MobileShell } from "@/components/layout/mobile-shell";
+import { RootChrome } from "@/components/layout/root-chrome";
 
 import "./globals.css";
 
@@ -44,9 +43,7 @@ export default function RootLayout({
     <html lang="fa" dir="rtl">
       <body className="font-sans antialiased">
         <AppProvider>
-          <MobileShell>
-            <AppShell>{children}</AppShell>
-          </MobileShell>
+          <RootChrome>{children}</RootChrome>
           <ToastProvider />
         </AppProvider>
       </body>

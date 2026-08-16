@@ -17,9 +17,15 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { MOCK_OTP } from "@/lib/mock/constants";
+import {
+  fetchAppMe,
+  requestAppOtp,
+  resendAppOtp,
+  verifyAppOtp,
+} from "@/lib/api/app-auth";
+import { isApiClientError } from "@/lib/api/envelope";
 import { toast } from "@/lib/toast";
-import { phoneSchema } from "@/lib/validators/auth";
+import { otpSchema, phoneSchema } from "@/lib/validators/auth";
 import {
   formatPhoneDisplay,
   normalizePhone,
@@ -27,18 +33,19 @@ import {
 import { toPersianDigits } from "@/lib/utils/format";
 import { useAuthStore } from "@/stores/auth-store";
 
-const OTP_DURATION_SECONDS = 120;
+/** Matches OTP_POLICY.resendCooldownSeconds; overridden by Retry-After when present. */
+const DEFAULT_RESEND_COOLDOWN_SECONDS = 60;
 
 function AuthPageContent() {
   const router = useRouter();
-  const login = useAuthStore((state) => state.login);
+  const setSessionFromMe = useAuthStore((state) => state.setSessionFromMe);
 
   const [step, setStep] = useState<"phone" | "otp">("phone");
   const [phoneInput, setPhoneInput] = useState("");
   const [phone, setPhone] = useState("");
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [otp, setOtp] = useState("");
-  const [secondsLeft, setSecondsLeft] = useState(OTP_DURATION_SECONDS);
+  const [secondsLeft, setSecondsLeft] = useState(DEFAULT_RESEND_COOLDOWN_SECONDS);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -51,7 +58,15 @@ function AuthPageContent() {
     return () => window.clearInterval(timer);
   }, [step, secondsLeft]);
 
-  const handlePhoneSubmit = (event: React.FormEvent) => {
+  const applyCooldown = (retryAfterSeconds?: number) => {
+    setSecondsLeft(
+      retryAfterSeconds && retryAfterSeconds > 0
+        ? retryAfterSeconds
+        : DEFAULT_RESEND_COOLDOWN_SECONDS,
+    );
+  };
+
+  const handlePhoneSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     const normalized = normalizePhone(phoneInput);
     const result = phoneSchema.safeParse(normalized);
@@ -62,29 +77,78 @@ function AuthPageContent() {
     }
 
     setPhoneError(null);
-    setPhone(result.data);
-    setStep("otp");
-    setOtp("");
-    setSecondsLeft(OTP_DURATION_SECONDS);
+    setSubmitting(true);
+
+    try {
+      const response = await requestAppOtp({ phone: result.data });
+      setPhone(result.data);
+      setStep("otp");
+      setOtp("");
+      applyCooldown();
+      toast.success("درخواست ارسال شد", response.data.message);
+    } catch (cause: unknown) {
+      if (isApiClientError(cause) && cause.status === 429) {
+        setPhone(result.data);
+        setStep("otp");
+        setOtp("");
+        applyCooldown(cause.retryAfterSeconds);
+        toast.error(cause.message);
+        return;
+      }
+      toast.error(
+        isApiClientError(cause)
+          ? cause.message
+          : "ارسال کد تأیید ناموفق بود.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleLogin = () => {
-    if (otp.length !== 5) {
-      toast.error("کد تأیید را کامل وارد کنید");
+  const handleResend = async () => {
+    if (secondsLeft > 0 || submitting) return;
+    setSubmitting(true);
+    try {
+      const response = await resendAppOtp({ phone });
+      applyCooldown();
+      toast.success("کد جدید درخواست شد", response.data.message);
+    } catch (cause: unknown) {
+      if (isApiClientError(cause) && cause.status === 429) {
+        applyCooldown(cause.retryAfterSeconds);
+      }
+      toast.error(
+        isApiClientError(cause)
+          ? cause.message
+          : "ارسال مجدد کد ناموفق بود.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleLogin = async () => {
+    const parsed = otpSchema.safeParse(otp);
+    if (!parsed.success) {
+      toast.error(parsed.error.issues[0]?.message ?? "کد تأیید را کامل وارد کنید");
       return;
     }
 
     setSubmitting(true);
-    const success = login(phone, otp);
-    setSubmitting(false);
-
-    if (!success) {
-      toast.error("کد تأیید نامعتبر است");
-      return;
+    try {
+      await verifyAppOtp({ code: parsed.data, phone, platform: "web" });
+      const me = await fetchAppMe();
+      setSessionFromMe(me);
+      toast.success("ورود موفق", "به کشاورز خوش آمدید");
+      router.replace("/");
+    } catch (cause: unknown) {
+      toast.error(
+        isApiClientError(cause)
+          ? cause.message
+          : "ورود ناموفق بود. دوباره تلاش کنید.",
+      );
+    } finally {
+      setSubmitting(false);
     }
-
-    toast.success("ورود موفق", "به کشاورز خوش آمدید");
-    router.replace("/");
   };
 
   const formatTimer = (seconds: number) => {
@@ -121,7 +185,7 @@ function AuthPageContent() {
 
         <CardContent className="space-y-5">
           {step === "phone" ? (
-            <form onSubmit={handlePhoneSubmit} className="space-y-4">
+            <form onSubmit={(event) => void handlePhoneSubmit(event)} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="phone">شماره موبایل</Label>
                 <Input
@@ -131,6 +195,7 @@ function AuthPageContent() {
                   className="h-12 rounded-xl text-left"
                   dir="ltr"
                   value={formatPhoneDisplay(phoneInput)}
+                  disabled={submitting}
                   onChange={(event) => {
                     setPhoneInput(normalizePhone(event.target.value));
                     setPhoneError(null);
@@ -140,20 +205,18 @@ function AuthPageContent() {
                   <p className="text-sm text-destructive">{phoneError}</p>
                 ) : null}
               </div>
-              <Button type="submit" className="h-12 w-full">
+              <Button type="submit" className="h-12 w-full" disabled={submitting}>
                 دریافت کد
               </Button>
             </form>
           ) : (
             <div className="space-y-5 animate-slide-up">
-              <OTPInput value={otp} onChange={setOtp} disabled={submitting} />
-
-              <div className="rounded-xl border border-dashed border-primary/25 bg-primary/5 px-3 py-2 text-center text-xs text-muted-foreground">
-                کد Mock:{" "}
-                <span className="font-semibold text-primary" dir="ltr">
-                  {MOCK_OTP}
-                </span>
-              </div>
+              <OTPInput
+                value={otp}
+                onChange={setOtp}
+                length={6}
+                disabled={submitting}
+              />
 
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>
@@ -164,8 +227,8 @@ function AuthPageContent() {
                 <button
                   type="button"
                   className="font-medium text-primary disabled:opacity-50"
-                  disabled={secondsLeft > 0}
-                  onClick={() => setSecondsLeft(OTP_DURATION_SECONDS)}
+                  disabled={secondsLeft > 0 || submitting}
+                  onClick={() => void handleResend()}
                 >
                   ارسال مجدد
                 </button>
@@ -184,7 +247,7 @@ function AuthPageContent() {
                 <Button
                   type="button"
                   className="h-12 flex-1"
-                  onClick={handleLogin}
+                  onClick={() => void handleLogin()}
                   disabled={submitting}
                 >
                   ورود

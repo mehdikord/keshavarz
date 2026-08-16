@@ -1,18 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useParams } from "next/navigation";
 import {
   CalendarDays,
   CheckCircle2,
   MapPin,
+  Phone,
+  ShieldAlert,
   UserRound,
 } from "lucide-react";
 
 import { PageContainer } from "@/components/layout/page-container";
 import { PageHeader } from "@/components/layout/page-header";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
-import { ContactPhoneDisplay } from "@/components/shared/contact-phone-display";
+import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import { MapPicker } from "@/components/shared/map-picker";
 import { PriceDisplay } from "@/components/shared/price-display";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -29,15 +31,17 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { getCategoryById, getServiceById } from "@/lib/mock/catalog";
+import {
+  cancelConsumerRequest,
+  completeConsumerRequest,
+  fetchConsumerRequest,
+  type AppConsumerRequestDetail,
+} from "@/lib/api/app-requests";
+import { isApiClientError } from "@/lib/api/envelope";
 import { toast } from "@/lib/toast";
 import { toPersianDigits } from "@/lib/utils/format";
-import {
-  getProviderDisplayName,
-} from "@/lib/utils/consumer-requests";
 import { useAuthStore } from "@/stores/auth-store";
-import { useConsumerStore } from "@/stores/consumer-store";
-import { useRequestStore } from "@/stores/request-store";
+import type { GeoLocation, RequestStatus } from "@/types";
 
 function formatDate(date: string): string {
   return new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
@@ -48,40 +52,152 @@ function formatDate(date: string): string {
   }).format(new Date(date));
 }
 
-const PROVIDER_STATUS_LABELS = {
+const PROVIDER_STATUS_LABELS: Record<string, string> = {
   sent: "در انتظار تأیید",
   rejected: "رد شده",
   accepted: "پذیرفته شده",
   removed: "حذف شده",
-} as const;
+};
+
+function landLocation(
+  land: AppConsumerRequestDetail["land"],
+): GeoLocation | null {
+  if (!land.latitude || !land.longitude) return null;
+  return {
+    lat: Number(land.latitude),
+    lng: Number(land.longitude),
+  };
+}
 
 export default function ConsumerRequestDetailPage() {
-  const router = useRouter();
   const params = useParams<{ id: string }>();
   const user = useAuthStore((state) => state.user);
-  const lands = useConsumerStore((state) => state.lands);
-  const request = useRequestStore((state) =>
-    state.getRequestById(params.id),
+  const [request, setRequest] = useState<AppConsumerRequestDetail | null>(
+    null,
   );
-  const requestProviders = useRequestStore((state) => state.requestProviders);
-  const cancelRequest = useRequestStore((state) => state.cancelRequest);
-  const completeRequest = useRequestStore((state) => state.completeRequest);
-
+  const [loading, setLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const land = useMemo(() => {
+  useEffect(() => {
+    if (!user) return;
+
+    const controller = new AbortController();
+
+    void fetchConsumerRequest(params.id, controller.signal)
+      .then((detail) => {
+        if (controller.signal.aborted) return;
+        setRequest(detail);
+      })
+      .catch((cause: unknown) => {
+        if (controller.signal.aborted) return;
+        setRequest(null);
+        if (!isApiClientError(cause) || cause.status !== 404) {
+          toast.error(
+            isApiClientError(cause)
+              ? cause.message
+              : "بارگذاری درخواست ناموفق بود",
+          );
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [params.id, user, reloadKey]);
+
+  const location = useMemo(
+    () => (request ? landLocation(request.land) : null),
+    [request],
+  );
+
+  const assignedProvider = useMemo(() => {
     if (!request) return null;
-    return lands.find((item) => item.id === request.landId);
-  }, [lands, request]);
+    return (
+      request.providers.find(
+        (item) =>
+          item.providerId === request.assignedProviderId ||
+          item.status === "accepted",
+      ) ?? null
+    );
+  }, [request]);
 
   const linkedProviders = useMemo(() => {
     if (!request) return [];
-    return requestProviders.filter((item) => item.requestId === request.id);
-  }, [request, requestProviders]);
+    return request.providers.filter((item) => item.status !== "removed");
+  }, [request]);
 
-  if (!user || !request || request.consumerId !== user.id) {
+  const refetchDetail = () => {
+    setLoading(true);
+    setReloadKey((key) => key + 1);
+  };
+
+  const handleCancel = async () => {
+    if (!request) return;
+
+    if (request.status === "in_progress" && cancelReason.trim().length < 3) {
+      toast.error("دلیل لغو را وارد کنید");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await cancelConsumerRequest(request.requestId, {
+        expectedVersion: request.version,
+        reason:
+          request.status === "in_progress"
+            ? cancelReason.trim()
+            : "لغو توسط خدمات‌گیرنده",
+      });
+      setCancelOpen(false);
+      setCancelReason("");
+      toast.success("درخواست لغو شد");
+      refetchDetail();
+    } catch (cause: unknown) {
+      toast.error(
+        isApiClientError(cause) ? cause.message : "لغو درخواست ناموفق بود",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleComplete = async () => {
+    if (!request) return;
+
+    setSubmitting(true);
+    try {
+      await completeConsumerRequest(request.requestId, {
+        expectedVersion: request.version,
+      });
+      setCompleteOpen(false);
+      toast.success("کار با موفقیت پایان یافت");
+      refetchDetail();
+    } catch (cause: unknown) {
+      toast.error(
+        isApiClientError(cause) ? cause.message : "تأیید پایان کار ناموفق بود",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!user) return null;
+
+  if (loading) {
+    return (
+      <PageContainer withDock>
+        <PageHeader title="جزئیات درخواست" backHref="/users/requests" />
+        <LoadingSpinner className="py-16" />
+      </PageContainer>
+    );
+  }
+
+  if (!request) {
     return (
       <PageContainer withDock>
         <PageHeader title="جزئیات درخواست" backHref="/users/requests" />
@@ -94,45 +210,19 @@ export default function ConsumerRequestDetailPage() {
     );
   }
 
-  const service = getServiceById(request.serviceId);
-  const category = service ? getCategoryById(service.categoryId) : null;
-
-  const handleCancel = () => {
-    if (request.status === "in_progress" && cancelReason.trim().length < 3) {
-      toast.error("دلیل لغو را وارد کنید");
-      return;
-    }
-
-    const error = cancelRequest(
-      request.id,
-      "consumer",
-      request.status === "in_progress" ? cancelReason.trim() : "لغو توسط خدمات‌گیرنده",
-    );
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-    setCancelOpen(false);
-    toast.success("درخواست لغو شد");
-    router.push("/users/requests");
-  };
-
-  const handleComplete = () => {
-    const error = completeRequest(request.id, user.id);
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-    setCompleteOpen(false);
-    toast.success("کار با موفقیت پایان یافت");
-    router.push("/users/requests");
-  };
+  const status = request.status as RequestStatus;
+  const areaSqm = request.land.areaSquareMeters
+    ? Number(request.land.areaSquareMeters)
+    : null;
+  const showPhone =
+    (status === "in_progress" || status === "completed") &&
+    assignedProvider?.phone;
 
   return (
     <PageContainer withDock>
       <PageHeader
         title="جزئیات درخواست"
-        description={service?.name}
+        description={request.serviceName}
         backHref="/users/requests"
       />
 
@@ -142,47 +232,75 @@ export default function ConsumerRequestDetailPage() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm text-muted-foreground">
-                  {category?.name}
+                  {request.serviceCategoryName}
                 </p>
-                <h2 className="text-lg font-bold">{service?.name}</h2>
+                <h2 className="text-lg font-bold">{request.serviceName}</h2>
               </div>
-              <StatusBadge status={request.status} />
+              <StatusBadge status={status} />
             </div>
 
             <div className="grid gap-3 text-sm">
               <div className="flex items-center gap-2 text-muted-foreground">
                 <MapPin className="size-4 text-accent" />
-                {land?.title ?? "زمین نامشخص"}
-                {land ? ` · ${toPersianDigits(land.areaSqm)} m²` : ""}
+                {request.land.title}
+                {areaSqm ? ` · ${toPersianDigits(areaSqm)} m²` : ""}
               </div>
               <div className="flex items-center gap-2 text-muted-foreground">
                 <CalendarDays className="size-4 text-accent" />
-                {request.scheduledDates.map((date) => formatDate(date)).join(" · ")}
+                {request.dates.map((date) => formatDate(date)).join(" · ")}
               </div>
-              {request.assignedProviderId ? (
+              {request.assignedProviderName ? (
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <UserRound className="size-4 text-accent" />
-                  {getProviderDisplayName(request.assignedProviderId)}
+                  {request.assignedProviderName}
                 </div>
               ) : null}
-              <ContactPhoneDisplay request={request} viewerRole="consumer" />
+              {showPhone ? (
+                <a
+                  href={`tel:${assignedProvider!.phone}`}
+                  dir="ltr"
+                  className="inline-flex items-center gap-2 rounded-xl bg-primary/10 px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/15"
+                >
+                  <Phone className="size-4 shrink-0" />
+                  {assignedProvider!.phone}
+                </a>
+              ) : status === "in_progress" || status === "completed" ? (
+                <div className="inline-flex items-center gap-2 rounded-xl border border-dashed border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                  <ShieldAlert className="size-4 shrink-0 text-accent" />
+                  شماره تماس در دسترس نیست
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-2 rounded-xl border border-dashed border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                  <ShieldAlert className="size-4 shrink-0 text-accent" />
+                  پس از قبول درخواست، شماره تماس نمایش داده می‌شود
+                </div>
+              )}
             </div>
 
             <div className="rounded-xl bg-muted/50 px-3 py-2">
               <p className="text-xs text-muted-foreground">قیمت</p>
               <PriceDisplay
-                amount={request.price > 0 ? request.price : 0}
+                amount={
+                  request.agreedPriceToman && request.agreedPriceToman > 0
+                    ? request.agreedPriceToman
+                    : 0
+                }
                 size="lg"
               />
+              {!request.agreedPriceToman || request.agreedPriceToman <= 0 ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  قیمت پس از قبول
+                </p>
+              ) : null}
             </div>
           </CardContent>
         </Card>
 
-        {land ? (
+        {location ? (
           <Card className="overflow-hidden border-border/70">
             <CardContent className="p-4">
               <p className="mb-3 text-sm font-semibold">موقعیت زمین</p>
-              <MapPicker value={land.location} interactive={false} />
+              <MapPicker value={location} interactive={false} />
             </CardContent>
           </Card>
         ) : null}
@@ -196,11 +314,9 @@ export default function ConsumerRequestDetailPage() {
                   key={item.providerId}
                   className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2.5"
                 >
-                  <span className="text-sm">
-                    {getProviderDisplayName(item.providerId)}
-                  </span>
+                  <span className="text-sm">{item.name}</span>
                   <Badge variant="outline">
-                    {PROVIDER_STATUS_LABELS[item.status]}
+                    {PROVIDER_STATUS_LABELS[item.status] ?? item.status}
                   </Badge>
                 </div>
               ))}
@@ -268,10 +384,18 @@ export default function ConsumerRequestDetailPage() {
             </div>
           ) : null}
           <DialogFooter className="gap-2 sm:justify-start">
-            <Button variant="outline" onClick={() => setCancelOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setCancelOpen(false)}
+              disabled={submitting}
+            >
               انصراف
             </Button>
-            <Button variant="destructive" onClick={handleCancel}>
+            <Button
+              variant="destructive"
+              onClick={() => void handleCancel()}
+              disabled={submitting}
+            >
               تأیید لغو
             </Button>
           </DialogFooter>
@@ -284,7 +408,8 @@ export default function ConsumerRequestDetailPage() {
         title="پایان کار"
         description="آیا کار انجام‌شده را تأیید می‌کنید؟ پس از تأیید، درخواست به وضعیت پایان‌یافته منتقل می‌شود."
         confirmLabel="تأیید پایان کار"
-        onConfirm={handleComplete}
+        loading={submitting}
+        onConfirm={() => void handleComplete()}
       />
     </PageContainer>
   );

@@ -32,6 +32,14 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-admin-sidebar: var(--admin-sidebar);
+  --color-admin-sidebar-foreground: var(--admin-sidebar-foreground);
+  --color-admin-sidebar-muted: var(--admin-sidebar-muted);
+  --color-admin-canvas: var(--admin-canvas);
+  --color-admin-panel: var(--admin-panel);
+  --color-admin-border: var(--admin-border);
+  --color-admin-row-hover: var(--admin-row-hover);
+  --color-admin-table-header: var(--admin-table-header);
   --font-sans: "Vazirmatn Variable", "Vazirmatn", ui-sans-serif, system-ui, sans-serif;
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -75,6 +83,22 @@
   --shadow-lg: 0 8px 24px rgba(45, 106, 79, 0.12);
   --shadow-dock: 0 -4px 20px rgba(45, 106, 79, 0.1);
   --shadow-shell: 0 0 60px rgba(45, 106, 79, 0.15);
+
+  /* Admin console surfaces (desktop data-dense) */
+  --admin-sidebar: #13261a;
+  --admin-sidebar-foreground: #e8f0e8;
+  --admin-sidebar-muted: #9bb09b;
+  --admin-sidebar-hover: rgba(255, 255, 255, 0.06);
+  --admin-sidebar-active: rgba(45, 106, 79, 0.45);
+  --admin-topbar: #ffffff;
+  --admin-canvas: #f3f5f2;
+  --admin-panel: #ffffff;
+  --admin-border: #dde3da;
+  --admin-row-hover: #f0f4ef;
+  --admin-table-header: #f7f9f6;
+  --admin-sidebar-width: 17.5rem;
+  --admin-sidebar-collapsed: 4.5rem;
+  --admin-topbar-height: 3.75rem;
 }
 
 @layer base {

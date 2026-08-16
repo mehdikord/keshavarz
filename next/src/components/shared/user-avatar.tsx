@@ -1,8 +1,9 @@
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 
 interface UserAvatarProps {
   name: string;
+  src?: string | null;
   className?: string;
   size?: "sm" | "md" | "lg";
 }
@@ -18,9 +19,15 @@ const sizeClasses = {
   lg: "size-12 text-base",
 };
 
-export function UserAvatar({ name, className, size = "md" }: UserAvatarProps) {
+export function UserAvatar({
+  name,
+  src,
+  className,
+  size = "md",
+}: UserAvatarProps) {
   return (
     <Avatar className={cn(sizeClasses[size], className)}>
+      {src ? <AvatarImage src={src} alt={name} /> : null}
       <AvatarFallback className="bg-primary/10 font-semibold text-primary">
         {getInitial(name)}
       </AvatarFallback>

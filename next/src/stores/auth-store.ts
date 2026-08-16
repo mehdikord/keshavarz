@@ -1,75 +1,123 @@
 "use client";
 
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
 
 import {
-  DEFAULT_DISPLAY_NAME,
-  MOCK_OTP,
-  STORAGE_KEYS,
-} from "@/lib/mock/constants";
-import { syncUserDataFromSeed } from "@/lib/mock/sync-user-data";
-import { findUserByPhone } from "@/lib/mock/users";
+  fetchAppMe,
+  logoutAllAppSessions,
+  logoutAppSession,
+  mapAppMeToUser,
+  patchAppMe,
+  type AppMe,
+} from "@/lib/api/app-auth";
+import { isApiClientError } from "@/lib/api/envelope";
+import { LEGACY_APP_STORAGE_KEYS } from "@/lib/app/legacy-storage-keys";
 import type { User } from "@/types";
+
+export type AppAuthStatus = "idle" | "loading" | "ready";
 
 interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
-  login: (phone: string, otp: string) => boolean;
-  logout: () => void;
-  updateDisplayName: (name: string) => void;
+  status: AppAuthStatus;
+  capabilities: AppMe["capabilities"] | null;
+  image: string | null;
+  bootstrap: () => Promise<void>;
+  setSessionFromMe: (me: AppMe) => void;
+  clearLocalSession: () => void;
+  logout: () => Promise<void>;
+  logoutAll: () => Promise<void>;
+  refreshMe: () => Promise<void>;
+  updateDisplayName: (name: string) => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set, get) => ({
-      user: null,
+function clearLegacyAuthStorage() {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(LEGACY_APP_STORAGE_KEYS.auth);
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+export const useAuthStore = create<AuthState>()((set, get) => ({
+  user: null,
+  isAuthenticated: false,
+  status: "idle",
+  capabilities: null,
+  image: null,
+
+  clearLocalSession: () => {
+    set({
+      capabilities: null,
+      image: null,
       isAuthenticated: false,
+      user: null,
+    });
+  },
 
-      login: (phone, otp) => {
-        if (otp !== MOCK_OTP) {
-          return false;
-        }
+  setSessionFromMe: (me) => {
+    set({
+      capabilities: me.capabilities,
+      image: me.image,
+      isAuthenticated: true,
+      status: "ready",
+      user: mapAppMeToUser(me),
+    });
+  },
 
-        const now = new Date().toISOString();
-        const existing = findUserByPhone(phone);
-        const user: User = existing ?? {
-          id: crypto.randomUUID(),
-          phone,
-          displayName: DEFAULT_DISPLAY_NAME,
-          createdAt: now,
-          updatedAt: now,
-        };
+  bootstrap: async () => {
+    clearLegacyAuthStorage();
+    set({ status: "loading" });
 
-        set({ user, isAuthenticated: true });
-        syncUserDataFromSeed(user.id);
-        return true;
-      },
+    try {
+      console.log("E2E-TRACE: bootstrap calling fetchAppMe");
+      const me = await fetchAppMe();
+      console.log("E2E-TRACE: fetchAppMe resolved");
+      get().setSessionFromMe(me);
+    } catch (cause: unknown) {
+      console.log("E2E-TRACE: fetchAppMe rejected", String(cause));
+      get().clearLocalSession();
+      set({ status: "ready" });
 
-      logout: () => {
-        set({ user: null, isAuthenticated: false });
-      },
+      if (
+        isApiClientError(cause) &&
+        (cause.status === 401 ||
+          cause.code === "AUTH_REQUIRED" ||
+          cause.code === "INVALID_SESSION")
+      ) {
+        return;
+      }
+      // Soft-fail bootstrap: treat as anonymous; UI can still open /auth.
+    }
+  },
 
-      updateDisplayName: (name) => {
-        const { user } = get();
-        if (!user) return;
+  refreshMe: async () => {
+    const me = await fetchAppMe();
+    get().setSessionFromMe(me);
+  },
 
-        set({
-          user: {
-            ...user,
-            displayName: name.trim(),
-            updatedAt: new Date().toISOString(),
-          },
-        });
-      },
-    }),
-    {
-      name: STORAGE_KEYS.auth,
-      storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({
-        user: state.user,
-        isAuthenticated: state.isAuthenticated,
-      }),
-    },
-  ),
-);
+  logout: async () => {
+    try {
+      await logoutAppSession();
+    } finally {
+      get().clearLocalSession();
+      set({ status: "ready" });
+    }
+  },
+
+  logoutAll: async () => {
+    try {
+      await logoutAllAppSessions();
+    } finally {
+      get().clearLocalSession();
+      set({ status: "ready" });
+    }
+  },
+
+  updateDisplayName: async (name) => {
+    const trimmed = name.trim();
+    const me = await patchAppMe({ name: trimmed });
+    get().setSessionFromMe(me);
+  },
+}));

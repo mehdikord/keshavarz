@@ -5,7 +5,7 @@ import { Crosshair, LoaderCircle, LocateFixed, MapPin } from "lucide-react";
 
 import { MeMapsMap } from "@/components/shared/memaps-map";
 import { Button } from "@/components/ui/button";
-import { DEFAULT_MAP_CENTER } from "@/lib/mock/constants";
+import { DEFAULT_MAP_CENTER } from "@/lib/maps/defaults";
 import {
   DEFAULT_MEMAPS_LAYER,
   MEMAPS_LAYERS,

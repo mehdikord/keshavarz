@@ -1,0 +1,17 @@
+import { fileURLToPath } from "node:url";
+
+import "dotenv/config";
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
+  },
+  test: {
+    environment: "node",
+    fileParallelism: false,
+    include: ["src/server/**/*.test.ts"],
+  },
+});

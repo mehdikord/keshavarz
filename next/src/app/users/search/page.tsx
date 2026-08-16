@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -18,6 +18,7 @@ import {
 
 import { PageContainer } from "@/components/layout/page-container";
 import { PageHeader } from "@/components/layout/page-header";
+import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import { PersianCalendar } from "@/components/shared/persian-calendar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,21 +31,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SERVICE_CATEGORIES } from "@/lib/mock/catalog";
-import { searchProviders } from "@/lib/search/search-providers";
+import { fetchAppCatalogTree } from "@/lib/api/app-catalog";
+import { fetchAppLands, mapAppLandToUi } from "@/lib/api/app-lands";
+import { createAppServiceSearch } from "@/lib/api/app-search";
+import { isApiClientError } from "@/lib/api/envelope";
 import { searchFormSchema } from "@/lib/validators/search";
 import { toast } from "@/lib/toast";
-import { findMatchingPendingRequest } from "@/lib/utils/consumer-requests";
 import { useAuthStore } from "@/stores/auth-store";
-import { useConsumerStore } from "@/stores/consumer-store";
-import { useRequestStore } from "@/stores/request-store";
+import type { Land } from "@/types";
 
 export default function ConsumerSearchPage() {
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
-  const lands = useConsumerStore((state) => state.lands);
-  const requests = useRequestStore((state) => state.requests);
-  const createFromSearch = useRequestStore((state) => state.createFromSearch);
+  const [lands, setLands] = useState<Land[]>([]);
+  const [catalog, setCatalog] = useState<
+    Awaited<ReturnType<typeof fetchAppCatalogTree>>
+  >([]);
+  const [loading, setLoading] = useState(true);
+  const [searching, setSearching] = useState(false);
 
   const [landId, setLandId] = useState("");
   const [categoryId, setCategoryId] = useState("");
@@ -53,17 +57,43 @@ export default function ConsumerSearchPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
 
-  const userLands = useMemo(
-    () => (user ? lands.filter((land) => land.userId === user.id) : []),
-    [lands, user],
-  );
+  useEffect(() => {
+    if (!user) return;
 
-  const selectedCategory = SERVICE_CATEGORIES.find(
-    (category) => category.id === categoryId,
+    const controller = new AbortController();
+
+    void Promise.all([
+      fetchAppLands({ limit: 50, signal: controller.signal }),
+      fetchAppCatalogTree(controller.signal),
+    ])
+      .then(([landsResult, catalogTree]) => {
+        if (controller.signal.aborted) return;
+        setLands(
+          landsResult.items.map((land) => mapAppLandToUi(land, user.id)),
+        );
+        setCatalog(catalogTree);
+      })
+      .catch((cause: unknown) => {
+        if (controller.signal.aborted) return;
+        toast.error(
+          isApiClientError(cause)
+            ? cause.message
+            : "بارگذاری اطلاعات جستجو ناموفق بود",
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [user]);
+
+  const selectedCategory = catalog.find(
+    (category) => category.categoryId === categoryId,
   );
-  const selectedLand = userLands.find((land) => land.id === landId);
+  const selectedLand = lands.find((land) => land.id === landId);
   const selectedService = selectedCategory?.services.find(
-    (service) => service.id === serviceId,
+    (service) => service.serviceId === serviceId,
   );
 
   const clearError = (field: string) => {
@@ -76,7 +106,7 @@ export default function ConsumerSearchPage() {
     });
   };
 
-  const handleSearch = () => {
+  const handleSearch = async () => {
     if (!user) return;
 
     const parsed = searchFormSchema.safeParse({
@@ -102,51 +132,41 @@ export default function ConsumerSearchPage() {
     }
 
     setErrors({});
+    setSearching(true);
 
-    const land = userLands.find((item) => item.id === parsed.data.landId);
-    if (!land) {
-      toast.error("زمین انتخاب‌شده یافت نشد");
-      return;
-    }
-
-    const results = searchProviders({
-      land,
-      serviceId: parsed.data.serviceId,
-      consumerId: user.id,
-    });
-
-    if (results.length === 0) {
-      toast.error(
-        "خدمات‌دهنده‌ای یافت نشد",
-        "در محدوده فعلی نتیجه‌ای وجود ندارد. خدمت یا زمین دیگری امتحان کنید.",
-      );
-      return;
-    }
-
-    const existing = findMatchingPendingRequest(
-      user.id,
-      parsed.data.landId,
-      parsed.data.serviceId,
-      parsed.data.scheduledDates,
-      requests,
-    );
-
-    const request =
-      existing ??
-      createFromSearch({
-        consumerId: user.id,
+    try {
+      const search = await createAppServiceSearch({
+        categoryId: parsed.data.categoryId,
+        dates: parsed.data.scheduledDates,
         landId: parsed.data.landId,
         serviceId: parsed.data.serviceId,
-        scheduledDates: parsed.data.scheduledDates,
-        providerIds: [],
       });
 
-    router.push(`/users/search/results?requestId=${request.id}`);
+      router.push(`/users/search/results?searchId=${search.searchId}`);
+    } catch (cause: unknown) {
+      toast.error(
+        isApiClientError(cause) ? cause.message : "جستجو ناموفق بود",
+        isApiClientError(cause) && cause.code === "NOT_FOUND"
+          ? "خدمات‌دهنده‌ای یافت نشد. خدمت یا زمین دیگری امتحان کنید."
+          : undefined,
+      );
+    } finally {
+      setSearching(false);
+    }
   };
 
   if (!user) return null;
 
-  if (userLands.length === 0) {
+  if (loading) {
+    return (
+      <PageContainer withDock>
+        <PageHeader title="جستجوی خدمات" backHref="/users/home" />
+        <LoadingSpinner className="py-16" />
+      </PageContainer>
+    );
+  }
+
+  if (lands.length === 0) {
     return (
       <PageContainer withDock>
         <PageHeader title="جستجوی خدمات" backHref="/users/home" />
@@ -196,51 +216,11 @@ export default function ConsumerSearchPage() {
               برایت پیدا کنیم.
             </p>
           </div>
-
-          <div className="mt-5 grid grid-cols-3 gap-2">
-            {[
-              ["۱", "انتخاب زمین"],
-              ["۲", "انتخاب خدمت"],
-              ["۳", "زمان انجام"],
-            ].map(([step, label]) => (
-              <div
-                key={step}
-                className="rounded-2xl border border-white/10 bg-black/10 px-2 py-2.5 text-center backdrop-blur-sm"
-              >
-                <span className="mx-auto flex size-6 items-center justify-center rounded-full bg-white/15 text-[11px] font-bold text-[#ffd39f]">
-                  {step}
-                </span>
-                <p className="mt-1.5 text-[10px] font-medium text-white/80">
-                  {label}
-                </p>
-              </div>
-            ))}
-          </div>
         </div>
       </section>
 
       <Card className="card-elevated mb-4 overflow-hidden rounded-[28px] border-primary/10 bg-surface shadow-[0_14px_34px_rgba(45,106,79,0.09)]">
-        <div className="flex items-center justify-between border-b border-border/60 bg-gradient-to-l from-primary/[0.07] via-accent/[0.04] to-transparent px-4 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex size-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_8px_18px_rgba(45,106,79,0.2)]">
-              <Search className="size-5" />
-            </div>
-            <div>
-              <p className="text-sm font-bold">مشخصات درخواست</p>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
-                سه مرحله کوتاه تا مشاهده خدمات‌دهندگان
-              </p>
-            </div>
-          </div>
-          <Badge
-            variant="outline"
-            className="rounded-full border-primary/15 bg-primary/[0.06] px-2.5 py-1 text-[10px] font-semibold text-primary"
-          >
-            کمتر از ۱ دقیقه
-          </Badge>
-        </div>
-
-        <CardContent className="space-y-4 p-4">
+        <CardContent className="space-y-4">
           <div className="rounded-2xl border border-border/70 bg-gradient-to-l from-primary/[0.035] to-transparent p-3.5 transition-colors focus-within:border-primary/30">
             <div className="mb-3 flex items-center gap-2.5">
               <span className="flex size-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -254,6 +234,7 @@ export default function ConsumerSearchPage() {
               </div>
             </div>
             <Select
+              dir="rtl"
               value={landId}
               onValueChange={(value) => {
                 setLandId(value);
@@ -266,9 +247,13 @@ export default function ConsumerSearchPage() {
               >
                 <SelectValue placeholder="یکی از زمین‌ها را انتخاب کنید" />
               </SelectTrigger>
-              <SelectContent className="rounded-xl">
-                {userLands.map((land) => (
-                  <SelectItem key={land.id} value={land.id} className="rounded-lg">
+              <SelectContent className="rounded-xl text-right" dir="rtl">
+                {lands.map((land) => (
+                  <SelectItem
+                    key={land.id}
+                    value={land.id}
+                    className="justify-start rounded-lg text-right"
+                  >
                     {land.title}
                   </SelectItem>
                 ))}
@@ -304,6 +289,7 @@ export default function ConsumerSearchPage() {
               <div className="relative">
                 <Tag className="pointer-events-none absolute right-3.5 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Select
+                  dir="rtl"
                   value={categoryId}
                   onValueChange={(value) => {
                     setCategoryId(value);
@@ -318,12 +304,12 @@ export default function ConsumerSearchPage() {
                   >
                     <SelectValue placeholder="انتخاب دسته‌بندی خدمت" />
                   </SelectTrigger>
-                  <SelectContent className="rounded-xl">
-                    {SERVICE_CATEGORIES.map((category) => (
+                  <SelectContent className="rounded-xl text-right" dir="rtl">
+                    {catalog.map((category) => (
                       <SelectItem
-                        key={category.id}
-                        value={category.id}
-                        className="rounded-lg"
+                        key={category.categoryId}
+                        value={category.categoryId}
+                        className="justify-start rounded-lg text-right"
                       >
                         {category.name}
                       </SelectItem>
@@ -335,6 +321,7 @@ export default function ConsumerSearchPage() {
               <div className="relative">
                 <Wrench className="pointer-events-none absolute right-3.5 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Select
+                  dir="rtl"
                   value={serviceId}
                   onValueChange={(value) => {
                     setServiceId(value);
@@ -354,12 +341,12 @@ export default function ConsumerSearchPage() {
                       }
                     />
                   </SelectTrigger>
-                  <SelectContent className="rounded-xl">
+                  <SelectContent className="rounded-xl text-right" dir="rtl">
                     {selectedCategory?.services.map((service) => (
                       <SelectItem
-                        key={service.id}
-                        value={service.id}
-                        className="rounded-lg"
+                        key={service.serviceId}
+                        value={service.serviceId}
+                        className="justify-start rounded-lg text-right"
                       >
                         {service.name}
                       </SelectItem>
@@ -489,10 +476,11 @@ export default function ConsumerSearchPage() {
           <Button
             type="button"
             className="h-13 w-full rounded-2xl bg-[linear-gradient(90deg,#e76f51_0%,#f4a261_100%)] text-sm font-bold text-white shadow-[0_10px_24px_rgba(231,111,81,0.24)] transition-all hover:-translate-y-0.5 hover:opacity-95 hover:shadow-[0_14px_28px_rgba(231,111,81,0.28)]"
-            onClick={handleSearch}
+            onClick={() => void handleSearch()}
+            disabled={searching}
           >
             <Search className="size-5" />
-            مشاهده خدمات‌دهندگان مناسب
+            {searching ? "در حال جستجو..." : "مشاهده خدمات‌دهندگان مناسب"}
           </Button>
           <p className="text-center text-[10px] leading-5 text-muted-foreground">
             نتایج بر اساس موقعیت زمین، نوع خدمت و دسترسی خدمات‌دهندگان نمایش

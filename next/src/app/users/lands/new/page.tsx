@@ -1,19 +1,43 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 import { LandForm } from "@/components/consumer-panel/land-form";
 import { PageContainer } from "@/components/layout/page-container";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
+import { createAppLand } from "@/lib/api/app-lands";
+import { isApiClientError } from "@/lib/api/envelope";
 import { toast } from "@/lib/toast";
+import type { LandFormValues } from "@/lib/validators/land";
 import { useAuthStore } from "@/stores/auth-store";
-import { useConsumerStore } from "@/stores/consumer-store";
 
 export default function NewLandPage() {
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
-  const addLand = useConsumerStore((state) => state.addLand);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (values: LandFormValues) => {
+    setSubmitting(true);
+    try {
+      await createAppLand({
+        areaSquareMeters: String(values.areaSqm),
+        latitude: String(values.location.lat),
+        longitude: String(values.location.lng),
+        title: values.title,
+        description: values.description ?? null,
+      });
+      toast.success("زمین با موفقیت ثبت شد");
+      router.push("/users/lands");
+    } catch (cause: unknown) {
+      toast.error(
+        isApiClientError(cause) ? cause.message : "ثبت زمین ناموفق بود",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (!user) return null;
 
@@ -29,11 +53,8 @@ export default function NewLandPage() {
         <CardContent className="pt-6">
           <LandForm
             submitLabel="ثبت زمین"
-            onSubmit={(values) => {
-              addLand(user.id, values);
-              toast.success("زمین با موفقیت ثبت شد");
-              router.push("/users/lands");
-            }}
+            isSubmitting={submitting}
+            onSubmit={(values) => void handleSubmit(values)}
           />
         </CardContent>
       </Card>

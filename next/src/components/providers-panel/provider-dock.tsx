@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   BarChart3,
   CreditCard,
@@ -9,18 +10,24 @@ import {
 } from "lucide-react";
 
 import { DockNav } from "@/components/layout/dock-nav";
-import { countNewProviderRequests } from "@/lib/utils/provider-requests";
-import { useAuthStore } from "@/stores/auth-store";
-import { useRequestStore } from "@/stores/request-store";
+import { fetchAppProviderDashboard } from "@/lib/api/app-provider";
 
 export function ProviderDock() {
-  const userId = useAuthStore((state) => state.user?.id);
-  const requests = useRequestStore((state) => state.requests);
-  const requestProviders = useRequestStore((state) => state.requestProviders);
+  const [newCount, setNewCount] = useState(0);
 
-  const newCount = userId
-    ? countNewProviderRequests(userId, requests, requestProviders)
-    : 0;
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetchAppProviderDashboard(controller.signal)
+      .then((dashboard) => {
+        if (!controller.signal.aborted) {
+          setNewCount(dashboard.counts.newRequests);
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setNewCount(0);
+      });
+    return () => controller.abort();
+  }, []);
 
   return (
     <DockNav

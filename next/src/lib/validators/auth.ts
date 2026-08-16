@@ -8,7 +8,7 @@ export const phoneSchema = z
 export const otpSchema = z
   .string()
   .trim()
-  .regex(/^\d{5}$/, "کد تأیید باید ۵ رقم باشد");
+  .regex(/^\d{6}$/, "کد تأیید باید ۶ رقم باشد");
 
 export const authFormSchema = z.object({
   phone: phoneSchema,

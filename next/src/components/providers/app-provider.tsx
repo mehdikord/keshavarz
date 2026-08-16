@@ -1,13 +1,20 @@
 "use client";
 
+import { usePathname } from "next/navigation";
+
 import { useInitializeApp } from "@/hooks/use-initialize-app";
 
 interface AppProviderProps {
   children: React.ReactNode;
 }
 
+function isAdminPath(pathname: string) {
+  return pathname === "/admins" || pathname.startsWith("/admins/");
+}
+
 export function AppProvider({ children }: AppProviderProps) {
-  const ready = useInitializeApp();
+  const pathname = usePathname();
+  const ready = useInitializeApp(!isAdminPath(pathname));
 
   if (!ready) {
     return (

@@ -1,0 +1,67 @@
+# CI — Frontend Real gates
+
+name: frontend-checks
+
+on:
+  push:
+    paths:
+      - "next/**"
+      - "docs/admin-tasks/**"
+      - "docs/openapi/**"
+      - "docs/api-tasks/**"
+  pull_request:
+    paths:
+      - "next/**"
+      - "docs/admin-tasks/**"
+      - "docs/openapi/**"
+      - "docs/api-tasks/**"
+
+defaults:
+  run:
+    working-directory: next
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: next/pnpm-lock.yaml
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Mock ban + list perf + load budget + frontend security
+        run: |
+          pnpm check:no-mock-imports
+          pnpm check:admin-list-perf
+          pnpm check:admin-load-budget
+          pnpm check:frontend-security
+          pnpm check:secret-scan
+      - name: API contracts + boundaries + prisma foundation
+        run: |
+          pnpm check:api-contracts
+          pnpm check:api-boundaries
+          pnpm check:prisma-foundation
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit
+      - name: Lint
+        run: pnpm lint
+      - name: Unit/integration API tests
+        run: pnpm test:api
+        env:
+          CI: "true"
+      - name: Production build
+        run: pnpm build
+        env:
+          # Build-time env stubs; runtime secrets come from deploy.
+          DATABASE_URL: "mysql://ci:ci@127.0.0.1:3306/keshavarz"
+          DIRECT_DATABASE_URL: "mysql://ci:ci@127.0.0.1:3306/keshavarz"
+          APP_ORIGIN: "http://127.0.0.1:3000"
+          ADMIN_ORIGIN: "http://127.0.0.1:3000"
+          TOKEN_HASH_SECRET: "ci-token-hash-secret-at-least-32-chars"
+          OTP_HASH_PEPPER: "ci-otp-hash-pepper-at-least-32-chars__"
