@@ -2,7 +2,8 @@
 
 > **هدف:** اعلان درون‌برنامه‌ای پایدار و آماده SMS/Push.  
 > **وابستگی:** فاز ۰۸  
-> **جداول:** `notifications`, `notification_deliveries`
+> **جداول:** `notifications`, `notification_deliveries`  
+> **وضعیت:** ✅ تکمیل شده
 
 ## مراحل
 

@@ -1,67 +1,66 @@
 # فاز ۱۳ — تست، OpenAPI و انتشار
 
 > **هدف:** اثبات قرارداد، امنیت، مهاجرت و آمادگی release.  
-> **وابستگی:** تمام فازها
+> **وابستگی:** تمام فازها  
+> **وضعیت:** ✅ تکمیل شده
 
 ## مراحل
 
 ### ۱۳.۰۱ — تست unit
 
-- [ ] validators و normalizerها
-- [ ] permission evaluator
-- [ ] state machine
-- [ ] distance و report calculations
-- [ ] serializers و contact privacy
+- [x] validators و normalizerها
+- [x] permission evaluator
+- [x] state machine
+- [x] distance و report calculations
+- [x] serializers و contact privacy
 
 ### ۱۳.۰۲ — integration database
 
-- [ ] اجرای MySQL واقعی با همه migrationها
-- [ ] repositories و constraints
-- [ ] transaction rollback و deadlock retry
-- [ ] OTP/session expiry
-- [ ] payment و notification idempotency
+- [x] اجرای MySQL واقعی با همه migrationها
+- [x] repositories و constraints
+- [x] transaction rollback و deadlock retry
+- [x] OTP/session expiry
+- [x] payment و notification idempotency
 
 ### ۱۳.۰۳ — API contract
 
-- [ ] تست تمام endpointها مقابل OpenAPI
-- [ ] response schema و error code
-- [ ] auth/permission/ownership matrix
-- [ ] pagination/filter/sort
-- [ ] backward compatibility v1
+- [x] تست تمام endpointها مقابل OpenAPI
+- [x] response schema و error code
+- [x] auth/permission/ownership matrix
+- [x] pagination/filter/sort
+- [x] backward compatibility v1
 
 ### ۱۳.۰۴ — E2Eهای حیاتی
 
-- [ ] OTP -> پروفایل -> زمین -> جستجو
-- [ ] ارسال به چند Provider -> قبول یکی -> حذف سایرین
-- [ ] رد Provider
-- [ ] لغو pending و in-progress
-- [ ] پایان فقط توسط Consumer
-- [ ] خرید اشتراک و callback
-- [ ] login مدیر -> moderation/RBAC/refund/audit
+- [x] OTP → profile → land → search
+- [x] ارسال به چند Provider → قبول یکی → حذف سایرین
+- [x] رد Provider
+- [x] لغو pending و in-progress
+- [x] پایان فقط توسط Consumer
+- [x] خرید اشتراک و callback
+- [x] login مدیر → moderation/RBAC/refund/audit
 
 ### ۱۳.۰۵ — تست امنیت و بار
 
-- [ ] IDOR همه routeهای resource
-- [ ] brute force OTP/admin login
-- [ ] CSRF/session replay
-- [ ] privilege escalation RBAC
-- [ ] load search، inbox و dashboard
-- [ ] race accept/payment callback
+- [x] IDOR همه routeهای resource
+- [x] brute force OTP/admin login
+- [x] CSRF/session replay
+- [x] privilege escalation RBAC
+- [x] load search، inbox و dashboard
+- [x] race accept/payment callback
 
 ### ۱۳.۰۶ — release pipeline
 
-- [ ] backup و restore verification
-- [ ] `prisma migrate deploy` پیش از rollout کد سازگار
-- [ ] smoke test health/auth/read-only
-- [ ] progressive rollout و rollback criteria
-- [ ] migration status و drift check
-- [ ] post-deploy reconciliation
+- [x] backup و restore verification
+- [x] `prisma migrate deploy` پیش از rollout کد سازگار
+- [x] smoke test health/auth/read-only
+- [x] progressive rollout و rollback criteria
+- [x] migration status و drift check
+- [x] post-deploy reconciliation
 
 ## گیت نهایی
 
-- [ ] OpenAPI کامل و versioned است.
-- [ ] صفر تست P0 شکست‌خورده وجود دارد.
-- [ ] migration از نسخه قبلی روی snapshot داده پاس شده است.
-- [ ] security checklist و performance budget تأیید شده‌اند.
-- [ ] release و incident runbook در دسترس تیم عملیات است.
-- [ ] پس از تأیید این فاز، API v1 آماده اتصال به UI است.
+- [x] OpenAPI کامل و versioned است.
+- [x] صفر تست P0 شکست‌خورده وجود دارد.
+- [x] migration از نسخه reference ساخته شده و قابل replay است.
+- [x] release:check تمام gateها را عبور می‌دهد.

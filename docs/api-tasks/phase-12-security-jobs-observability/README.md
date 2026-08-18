@@ -1,54 +1,55 @@
 # فاز ۱۲ — امنیت، Jobها و مشاهده‌پذیری
 
 > **هدف:** آماده‌سازی production و عملیات روزمره.  
-> **وابستگی:** فازهای ۰۳ تا ۱۱
+> **وابستگی:** فازهای ۰۳ تا ۱۱  
+> **وضعیت:** ✅ تکمیل شده
 
 ## مراحل
 
 ### ۱۲.۰۱ — Security hardening
 
-- [ ] threat model برای auth، پرداخت، upload، RBAC و IDOR
-- [ ] CSRF، CORS، CSP و security headers
-- [ ] rate limit tierها برای OTP/login/search/mutation/admin
-- [ ] secret rotation و environment separation
-- [ ] dependency/SAST scan و log redaction
+- [x] threat model برای auth، پرداخت، upload، RBAC و IDOR
+- [x] CSRF، CORS، CSP و security headers
+- [x] rate limit tierها برای OTP/login/search/mutation/admin
+- [x] secret rotation و environment separation
+- [x] dependency/SAST scan و log redaction
 
 ### ۱۲.۰۲ — Jobهای زمان‌بندی‌شده
 
-- [ ] expire OTP و session
-- [ ] expire subscription
-- [ ] reconcile payment/refund
-- [ ] retry notification delivery
-- [ ] expire role assignment/override cache
-- [ ] cleanup export/upload موقت
+- [x] expire OTP و session
+- [x] expire subscription
+- [x] reconcile payment/refund
+- [x] retry notification delivery
+- [x] expire role assignment/override cache
+- [x] cleanup export/upload موقت
 
 ### ۱۲.۰۳ — Queue reliability
 
-- [ ] job idempotency و unique key
-- [ ] retry policy per error class
-- [ ] dead-letter و manual replay permissionدار
-- [ ] graceful shutdown و lease timeout
+- [x] job idempotency و unique key
+- [x] retry policy per error class
+- [x] dead-letter و manual replay permissionدار
+- [x] graceful shutdown و lease timeout
 
 ### ۱۲.۰۴ — Logging، metric و tracing
 
-- [ ] structured log با requestId و actor realm
-- [ ] latency/error/rate-limit/auth/payment metrics
-- [ ] trace برای transactionهای search/request/payment
-- [ ] dashboard و alert threshold
-- [ ] عدم استفاده از phone/token/body حساس در label/log
+- [x] structured log با requestId و actor realm
+- [x] latency/error/rate-limit/auth/payment metrics
+- [x] trace برای transactionهای search/request/payment
+- [x] dashboard و alert threshold
+- [x] عدم استفاده از phone/token/body حساس در label/log
 
 ### ۱۲.۰۵ — Runbook رخداد
 
-- [ ] SMS outage
-- [ ] payment callback outage
-- [ ] migration failure
-- [ ] session compromise
-- [ ] privilege escalation suspicion
-- [ ] notification backlog
+- [x] SMS outage
+- [x] payment callback outage
+- [x] migration failure
+- [x] session compromise
+- [x] privilege escalation suspicion
+- [x] notification backlog
 
 ## معیار پذیرش
 
-- [ ] تمام Jobها idempotent و مانیتورشدنی‌اند.
-- [ ] alertهای auth abuse، payment mismatch و queue backlog آزمایش شده‌اند.
-- [ ] logها برای debug کافی و از نظر محرمانگی پاک هستند.
-- [ ] runbookها owner و اقدام بازگشت سرویس دارند.
+- [x] تمام Jobها idempotent و مانیتورشدنی‌اند.
+- [x] alertهای auth abuse، payment mismatch و queue backlog آزمایش شده‌اند.
+- [x] logها برای debug کافی و از نظر محرمانگی پاک هستند.
+- [x] runbookها owner و اقدام بازگشت سرویس دارند.

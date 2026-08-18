@@ -12,6 +12,7 @@ import { WeatherWidget } from "@/components/shared/weather-widget";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/lib/toast";
 import { useAuthStore } from "@/stores/auth-store";
+import { AuthGuard } from "@/components/shared/auth-guard";
 
 function PanelLink({
   href,
@@ -94,7 +95,7 @@ function PanelLink({
   );
 }
 
-export default function HomePage() {
+function HomePageContent() {
   const user = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 
@@ -182,5 +183,13 @@ export default function HomePage() {
       </section>
 
     </PageContainer>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <AuthGuard>
+      <HomePageContent />
+    </AuthGuard>
   );
 }
