@@ -18,7 +18,7 @@ import {
 } from "@/server/http";
 import { createPublicId } from "@/server/identifiers/ulid";
 import type { SmsQueue } from "@/server/integrations";
-import { HttpSmsQueue } from "@/server/integrations";
+import { ConsoleSmsQueue, HttpSmsQueue } from "@/server/integrations";
 import {
   isOtpResendCooldownActive,
   isSessionWithinRefreshWindow,
@@ -55,22 +55,36 @@ const GENERIC_OTP_RESPONSE = {
   message: "اگر شماره معتبر باشد، کد تأیید ارسال می‌شود.",
 } as const;
 
+const FIXED_DEV_OTP_CODE = "123456";
+
+function isProductionEnvironment(): boolean {
+  return getSecurityEnvironment().APP_ENV === "production";
+}
+
 function createOtpCode(): string {
+  if (!isProductionEnvironment()) {
+    return FIXED_DEV_OTP_CODE;
+  }
+
   const lowerBound = 10 ** (OTP_POLICY.digits - 1);
   return String(randomInt(lowerBound, 10 ** OTP_POLICY.digits));
 }
 
 function resolveSmsQueue(): SmsQueue {
-  const environment = getSecurityEnvironment();
-
-  if (!environment.SMS_QUEUE_URL || !environment.SMS_QUEUE_TOKEN) {
-    throw new Error("SMS queue is not configured.");
+  if (!isProductionEnvironment()) {
+    return new ConsoleSmsQueue();
   }
 
-  return new HttpSmsQueue(
-    environment.SMS_QUEUE_URL,
-    environment.SMS_QUEUE_TOKEN,
-  );
+  const environment = getSecurityEnvironment();
+
+  if (environment.SMS_QUEUE_URL && environment.SMS_QUEUE_TOKEN) {
+    return new HttpSmsQueue(
+      environment.SMS_QUEUE_URL,
+      environment.SMS_QUEUE_TOKEN,
+    );
+  }
+
+  throw new Error("SMS queue is not configured.");
 }
 
 function createSessionExpiry(now: Date): Date {

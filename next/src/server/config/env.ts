@@ -13,6 +13,9 @@ const DatabaseEnvironmentSchema = z.object({
 });
 
 const SecurityEnvironmentSchema = z.object({
+  APP_ENV: z.enum(["local", "development", "test", "staging", "production"], {
+    message: "APP_ENV باید یکی از مقادیر local, development, test, staging, production باشد.",
+  }),
   APP_ORIGIN: z.string().url("Origin اپ معتبر نیست."),
   ADMIN_ORIGIN: z.string().url("Origin مدیریت معتبر نیست."),
   OBJECT_STORAGE_GATEWAY_TOKEN: z.string().min(1).optional(),
@@ -48,6 +51,7 @@ export function getSecurityEnvironment(): z.infer<
   typeof SecurityEnvironmentSchema
 > {
   const result = SecurityEnvironmentSchema.safeParse({
+    APP_ENV: process.env.APP_ENV,
     APP_ORIGIN: process.env.APP_ORIGIN,
     ADMIN_ORIGIN: process.env.ADMIN_ORIGIN,
     OBJECT_STORAGE_GATEWAY_TOKEN:

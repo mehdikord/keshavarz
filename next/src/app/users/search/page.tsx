@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -36,6 +36,7 @@ import { fetchAppLands, mapAppLandToUi } from "@/lib/api/app-lands";
 import { createAppServiceSearch } from "@/lib/api/app-search";
 import { isApiClientError } from "@/lib/api/envelope";
 import { searchFormSchema } from "@/lib/validators/search";
+import { formatPersianIsoChip } from "@/lib/utils/jalali";
 import { toast } from "@/lib/toast";
 import { useAuthStore } from "@/stores/auth-store";
 import type { Land } from "@/types";
@@ -96,7 +97,7 @@ export default function ConsumerSearchPage() {
     (service) => service.serviceId === serviceId,
   );
 
-  const clearError = (field: string) => {
+  const clearError = useCallback((field: string) => {
     setErrors((current) => {
       if (!current[field]) return current;
 
@@ -104,7 +105,15 @@ export default function ConsumerSearchPage() {
       delete next[field];
       return next;
     });
-  };
+  }, []);
+
+  const handleDatesChange = useCallback(
+    (dates: string[]) => {
+      setScheduledDates(dates);
+      if (dates.length > 0) clearError("scheduledDates");
+    },
+    [clearError],
+  );
 
   const handleSearch = async () => {
     if (!user) return;
@@ -409,10 +418,7 @@ export default function ConsumerSearchPage() {
                     variant="secondary"
                     className="gap-1.5 rounded-full bg-primary/[0.07] px-3 py-1 text-[10px] font-medium text-primary"
                   >
-                    {new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
-                      month: "short",
-                      day: "numeric",
-                    }).format(new Date(date))}
+                    {formatPersianIsoChip(date)}
                     <button
                       type="button"
                       onClick={() =>
@@ -437,12 +443,7 @@ export default function ConsumerSearchPage() {
               >
                 <PersianCalendar
                   selectedDates={scheduledDates}
-                  onChange={(dates) => {
-                    setScheduledDates(dates);
-                    if (dates.length > 0) {
-                      clearError("scheduledDates");
-                    }
-                  }}
+                  onChange={handleDatesChange}
                 />
                 <Button
                   type="button"
