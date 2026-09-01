@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import type { DivIcon, Map as LeafletMap, Marker, TileLayer } from "leaflet";
 
 import { cn } from "@/lib/utils";
+import { DEFAULT_MAP_OVERVIEW_ZOOM } from "@/lib/maps/defaults";
 import {
   DEFAULT_MEMAPS_LAYER,
   MEMAPS_LAYERS,
@@ -62,9 +63,11 @@ export function MeMapsMap({
       const L = leafletModule.default;
       const initialCenter = initialCenterRef.current;
       const layerConfig = MEMAPS_LAYERS[initialLayerRef.current];
+      const hasSavedLocation = Boolean(initialValueRef.current);
+      const initialZoom = hasSavedLocation ? zoom : DEFAULT_MAP_OVERVIEW_ZOOM;
       const map = L.map(containerRef.current, {
         center: [initialCenter.lat, initialCenter.lng],
-        zoom,
+        zoom: initialZoom,
         zoomControl: false,
         attributionControl: true,
         dragging: interactive,
@@ -145,7 +148,8 @@ export function MeMapsMap({
     if (!map) return;
 
     const location = value ?? { lat: centerLat, lng: centerLng };
-    map.setView([location.lat, location.lng], map.getZoom(), { animate: true });
+    const targetZoom = value ? zoom : DEFAULT_MAP_OVERVIEW_ZOOM;
+    map.setView([location.lat, location.lng], targetZoom, { animate: true });
 
     if (!value) {
       markerRef.current?.remove();
@@ -177,7 +181,7 @@ export function MeMapsMap({
 
       markerRef.current = marker;
     });
-  }, [centerLat, centerLng, interactive, value]);
+  }, [centerLat, centerLng, interactive, value, zoom]);
 
   useEffect(() => {
     const map = mapRef.current;

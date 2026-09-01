@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   Check,
   ChevronDown,
   CircleDollarSign,
@@ -119,7 +120,7 @@ export default function ProviderServicesPage() {
         setProfile(nextProfile);
         setServices(nextServices);
         setCatalog(nextCatalog);
-        setWorkCenter(profileToWorkCenter(nextProfile) ?? DEFAULT_MAP_CENTER);
+        setWorkCenter(profileToWorkCenter(nextProfile));
         setWorkRadiusKm(nextProfile.workRadiusKm);
         setLoadState("ready");
       } catch (cause: unknown) {
@@ -302,7 +303,14 @@ export default function ProviderServicesPage() {
         description="محدوده کاری و خدمات قابل ارائه"
       />
 
-      <Card className="card-elevated mb-5 gap-0 overflow-hidden rounded-2xl border-primary/10 p-0 shadow-[0_8px_24px_rgba(45,106,79,0.08)]">
+      {!workAreaConfigured ? (
+        <div className="mb-4 flex items-center gap-2.5 rounded-2xl border border-amber-200/80 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 animate-fade-in">
+          <AlertTriangle className="size-4.5 shrink-0 text-amber-600" />
+          <span>موقعیت و محدوده کاری خود را ثبت کنید !</span>
+        </div>
+      ) : null}
+
+      <Card className="card-elevated mb-8 gap-0 overflow-hidden rounded-2xl border-primary/10 p-0 shadow-[0_8px_24px_rgba(45,106,79,0.08)]">
         <button
           type="button"
           onClick={() => setWorkAreaOpen((value) => !value)}
@@ -380,7 +388,7 @@ export default function ProviderServicesPage() {
         ) : null}
       </Card>
 
-      <section className="space-y-3.5">
+      <section className="space-y-5">
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5">
             <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-success/10 text-success">
@@ -434,16 +442,16 @@ export default function ProviderServicesPage() {
                 <Sparkles className="size-4" />
               </span>
               <div>
-                <p className="text-xs font-bold">افزودن خدمت جدید</p>
-                <p className="mt-0.5 text-[10px] text-muted-foreground">
+                <p className="text-sm font-bold">افزودن خدمت جدید</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   نوع خدمت و قیمت پیشنهادی را مشخص کنید
                 </p>
               </div>
             </div>
 
-            <CardContent className="space-y-3.5 border-t border-border/50 p-3.5">
+            <CardContent className="space-y-4 border-t border-border/50 p-4">
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">دسته‌بندی</Label>
+                <Label className="text-sm font-semibold">دسته‌بندی</Label>
                 <Select
                   dir="rtl"
                   value={categoryId}
@@ -452,7 +460,7 @@ export default function ProviderServicesPage() {
                     setServiceId("");
                   }}
                 >
-                  <SelectTrigger className="h-11 w-full rounded-xl bg-surface shadow-sm">
+                  <SelectTrigger className="h-12 w-full rounded-xl bg-surface shadow-sm">
                     <SelectValue placeholder="انتخاب دسته‌بندی خدمت" />
                   </SelectTrigger>
                   <SelectContent className="rounded-xl text-right" dir="rtl">
@@ -470,14 +478,14 @@ export default function ProviderServicesPage() {
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">خدمت</Label>
+                <Label className="text-sm font-semibold">خدمت</Label>
                 <Select
                   dir="rtl"
                   value={serviceId}
                   onValueChange={setServiceId}
                   disabled={!selectedCategory}
                 >
-                  <SelectTrigger className="h-11 w-full rounded-xl bg-surface shadow-sm disabled:bg-muted/40">
+                  <SelectTrigger className="h-12 w-full rounded-xl bg-surface shadow-sm disabled:bg-muted/40">
                     <SelectValue
                       placeholder={
                         selectedCategory
@@ -502,7 +510,7 @@ export default function ProviderServicesPage() {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="price" className="text-xs font-semibold">
+                <Label htmlFor="price" className="text-sm font-semibold">
                   قیمت پیشنهادی (تومان)
                 </Label>
                 <div className="relative">
@@ -512,7 +520,7 @@ export default function ProviderServicesPage() {
                     inputMode="numeric"
                     value={priceInput}
                     onChange={(event) => setPriceInput(event.target.value)}
-                    className="h-11 rounded-xl bg-surface pr-10 shadow-sm"
+                    className="h-12 rounded-xl bg-surface pr-10 shadow-sm"
                     placeholder="مثلاً ۵۰۰۰۰۰۰"
                   />
                 </div>
@@ -520,7 +528,7 @@ export default function ProviderServicesPage() {
 
               <Button
                 type="button"
-                className="h-11 w-full rounded-xl"
+                className="h-12 w-full rounded-xl"
                 onClick={() => void handleAddService()}
                 disabled={submitting}
               >
@@ -561,7 +569,7 @@ export default function ProviderServicesPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-2.5">
+          <div className="space-y-4">
             {services.map((service) => (
               <Card
                 key={service.providerServiceId}

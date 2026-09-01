@@ -155,18 +155,18 @@ function HomePageContent() {
           </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-3">
           <PanelLink
             href="/providers/home"
             icon={Tractor}
-            label="خدمات‌دهنده"
+            label="ارائه خدمات کشاورزی"
             description="مدیریت خدمات، درخواست‌ها و درآمد"
             variant="provider"
           />
           <PanelLink
             href="/users/home"
             icon={Search}
-            label="خدمات‌گیرنده"
+            label="دریافت خدمات کشاورزی"
             description="جستجو و پیگیری خدمات کشاورزی"
             variant="consumer"
           />

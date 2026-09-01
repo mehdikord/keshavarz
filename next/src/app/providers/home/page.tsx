@@ -223,16 +223,6 @@ export default function ProviderHomePage() {
         </Card>
       ) : null}
 
-      {dashboard?.warnings.length ? (
-        <Card className="mb-4 border-amber-200/80 bg-amber-50/60">
-          <CardContent className="space-y-1 p-4 text-sm text-amber-900">
-            {dashboard.warnings.map((warning) => (
-              <p key={warning}>{warning}</p>
-            ))}
-          </CardContent>
-        </Card>
-      ) : null}
-
       <div className="mb-5 grid grid-cols-2 gap-3 animate-slide-up">
         <StatCard
           label="درخواست جدید"

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sprout } from "lucide-react";
+import { Sparkles, Sprout, Tractor, Wheat } from "lucide-react";
 
 import { GuestGuard } from "@/components/shared/guest-guard";
 import { OTPInput } from "@/components/shared/otp-input";
@@ -161,14 +161,58 @@ function AuthPageContent() {
 
   return (
     <PageContainer className="flex flex-col">
-      <section className="gradient-hero hero-pattern -mx-4 -mt-4 mb-6 flex flex-col items-center rounded-b-3xl px-6 pb-8 pt-10 text-[#102f24] animate-slide-up">
-        <div className="mb-3 flex size-16 items-center justify-center rounded-2xl bg-white/15 backdrop-blur-sm">
-          <Sprout className="size-9" strokeWidth={1.75} />
+      <section className="relative -mx-4 -mt-4 mb-6 overflow-hidden rounded-b-3xl bg-[linear-gradient(145deg,#1f513d_0%,#2d6a4f_55%,#34785a_100%)] px-6 pb-10 pt-12 text-white shadow-[0_18px_38px_rgba(45,106,79,0.25)] animate-slide-up motion-reduce:animate-none">
+        <div
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_-10%,rgba(255,255,255,0.2),transparent_55%)]"
+          aria-hidden="true"
+        />
+        <div
+          className="pointer-events-none absolute -bottom-24 -left-14 size-52 rounded-full bg-secondary/25 blur-3xl"
+          aria-hidden="true"
+        />
+        <div
+          className="pointer-events-none absolute -right-16 -top-14 size-44 rounded-full bg-secondary/20 blur-3xl"
+          aria-hidden="true"
+        />
+
+        <Wheat
+          className="pointer-events-none absolute right-7 top-9 size-9 text-white/20"
+          strokeWidth={1.5}
+          aria-hidden="true"
+        />
+        <Sprout
+          className="pointer-events-none absolute bottom-9 left-8 size-8 text-white/15"
+          strokeWidth={1.5}
+          aria-hidden="true"
+        />
+        <Tractor
+          className="pointer-events-none absolute bottom-7 right-12 size-5 text-white/10"
+          strokeWidth={1.5}
+          aria-hidden="true"
+        />
+
+        <div className="relative flex flex-col items-center text-center">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-4 py-1.5 text-[13px] font-bold backdrop-blur-md animate-fade-in motion-reduce:animate-none">
+            <Sparkles className="size-3.5" aria-hidden="true" />
+            خوش آمدید
+          </span>
+
+          <div className="mt-5 flex items-center gap-3 animate-fade-in [animation-delay:100ms] motion-reduce:animate-none">
+            <span className="h-px w-8 bg-white/30" aria-hidden="true" />
+            <span className="flex size-14 items-center justify-center rounded-2xl bg-white/12 shadow-lg ring-1 ring-white/25 backdrop-blur-md">
+              <Sprout className="size-7" strokeWidth={1.75} aria-hidden="true" />
+            </span>
+            <span className="h-px w-8 bg-white/30" aria-hidden="true" />
+          </div>
+
+          <h1 className="mt-4 text-4xl font-extrabold leading-tight tracking-tight animate-fade-in [animation-delay:200ms] motion-reduce:animate-none">
+            کشاورز
+          </h1>
+
+          <p className="mt-3 max-w-[17rem] text-[15px] font-semibold leading-8 text-white/90 animate-fade-in [animation-delay:300ms] motion-reduce:animate-none">
+            همراه همیشگی کشاورزان در کاشت، داشت و برداشت
+          </p>
         </div>
-        <h1 className="text-2xl font-bold">کشاورز</h1>
-        <p className="mt-2 text-center text-sm font-medium text-[#183f31]">
-          ورود به پلتفرم خدمات کشاورزی
-        </p>
       </section>
 
       <Card className="card-elevated border-border/80 animate-fade-in">
