@@ -6,6 +6,7 @@ import {
   Camera,
   LoaderCircle,
   LogOut,
+  MapPin,
   Search,
   Trash2,
   Tractor,
@@ -20,12 +21,25 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   deleteAppMeImage,
   listAppSessions,
   revokeAppSession,
   uploadAppMeImage,
   type AppSession,
 } from "@/lib/api/app-auth";
+import {
+  fetchAppCities,
+  fetchAppProvinces,
+  type AppCity,
+  type AppProvince,
+} from "@/lib/api/app-location";
 import { isApiClientError } from "@/lib/api/envelope";
 import { toast } from "@/lib/toast";
 import { useAuthStore } from "@/stores/auth-store";
@@ -45,6 +59,7 @@ export default function ProfilePage() {
   const logout = useAuthStore((state) => state.logout);
   const logoutAll = useAuthStore((state) => state.logoutAll);
   const updateDisplayName = useAuthStore((state) => state.updateDisplayName);
+  const updateResidence = useAuthStore((state) => state.updateResidence);
   const refreshMe = useAuthStore((state) => state.refreshMe);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -55,6 +70,20 @@ export default function ProfilePage() {
   const [sessions, setSessions] = useState<AppSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [busySessionId, setBusySessionId] = useState<string | null>(null);
+
+  const [provinces, setProvinces] = useState<AppProvince[]>([]);
+  const [provincesLoading, setProvincesLoading] = useState(true);
+  const [cities, setCities] = useState<AppCity[]>([]);
+  const [citiesLoading, setCitiesLoading] = useState(
+    Boolean(user?.province?.provinceId),
+  );
+  const [selectedProvinceId, setSelectedProvinceId] = useState<string>(
+    user?.province?.provinceId ?? "",
+  );
+  const [selectedCityId, setSelectedCityId] = useState<string>(
+    user?.city?.cityId ?? "",
+  );
+  const [locationBusy, setLocationBusy] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -69,7 +98,7 @@ export default function ProfilePage() {
         toast.error(
           isApiClientError(cause)
             ? cause.message
-            : "بارگذاری نشست‌ها ناموفق بود.",
+            : "بارگذاری نشستها ناموفق بود.",
         );
       })
       .finally(() => {
@@ -81,6 +110,67 @@ export default function ProfilePage() {
       controller.abort();
     };
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let cancelled = false;
+
+    void fetchAppProvinces(controller.signal)
+      .then((items) => {
+        if (!cancelled) setProvinces(items);
+      })
+      .catch((cause: unknown) => {
+        if (cancelled || controller.signal.aborted) return;
+        toast.error(
+          isApiClientError(cause)
+            ? cause.message
+            : "بارگذاری استانها ناموفق بود.",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setProvincesLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedProvinceId) return;
+
+    const controller = new AbortController();
+    let cancelled = false;
+
+    void fetchAppCities(selectedProvinceId, controller.signal)
+      .then((items) => {
+        if (!cancelled) setCities(items);
+      })
+      .catch((cause: unknown) => {
+        if (cancelled || controller.signal.aborted) return;
+        toast.error(
+          isApiClientError(cause)
+            ? cause.message
+            : "بارگذاری شهرها ناموفق بود.",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setCitiesLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [selectedProvinceId]);
+
+  const handleProvinceChange = (provinceId: string) => {
+    setSelectedCityId("");
+    setCities([]);
+    setCitiesLoading(true);
+    setSelectedProvinceId(provinceId);
+  };
 
   if (!user) return null;
 
@@ -111,6 +201,29 @@ export default function ProfilePage() {
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveLocation = async () => {
+    if (
+      selectedProvinceId === (user.province?.provinceId ?? "") &&
+      selectedCityId === (user.city?.cityId ?? "")
+    ) {
+      return;
+    }
+
+    setLocationBusy(true);
+    try {
+      await updateResidence(selectedProvinceId, selectedCityId);
+      toast.success("استان و شهر به‌روزرسانی شدند");
+    } catch (cause: unknown) {
+      toast.error(
+        isApiClientError(cause)
+          ? cause.message
+          : "ذخیره استان و شهر ناموفق بود.",
+      );
+    } finally {
+      setLocationBusy(false);
     }
   };
 
@@ -276,9 +389,110 @@ export default function ProfilePage() {
 
       <Card className="card-elevated mb-4 border-border/80">
         <CardContent className="space-y-4 pt-6">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <MapPin className="size-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">استان و شهر</p>
+              <p className="text-xs text-muted-foreground">
+                محل سکونت شما برای نمایش در پروفایل
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="provinceId">استان</Label>
+              <Select
+                value={selectedProvinceId}
+                onValueChange={handleProvinceChange}
+                disabled={provincesLoading || locationBusy}
+              >
+                <SelectTrigger
+                  id="provinceId"
+                  className="h-11 w-full rounded-xl"
+                >
+                  <SelectValue placeholder="انتخاب استان" />
+                </SelectTrigger>
+                <SelectContent>
+                  {provincesLoading ? (
+                    <p className="px-2 py-1.5 text-sm text-muted-foreground">
+                      در حال بارگذاری…
+                    </p>
+                  ) : (
+                    provinces.map((province) => (
+                      <SelectItem
+                        key={province.provinceId}
+                        value={province.provinceId}
+                      >
+                        {province.name}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="cityId">شهر</Label>
+              <Select
+                value={selectedCityId}
+                onValueChange={(value) => setSelectedCityId(value)}
+                disabled={!selectedProvinceId || citiesLoading || locationBusy}
+              >
+                <SelectTrigger id="cityId" className="h-11 w-full rounded-xl">
+                  <SelectValue placeholder="ابتدا استان را انتخاب کنید" />
+                </SelectTrigger>
+                <SelectContent>
+                  {citiesLoading ? (
+                    <p className="px-2 py-1.5 text-sm text-muted-foreground">
+                      در حال بارگذاری…
+                    </p>
+                  ) : (
+                    cities.map((city) => (
+                      <SelectItem key={city.cityId} value={city.cityId}>
+                        {city.name}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {user.province && user.city ? (
+            <p className="rounded-xl bg-muted/60 px-3 py-2 text-sm text-muted-foreground">
+              استان: {user.province.name} — شهر: {user.city.name}
+            </p>
+          ) : null}
+
+          <Button
+            type="button"
+            className="h-11 w-full rounded-xl"
+            onClick={() => void handleSaveLocation()}
+            disabled={
+              locationBusy ||
+              !selectedProvinceId ||
+              !selectedCityId ||
+              citiesLoading
+            }
+          >
+            {locationBusy ? (
+              <LoaderCircle className="size-4 animate-spin" />
+            ) : (
+              <MapPin className="size-4" />
+            )}
+            ذخیره استان و شهر
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="card-elevated mb-4 border-border/80">
+        <CardContent className="space-y-4 pt-6">
           <div className="flex items-center justify-between gap-2">
             <div>
-              <p className="font-semibold">نشست‌های فعال</p>
+              <p className="font-semibold">نشستهای فعال</p>
               <p className="text-xs text-muted-foreground">
                 مدیریت دستگاه‌هایی که وارد حساب شده‌اند
               </p>

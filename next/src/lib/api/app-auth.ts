@@ -19,10 +19,25 @@ export const AppMeSchema = z
           .nullable(),
       })
       .strict(),
+    city: z
+      .object({
+        cityId: z.string().min(1),
+        name: z.string(),
+        provinceId: z.string().min(1),
+      })
+      .strict()
+      .nullable(),
     image: z.string().nullable(),
     locale: z.string(),
     name: z.string(),
     phone: z.string(),
+    province: z
+      .object({
+        name: z.string(),
+        provinceId: z.string().min(1),
+      })
+      .strict()
+      .nullable(),
     timezone: z.string(),
     userId: z.string().min(1),
   })
@@ -61,10 +76,12 @@ export type AppSession = z.infer<typeof AppSessionSchema>;
 export function mapAppMeToUser(me: AppMe): User {
   const now = new Date().toISOString();
   return {
+    city: me.city ?? null,
     createdAt: now,
     displayName: me.name.trim() || DEFAULT_DISPLAY_NAME,
     id: me.userId,
     phone: me.phone,
+    province: me.province ?? null,
     updatedAt: now,
   };
 }
@@ -124,8 +141,10 @@ export async function fetchAppMe(signal?: AbortSignal): Promise<AppMe> {
 }
 
 export async function patchAppMe(input: {
+  cityId?: string;
   locale?: string;
   name?: string;
+  provinceId?: string;
   timezone?: string;
 }): Promise<AppMe> {
   const result = await appApi.patch<unknown>("/me", input);

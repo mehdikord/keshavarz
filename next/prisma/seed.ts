@@ -1,6 +1,13 @@
 import "dotenv/config";
 
+import { resolve } from "node:path";
+
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
+
+import {
+  loadCitiesFromSql,
+  loadProvincesFromSql,
+} from "./geo-data";
 
 import { PrismaClient } from "../src/generated/prisma/client";
 
@@ -259,6 +266,62 @@ async function seedSettings(): Promise<void> {
   });
 }
 
+async function seedProvincesAndCities(): Promise<void> {
+  const provincesPath = resolve(process.cwd(), "../docs/data/provinces.sql");
+  const citiesPath = resolve(process.cwd(), "../docs/data/cities.sql");
+
+  const provinces = await loadProvincesFromSql(provincesPath);
+  const cities = await loadCitiesFromSql(citiesPath);
+
+  for (const province of provinces) {
+    await prisma.province.upsert({
+      where: { id: province.id },
+      update: {
+        name: province.name,
+        updatedAt: province.updatedAt,
+        deletedAt: null,
+      },
+      create: {
+        id: province.id,
+        name: province.name,
+        createdAt: province.createdAt,
+        updatedAt: province.updatedAt,
+      },
+    });
+  }
+
+  const cityIds = new Set(cities.map((city) => city.id));
+  for (const city of cities) {
+    await prisma.city.upsert({
+      where: { id: city.id },
+      update: {
+        name: city.name,
+        provinceId: city.provinceId,
+        updatedAt: city.updatedAt,
+        deletedAt: null,
+      },
+      create: {
+        id: city.id,
+        name: city.name,
+        provinceId: city.provinceId,
+        createdAt: city.createdAt,
+        updatedAt: city.updatedAt,
+      },
+    });
+  }
+
+  await prisma.city.deleteMany({
+    where: {
+      deletedAt: null,
+      id: { notIn: [...cityIds] },
+    },
+  });
+
+  console.info(
+    `استانها و شهرها بارگذاری شدند: ${provinces.length} استان، ${cities.length} شهر.`,
+  );
+}
+
 async function seedBootstrapAdmin(): Promise<void> {
   const phone = process.env.ADMIN_SEED_PHONE?.trim();
   const password = process.env.ADMIN_SEED_PASSWORD?.trim();
@@ -325,6 +388,7 @@ async function seedBootstrapAdmin(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  await seedProvincesAndCities();
   await seedPermissions();
   await seedCatalog();
   await seedSubscriptionPlans();

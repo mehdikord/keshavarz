@@ -39,13 +39,37 @@ export const OtpVerifySchema = z.object({
   platform: z.enum(["web", "pwa", "android", "ios", "unknown"]).default("pwa"),
 }).strict();
 
-export const ProfileUpdateSchema = z.object({
-  locale: z.string().min(2).max(10).optional(),
-  name: z.string().trim().min(2).max(120).optional(),
-  timezone: z.string().min(1).max(64).optional(),
-}).strict().refine((value) => Object.keys(value).length > 0, {
-  message: "حداقل یک فیلد قابل ویرایش لازم است.",
-});
+const OptionalBigIntId = z
+  .union([z.string().regex(/^\d+$/, "شناسه معتبر نیست."), z.coerce.bigint()])
+  .transform((value) => {
+    if (typeof value === "bigint") return value;
+    return BigInt(value);
+  })
+  .refine((value) => value > BigInt(0), "شناسه معتبر نیست.");
+
+export const ProfileUpdateSchema = z
+  .object({
+    cityId: OptionalBigIntId.optional(),
+    locale: z.string().min(2).max(10).optional(),
+    name: z.string().trim().min(2).max(120).optional(),
+    provinceId: OptionalBigIntId.optional(),
+    timezone: z.string().min(1).max(64).optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const hasProvince = value.provinceId !== undefined;
+    const hasCity = value.cityId !== undefined;
+    if (hasProvince !== hasCity) {
+      context.addIssue({
+        code: "custom",
+        message: "استان و شهر باید با هم انتخاب یا حذف شوند.",
+        path: ["provinceId"],
+      });
+    }
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "حداقل یک فیلد قابل ویرایش لازم است.",
+  });
 
 export const SessionParamsSchema = z.object({
   sessionId: z.string().regex(

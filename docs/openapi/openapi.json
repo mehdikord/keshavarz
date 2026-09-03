@@ -76,6 +76,10 @@
     {
       "name": "Admin Reports",
       "description": "گزارش و export مدیریت"
+    },
+    {
+      "name": "Location",
+      "description": "منابع مرجع مکان (استان و شهر)"
     }
   ],
   "paths": {
@@ -7376,6 +7380,102 @@
             "AdminSessionCookie": []
           }
         ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/app/v1/locations/provinces": {
+      "get": {
+        "operationId": "appLocationsProvincesGet",
+        "summary": "استانهای فعال برای پروفایل و فرمها",
+        "tags": [
+          "Location"
+        ],
+        "security": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "412": {
+            "$ref": "#/components/responses/PreconditionFailed"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/app/v1/locations/provinces/{provinceId}/cities": {
+      "parameters": [
+        {
+          "name": "provinceId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "appLocationsProvincesByProvinceIdCitiesGet",
+        "summary": "شهرهای یک استان برای select وابسته",
+        "tags": [
+          "Location"
+        ],
+        "security": [],
         "parameters": [],
         "responses": {
           "200": {

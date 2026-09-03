@@ -29,6 +29,10 @@ interface AuthState {
   logoutAll: () => Promise<void>;
   refreshMe: () => Promise<void>;
   updateDisplayName: (name: string) => Promise<void>;
+  updateResidence: (
+    provinceId: string,
+    cityId: string,
+  ) => Promise<void>;
 }
 
 function clearLegacyAuthStorage() {
@@ -118,6 +122,11 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   updateDisplayName: async (name) => {
     const trimmed = name.trim();
     const me = await patchAppMe({ name: trimmed });
+    get().setSessionFromMe(me);
+  },
+
+  updateResidence: async (provinceId, cityId) => {
+    const me = await patchAppMe({ provinceId, cityId });
     get().setSessionFromMe(me);
   },
 }));

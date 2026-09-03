@@ -24,4 +24,23 @@ describe("app auth schemas", () => {
       ProfileUpdateSchema.parse({ name: "کاربر", phone: "09121234567" }),
     ).toThrow();
   });
+
+  it("parses province and city ids as bigint when both are provided", () => {
+    const result = ProfileUpdateSchema.parse({
+      provinceId: "8",
+      cityId: "100",
+    });
+    expect(result.provinceId).toBe(BigInt(8));
+    expect(result.cityId).toBe(BigInt(100));
+  });
+
+  it("rejects province without city", () => {
+    expect(() =>
+      ProfileUpdateSchema.parse({ provinceId: "8" }),
+    ).toThrow();
+  });
+
+  it("rejects city without province", () => {
+    expect(() => ProfileUpdateSchema.parse({ cityId: "100" })).toThrow();
+  });
 });

@@ -5,6 +5,7 @@
 | API Domain / Tag | Tables / Views | Realm |
 |---|---|---|
 | App Auth | `users`, `user_otp_codes`, `user_sessions` | App |
+| Location | `provinces`, `cities` | App read-only reference data |
 | Admin Auth | `admins`, `admin_sessions`, `admin_password_reset_tokens` | Admin |
 | Admin Management / RBAC | `admin_roles`, `admin_permissions`, `admin_role_assignments`, `admin_role_permissions`, `admin_permission_overrides` | Admin |
 | Admin Management / Audit | `admin_audit_logs` | Admin |
@@ -19,10 +20,11 @@
 | Admin Management / Moderation | `user_moderation_actions` | Admin |
 | App System / Admin Management | `system_settings` | App public allow-list + Admin |
 | Reports | `v_completed_service_request_financials` | App + Admin read-only |
+| Jobs | `job_runs` | Worker internal |
 
 ## قواعد ثابت
 
-- هر 31 جدول یک مالک اصلی دارد؛ Viewها فقط read-only هستند.
+- هر 34 جدول یک مالک اصلی دارد؛ Viewها فقط read-only هستند.
 - Auth tableها فقط از Auth Repository همان realm مصرف می‌شوند.
 - Request Service مالک انحصاری transition و relationهای چرخه درخواست است.
 - Payment callback فقط Payment Service را فراخوانی می‌کند.

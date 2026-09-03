@@ -39,6 +39,8 @@ CREATE TABLE IF NOT EXISTS users (
     image VARCHAR(512) NULL,
     locale VARCHAR(10) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'fa-IR',
     timezone VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'Asia/Tehran',
+    province_id BIGINT UNSIGNED NULL,
+    city_id BIGINT UNSIGNED NULL,
     is_active TINYINT(1) UNSIGNED NOT NULL DEFAULT 1,
     phone_verified_at DATETIME(3) NULL,
     last_login_at DATETIME(3) NULL,
@@ -52,7 +54,11 @@ CREATE TABLE IF NOT EXISTS users (
     UNIQUE KEY uq_users_public_id (public_id),
     UNIQUE KEY uq_users_phone (phone),
     KEY idx_users_active_deleted (is_active, deleted_at),
-    KEY idx_users_created_at (created_at)
+    KEY idx_users_created_at (created_at),
+    KEY idx_users_province (province_id),
+    KEY idx_users_city (city_id),
+    CONSTRAINT users_province_id_foreign FOREIGN KEY (province_id) REFERENCES provinces(id) ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT users_city_id_foreign FOREIGN KEY (city_id) REFERENCES cities(id) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS user_otp_codes (
@@ -881,6 +887,50 @@ INNER JOIN provider_profiles pp ON pp.id = sr.assigned_provider_profile_id
 WHERE sr.status = 'completed'
   AND sr.completed_at IS NOT NULL
   AND sr.agreed_price_toman IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS job_runs (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    job_name VARCHAR(80) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    run_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    lease_owner VARCHAR(80) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    status VARCHAR(20) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    started_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    lease_expires_at DATETIME(3) NOT NULL,
+    completed_at DATETIME(3) NULL,
+    duration_ms BIGINT UNSIGNED NULL,
+    error_message VARCHAR(2000) NULL,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_job_runs_name (job_name),
+    KEY idx_job_runs_lease (status, lease_expires_at),
+    KEY idx_job_runs_started (started_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS provinces (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    name VARCHAR(225) NOT NULL,
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    deleted_at DATETIME(3) NULL,
+
+    PRIMARY KEY (id),
+    KEY idx_provinces_name (name),
+    KEY idx_provinces_deleted (deleted_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS cities (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    province_id BIGINT UNSIGNED NOT NULL,
+    name VARCHAR(225) NOT NULL,
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    deleted_at DATETIME(3) NULL,
+
+    PRIMARY KEY (id),
+    KEY idx_cities_province_name (province_id, name),
+    KEY idx_cities_deleted (deleted_at),
+    CONSTRAINT cities_province_id_foreign FOREIGN KEY (province_id) REFERENCES provinces(id) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;
 

@@ -165,9 +165,9 @@ const viewCount = [
   ...databaseSchema.matchAll(/^CREATE (?:OR REPLACE )?VIEW /gm),
 ].length;
 
-if (tableCount !== 31 || viewCount !== 2) {
+if (tableCount !== 34 || viewCount !== 2) {
   fail(
-    `expected 31 tables and 2 views, found ${tableCount} tables and ${viewCount} views`,
+    `expected 34 tables and 2 views, found ${tableCount} tables and ${viewCount} views`,
   );
 }
 

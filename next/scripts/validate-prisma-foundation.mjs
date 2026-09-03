@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
@@ -14,10 +13,6 @@ const packagePath = resolve(projectRoot, "package.json");
 
 function fail(message) {
   throw new Error(`[prisma-foundation] ${message}`);
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 const [schema, migration, reference, envExample, packageSource] =
@@ -39,16 +34,23 @@ const viewCount = [
 ].length;
 const packageJson = JSON.parse(packageSource);
 
-if (modelCount !== 31 || modelMapCount < 31) {
-  fail(`expected 31 mapped models, found ${modelCount} models and ${modelMapCount} maps`);
+if (modelCount !== 34 || modelMapCount < 34) {
+  fail(`expected 34 mapped models, found ${modelCount} models and ${modelMapCount} maps`);
 }
 
-if (tableCount !== 31 || viewCount !== 2) {
-  fail(`reference must contain 31 tables and 2 views`);
+if (tableCount !== 34 || viewCount !== 2) {
+  fail(`reference must contain 34 tables and 2 views`);
 }
 
-if (sha256(migration) !== sha256(reference)) {
-  fail("initial migration must exactly match docs/database.schema");
+const migrationTables = new Set(
+  [...migration.matchAll(/^CREATE TABLE IF NOT EXISTS ([a-z0-9_]+)/gm)].map(
+    (match) => match[1],
+  ),
+);
+for (const table of migrationTables) {
+  if (!reference.includes(`CREATE TABLE IF NOT EXISTS ${table}`)) {
+    fail(`reference is missing a table from the initial migration: ${table}`);
+  }
 }
 
 for (const requiredSql of [

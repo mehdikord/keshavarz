@@ -25,11 +25,18 @@
 | `DELETE` | `/api/app/v1/auth/session` | خروج از نشست جاری |
 | `DELETE` | `/api/app/v1/auth/sessions` | خروج از همه دستگاه‌ها |
 | `GET` | `/api/app/v1/me` | اطلاعات کاربر جاری و قابلیت‌های Consumer/Provider |
-| `PATCH` | `/api/app/v1/me` | نام، locale و timezone |
+| `PATCH` | `/api/app/v1/me` | نام، locale، timezone و استان/شهر سکونت |
 | `PUT` | `/api/app/v1/me/image` | ثبت/جایگزینی تصویر با upload امن |
 | `DELETE` | `/api/app/v1/me/image` | حذف تصویر |
 | `GET` | `/api/app/v1/me/sessions` | فهرست نشست‌های کاربر |
 | `DELETE` | `/api/app/v1/me/sessions/{sessionId}` | revoke دستگاه دیگر |
+
+## API اپلیکیشن — مکان (استان و شهر)
+
+| Method | Route | کاربرد |
+|---|---|---|
+| `GET` | `/api/app/v1/locations/provinces` | استان‌های فعال برای پروفایل و فرم‌ها |
+| `GET` | `/api/app/v1/locations/provinces/{provinceId}/cities` | شهرهای یک استان برای select وابسته |
 
 ## API اپلیکیشن — کاتالوگ و زمین
 

@@ -5,6 +5,7 @@ import { API_ERROR_CODES, ApiError } from "@/server/errors";
 import { createPublicId } from "@/server/identifiers/ulid";
 import type { ObjectStorage } from "@/server/integrations";
 import { HttpObjectStorage } from "@/server/integrations";
+import { findActiveCityById, findActiveProvinceById } from "@/server/modules/location/location.repository";
 import {
   getCurrentUserProfile,
   replaceCurrentUserImage,
@@ -76,9 +77,67 @@ export async function requireCurrentUserProfile(userId: bigint) {
 
 export async function patchCurrentUserProfile(
   userId: bigint,
-  data: { locale?: string; name?: string; timezone?: string },
+  data: {
+    cityId?: bigint | null;
+    locale?: string;
+    name?: string;
+    provinceId?: bigint | null;
+    timezone?: string;
+  },
 ) {
-  return updateCurrentUserProfile(userId, data);
+  const mutation: typeof data = { ...data };
+
+  if (mutation.provinceId !== undefined || mutation.cityId !== undefined) {
+    const residence = await resolveResidence(
+      mutation.provinceId ?? null,
+      mutation.cityId ?? null,
+    );
+    mutation.provinceId = residence.provinceId;
+    mutation.cityId = residence.cityId;
+  }
+
+  return updateCurrentUserProfile(userId, mutation);
+}
+
+async function resolveResidence(
+  provinceId: bigint | null,
+  cityId: bigint | null,
+): Promise<{ cityId: bigint | null; provinceId: bigint | null }> {
+  if (provinceId === null && cityId === null) {
+    return { cityId: null, provinceId: null };
+  }
+
+  if (provinceId === null || cityId === null) {
+    throw new ApiError(
+      422,
+      API_ERROR_CODES.validationFailed,
+      "استان و شهر باید با هم انتخاب یا حذف شوند.",
+    );
+  }
+
+  const city = await findActiveCityById(cityId);
+  if (!city) {
+    throw new ApiError(422, API_ERROR_CODES.validationFailed, "شهر معتبر نیست.");
+  }
+
+  if (city.provinceId !== provinceId) {
+    throw new ApiError(
+      422,
+      API_ERROR_CODES.validationFailed,
+      "شهر انتخابی متعلق به استان انتخابشده نیست.",
+    );
+  }
+
+  const province = await findActiveProvinceById(provinceId);
+  if (!province) {
+    throw new ApiError(
+      422,
+      API_ERROR_CODES.validationFailed,
+      "استان معتبر نیست.",
+    );
+  }
+
+  return { provinceId, cityId };
 }
 
 export async function uploadCurrentUserImage(
