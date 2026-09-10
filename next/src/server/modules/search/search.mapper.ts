@@ -29,11 +29,13 @@ export function mapSearchProvider(provider: {
   previousStatus: "rejected" | "sent" | null;
   priceToman: bigint | number;
   pricingUnit: string;
+  providerImage: string | null;
   providerName: string | null;
   providerPublicId: string;
 }) {
   return {
     distanceKm: Number(provider.distanceKm.toFixed(2)),
+    image: provider.providerImage ?? null,
     name: provider.providerName,
     previousStatus: provider.previousStatus,
     priceToman: Number(provider.priceToman),

@@ -108,10 +108,14 @@ export function withApiHandler(
 
       logger.error("api.request.failed", {
         errorCode: error.code,
+        errorMessage:
+          caughtError instanceof Error ? caughtError.message : undefined,
         errorName:
           caughtError instanceof Error
             ? caughtError.name
             : "UnknownError",
+        errorStack:
+          caughtError instanceof Error ? caughtError.stack : undefined,
         latencyMs,
         method: request.method,
         realm,

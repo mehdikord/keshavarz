@@ -56,6 +56,7 @@ export async function createServiceRequestWithProviders(
       priceToman: bigint;
     }>;
     publicId: string;
+    searchPublicId?: string | null;
     serviceCategoryName: string;
     serviceId: bigint;
     serviceName: string;
@@ -72,6 +73,7 @@ export async function createServiceRequestWithProviders(
       landLongitudeSnapshot: input.land.longitude.toString(),
       landTitleSnapshot: input.land.title,
       publicId: input.publicId,
+      searchPublicId: input.searchPublicId ?? null,
       serviceCategoryNameSnapshot: input.serviceCategoryName,
       serviceId: input.serviceId,
       serviceNameSnapshot: input.serviceName,
@@ -184,6 +186,7 @@ export async function listConsumerRequests(input: {
       id: true,
       landTitleSnapshot: true,
       publicId: true,
+      searchPublicId: true,
       serviceNameSnapshot: true,
       status: true,
       version: true,
@@ -707,6 +710,7 @@ export async function listAdminServiceRequests(input: {
       id: true,
       landTitleSnapshot: true,
       publicId: true,
+      searchPublicId: true,
       serviceNameSnapshot: true,
       status: true,
       version: true,

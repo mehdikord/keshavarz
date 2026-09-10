@@ -31,6 +31,7 @@ export const AppConsumerRequestSummarySchema = z
     createdAt: z.string(),
     landTitle: z.string(),
     requestId: z.string(),
+    searchId: z.string().nullable().optional(),
     serviceName: z.string(),
     status: z.string(),
     version: z.number().int(),

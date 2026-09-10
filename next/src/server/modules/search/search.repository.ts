@@ -59,6 +59,7 @@ export interface SearchableProviderRow {
   distanceKm: number;
   priceToman: bigint;
   pricingUnit: string;
+  providerImage: string | null;
   providerName: string | null;
   providerProfileId: bigint;
   providerPublicId: string;
@@ -129,6 +130,7 @@ export async function searchEligibleProviders(input: {
       distance_km: number | string;
       price_toman: bigint;
       pricing_unit: string;
+      provider_image: string | null;
       provider_name: string | null;
       provider_profile_id: bigint;
       provider_public_id: string;
@@ -146,6 +148,7 @@ export async function searchEligibleProviders(input: {
         v.price_toman,
         v.pricing_unit,
         v.work_radius_km,
+        u.image AS provider_image,
         (
           6371 * ACOS(
             LEAST(
@@ -160,6 +163,7 @@ export async function searchEligibleProviders(input: {
           )
         ) AS distance_km
       FROM v_searchable_provider_services v
+      INNER JOIN users u ON u.id = v.provider_user_id
       WHERE v.service_id = ${input.serviceId}
         AND v.provider_user_id <> ${input.consumerUserId}
     ) matched
@@ -173,6 +177,7 @@ export async function searchEligibleProviders(input: {
     distanceKm: Number(row.distance_km),
     priceToman: row.price_toman,
     pricingUnit: row.pricing_unit,
+    providerImage: row.provider_image ?? null,
     providerName: row.provider_name,
     providerProfileId: row.provider_profile_id,
     providerPublicId: row.provider_public_id,
@@ -196,6 +201,7 @@ export async function findEligibleProviderMatch(input: {
       distance_km: number | string;
       price_toman: bigint;
       pricing_unit: string;
+      provider_image: string | null;
       provider_name: string | null;
       provider_profile_id: bigint;
       provider_public_id: string;
@@ -213,6 +219,7 @@ export async function findEligibleProviderMatch(input: {
         v.price_toman,
         v.pricing_unit,
         v.work_radius_km,
+        u.image AS provider_image,
         (
           6371 * ACOS(
             LEAST(
@@ -227,6 +234,7 @@ export async function findEligibleProviderMatch(input: {
           )
         ) AS distance_km
       FROM v_searchable_provider_services v
+      INNER JOIN users u ON u.id = v.provider_user_id
       WHERE v.service_id = ${input.serviceId}
         AND v.provider_user_id <> ${input.consumerUserId}
         AND v.provider_public_id = ${input.providerPublicId}
@@ -244,6 +252,7 @@ export async function findEligibleProviderMatch(input: {
     distanceKm: Number(row.distance_km),
     priceToman: row.price_toman,
     pricingUnit: row.pricing_unit,
+    providerImage: row.provider_image ?? null,
     providerName: row.provider_name,
     providerProfileId: row.provider_profile_id,
     providerPublicId: row.provider_public_id,

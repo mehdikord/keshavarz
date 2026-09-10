@@ -47,10 +47,11 @@ import {
   type AppProviderProfile,
   type AppProviderService,
 } from "@/lib/api/app-provider";
+import { usePriceInput } from "@/hooks/use-price-input";
 import { DEFAULT_MAP_CENTER } from "@/lib/maps/defaults";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
-import { toLatinDigits, toPersianDigits } from "@/lib/utils/format";
+import { toPersianDigits } from "@/lib/utils/format";
 import type { GeoLocation } from "@/types";
 
 type LoadState = "loading" | "ready" | "error";
@@ -88,15 +89,31 @@ export default function ProviderServicesPage() {
   const [workRadiusKm, setWorkRadiusKm] = useState(50);
   const [savingWorkArea, setSavingWorkArea] = useState(false);
 
-  const [workAreaOpen, setWorkAreaOpen] = useState(true);
+  const [workAreaOpen, setWorkAreaOpen] = useState(false);
   const [isAddFormOpen, setIsAddFormOpen] = useState(false);
   const [categoryId, setCategoryId] = useState("");
   const [serviceId, setServiceId] = useState("");
-  const [priceInput, setPriceInput] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [editTarget, setEditTarget] = useState<string | null>(null);
-  const [editPrice, setEditPrice] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const {
+    rawValue: priceInput,
+    displayValue: priceDisplay,
+    persianWords: priceWords,
+    handleChange: handlePriceChange,
+    handleBlur: handlePriceBlur,
+    reset: resetPrice,
+  } = usePriceInput("");
+  const {
+    rawValue: editPriceRaw,
+    displayValue: editPriceDisplay,
+    persianWords: editPriceWords,
+    handleChange: handleEditPriceChange,
+    handleBlur: handleEditPriceBlur,
+    setRawValue: setEditPriceRaw,
+    reset: resetEditPrice,
+  } = usePriceInput("");
 
   const reloadServices = useCallback(async (signal?: AbortSignal) => {
     const result = await fetchAppProviderServices({ signal, limit: 50 });
@@ -109,8 +126,13 @@ export default function ProviderServicesPage() {
 
     void (async () => {
       try {
-        const [nextProfile, nextServices, nextCatalog] = await Promise.all([
-          ensureProviderProfile(controller.signal),
+        // First, ensure the provider profile exists (creates if missing)
+        const nextProfile = await ensureProviderProfile(controller.signal);
+
+        if (cancelled) return;
+
+        // Then, fetch services and catalog (now that profile is guaranteed to exist)
+        const [nextServices, nextCatalog] = await Promise.all([
           reloadServices(controller.signal),
           fetchAppCatalogTree(controller.signal),
         ]);
@@ -173,7 +195,7 @@ export default function ProviderServicesPage() {
   };
 
   const handleAddService = async () => {
-    const price = Number(toLatinDigits(priceInput.replace(/[^\d]/g, "")));
+    const price = Number(priceInput);
 
     if (!serviceId) {
       toast.error("خدمت را انتخاب کنید");
@@ -199,7 +221,7 @@ export default function ProviderServicesPage() {
       setServices((prev) => [...prev, created]);
       setServiceId("");
       setCategoryId("");
-      setPriceInput("");
+      resetPrice();
       setIsAddFormOpen(false);
       toast.success("خدمت اضافه شد");
     } catch (cause: unknown) {
@@ -214,7 +236,7 @@ export default function ProviderServicesPage() {
   const handleUpdatePrice = async () => {
     if (!editTarget) return;
 
-    const price = Number(toLatinDigits(editPrice.replace(/[^\d]/g, "")));
+    const price = Number(editPriceRaw);
     if (!price || price < 1000) {
       toast.error("قیمت معتبر وارد کنید");
       return;
@@ -231,7 +253,7 @@ export default function ProviderServicesPage() {
         ),
       );
       setEditTarget(null);
-      setEditPrice("");
+      resetEditPrice();
       toast.success("قیمت به‌روزرسانی شد");
     } catch (cause: unknown) {
       toast.error(
@@ -518,12 +540,18 @@ export default function ProviderServicesPage() {
                   <Input
                     id="price"
                     inputMode="numeric"
-                    value={priceInput}
-                    onChange={(event) => setPriceInput(event.target.value)}
+                    value={priceDisplay}
+                    onChange={(event) => handlePriceChange(event.target.value)}
+                    onBlur={(event) => handlePriceBlur(event.target.value)}
                     className="h-12 rounded-xl bg-surface pr-10 shadow-sm"
                     placeholder="مثلاً ۵۰۰۰۰۰۰"
                   />
                 </div>
+                {priceInput && (
+                  <p className="mt-1 text-xs text-primary font-medium text-right">
+                    {priceWords}
+                  </p>
+                )}
               </div>
 
               <Button
@@ -605,7 +633,7 @@ export default function ProviderServicesPage() {
                             className="size-8 rounded-lg text-primary hover:bg-surface hover:text-primary"
                             onClick={() => {
                               setEditTarget(service.providerServiceId);
-                              setEditPrice(String(service.priceToman));
+                              setEditPriceRaw(String(service.priceToman));
                             }}
                             aria-label={`ویرایش قیمت ${service.serviceName}`}
                           >
@@ -633,11 +661,17 @@ export default function ProviderServicesPage() {
                       <div className="flex items-center gap-2">
                         <Input
                           inputMode="numeric"
-                          value={editPrice}
-                          onChange={(event) => setEditPrice(event.target.value)}
+                          value={editPriceDisplay}
+                          onChange={(event) => handleEditPriceChange(event.target.value)}
+                          onBlur={(event) => handleEditPriceBlur(event.target.value)}
                           className="h-10 min-w-0 flex-1 rounded-xl bg-surface"
                           aria-label={`قیمت جدید ${service.serviceName}`}
                         />
+                        {editPriceRaw && (
+                          <p className="text-xs text-primary font-medium text-right">
+                            {editPriceWords}
+                          </p>
+                        )}
                         <Button
                           type="button"
                           size="sm"
@@ -655,7 +689,7 @@ export default function ProviderServicesPage() {
                           className="size-10 rounded-xl text-muted-foreground"
                           onClick={() => {
                             setEditTarget(null);
-                            setEditPrice("");
+                            resetEditPrice();
                           }}
                           aria-label="انصراف از ویرایش"
                         >

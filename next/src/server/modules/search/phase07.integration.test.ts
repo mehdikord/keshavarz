@@ -138,7 +138,7 @@ async function createSearchableProvider(input: {
 }
 
 async function cleanup() {
-  clearServiceSearchStoreForTests();
+  await clearServiceSearchStoreForTests();
 
   await prisma.serviceRequestProvider.deleteMany({
     where: { request: { consumer: { phone: { in: phones } } } },
@@ -204,7 +204,7 @@ describe.sequential("phase 07 search matching", () => {
   }, 60_000);
 
   beforeEach(async () => {
-    clearServiceSearchStoreForTests();
+    await clearServiceSearchStoreForTests();
     await prisma.serviceRequestProvider.deleteMany({
       where: { request: { consumer: { phone: { in: phones } } } },
     });

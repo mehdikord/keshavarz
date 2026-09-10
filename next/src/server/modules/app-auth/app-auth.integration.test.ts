@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { requireUserSession } from "@/server/auth";
 import { getSecurityEnvironment } from "@/server/config/env";
@@ -28,6 +28,7 @@ const phones = [
   "09991000010",
   "09991000011",
   "09991000012",
+  "09991000013",
 ];
 
 const smsQueue: SmsQueue = {
@@ -245,6 +246,44 @@ describe.sequential("app OTP authentication integration", () => {
       code: "RATE_LIMITED",
       status: 429,
     });
+  });
+
+  it("returns 503 SMS_SERVICE_UNAVAILABLE and consumes the issued OTP when the SMS queue fails", async () => {
+    const phone = phones[12]!;
+    const failingQueue: SmsQueue = {
+      enqueue: async () => {
+        throw new Error("SMS provider timeout");
+      },
+    };
+
+    await expect(
+      requestLoginOtp({ phone }, request("127.0.0.73"), failingQueue),
+    ).rejects.toMatchObject({
+      code: "SMS_SERVICE_UNAVAILABLE",
+      status: 503,
+    });
+
+    const otp = await prisma.userOtpCode.findFirstOrThrow({ where: { phone } });
+    expect(otp.consumedAt).not.toBeNull();
+    expect(otp.codeHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("treats a production build without an SMS queue configuration as a 503", async () => {
+    const phone = phones[11]!;
+    vi.stubEnv("APP_ENV", "production");
+    vi.stubEnv("SMS_QUEUE_URL", undefined);
+    vi.stubEnv("SMS_QUEUE_TOKEN", undefined);
+
+    try {
+      await expect(
+        requestLoginOtp({ phone }, request("127.0.0.74")),
+      ).rejects.toMatchObject({
+        code: "SMS_SERVICE_UNAVAILABLE",
+        status: 503,
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("rejects brute-force OTP attempts after maxAttempts", async () => {

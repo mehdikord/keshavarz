@@ -8,7 +8,6 @@ export function ToastProvider() {
       dir="rtl"
       position="top-center"
       duration={3_000}
-      pauseOnHover={false}
       toastOptions={{
         duration: 3_000,
         classNames: {

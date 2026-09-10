@@ -1,5 +1,12 @@
 import type { ObjectStorage } from "@/server/integrations/contracts";
 
+export class ObjectStorageUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ObjectStorageUnavailableError";
+  }
+}
+
 interface PutResponse {
   url?: string;
 }
@@ -21,7 +28,7 @@ export class HttpObjectStorage implements ObjectStorage {
     );
 
     if (!response.ok && response.status !== 404) {
-      throw new Error("Object storage is unavailable.");
+      throw new ObjectStorageUnavailableError("Object storage is unavailable.");
     }
   }
 
@@ -42,10 +49,25 @@ export class HttpObjectStorage implements ObjectStorage {
         cache: "no-store",
       },
     );
-    const payload = (await response.json()) as PutResponse;
 
-    if (!response.ok || !payload.url) {
-      throw new Error("Object storage is unavailable.");
+    if (!response.ok) {
+      throw new ObjectStorageUnavailableError("Object storage is unavailable.");
+    }
+
+    const text = await response.text();
+    let payload: PutResponse = {};
+    try {
+      payload = text ? (JSON.parse(text) as PutResponse) : {};
+    } catch {
+      throw new ObjectStorageUnavailableError(
+        "Object storage returned an invalid response.",
+      );
+    }
+
+    if (!payload.url) {
+      throw new ObjectStorageUnavailableError(
+        "Object storage returned no upload URL.",
+      );
     }
 
     return { url: payload.url };

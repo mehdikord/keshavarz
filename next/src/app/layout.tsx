@@ -40,8 +40,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="fa" dir="rtl">
-      <body className="font-sans antialiased">
+    <html lang="fa" dir="rtl" suppressHydrationWarning>
+        <body className="font-sans antialiased" suppressHydrationWarning>
         <AppProvider>
           <RootChrome>{children}</RootChrome>
           <ToastProvider />

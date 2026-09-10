@@ -528,6 +528,7 @@ model ServiceRequest {
   landId                        BigInt                        @map("land_id") @db.UnsignedBigInt
   serviceId                     BigInt                        @map("service_id") @db.UnsignedBigInt
   assignedProviderProfileId     BigInt?                       @map("assigned_provider_profile_id") @db.UnsignedBigInt
+  searchPublicId                String?                       @map("search_public_id") @db.Char(26)
   status                        ServiceRequestStatus          @default(pending_provider)
   agreedPriceToman              BigInt?                       @map("agreed_price_toman") @db.UnsignedBigInt
   consumerNote                  String?                       @map("consumer_note") @db.VarChar(1500)
@@ -806,6 +807,33 @@ model User {
   @@index([createdAt], map: "idx_users_created_at")
   @@index([provinceId], map: "idx_users_province")
   @@map("users")
+}
+
+/// Context موقت جستجوی خدمات (TTL دار) که معیارهای جستجوی مصرف‌کننده را برای
+/// بازیابی نتایج در درخواست‌های بعدی به صورت پایدار نگه می‌دارد.
+model ServiceSearchContext {
+  id                BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId          String   @unique(map: "uq_service_search_contexts_public_id") @map("public_id") @db.Char(26)
+  userId            BigInt   @map("user_id") @db.UnsignedBigInt
+  landId            BigInt   @map("land_id") @db.UnsignedBigInt
+  landPublicId      String   @map("land_public_id") @db.Char(26)
+  landLatitude      Decimal  @map("land_latitude") @db.Decimal(10, 7)
+  landLongitude     Decimal  @map("land_longitude") @db.Decimal(10, 7)
+  landTitle         String   @map("land_title") @db.VarChar(150)
+  serviceId         BigInt   @map("service_id") @db.UnsignedBigInt
+  serviceSlug       String   @map("service_slug") @db.VarChar(170)
+  serviceName       String   @map("service_name") @db.VarChar(150)
+  categorySlug      String   @map("category_slug") @db.VarChar(170)
+  categoryName      String   @map("category_name") @db.VarChar(150)
+  dates             Json     @map("dates")
+  consumerNote      String?  @map("consumer_note") @db.VarChar(1500)
+  criteriaSignature String   @map("criteria_signature") @db.VarChar(64)
+  createdAt         DateTime @default(now()) @map("created_at")
+  expiresAt         DateTime @map("expires_at")
+
+  @@index([userId], map: "idx_service_search_contexts_user")
+  @@index([expiresAt], map: "idx_service_search_contexts_expires")
+  @@map("service_search_contexts")
 }
 
 enum NotificationDeliveryChannel {

@@ -27,6 +27,7 @@ export type AppSearchContext = z.infer<typeof AppSearchContextSchema>;
 export const AppSearchProviderSchema = z
   .object({
     distanceKm: z.number(),
+    image: z.string().nullable().optional(),
     name: z.string().nullable(),
     previousStatus: z.enum(["rejected", "sent"]).nullable(),
     priceToman: z.number(),
@@ -49,7 +50,7 @@ const CursorMetaSchema = z
     limit: z.number().int(),
     nextCursor: z.string().nullable(),
   })
-  .strict();
+  .strip();
 
 export async function createAppServiceSearch(input: {
   categoryId?: string;

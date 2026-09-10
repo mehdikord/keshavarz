@@ -5,6 +5,18 @@ import {
 } from "@/server/errors/api-error";
 
 export function mapPrismaError(error: unknown): ApiError | null {
+  if (
+    error instanceof Prisma.PrismaClientInitializationError ||
+    error instanceof Prisma.PrismaClientUnknownRequestError
+  ) {
+    return new ApiError(
+      503,
+      API_ERROR_CODES.serviceUnavailable,
+      "سرویس پایگاه داده در دسترس نیست؛ کمی بعد دوباره تلاش کنید.",
+      { cause: error },
+    );
+  }
+
   if (!(error instanceof Prisma.PrismaClientKnownRequestError)) {
     return null;
   }

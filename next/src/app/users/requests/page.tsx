@@ -134,7 +134,15 @@ function RequestSummaryCard({
               لغو درخواست
             </Button>
             <Button asChild variant="secondary" className="h-10 rounded-xl">
-              <Link href="/users/search">ارسال به بیشتر</Link>
+              {request.searchId ? (
+                <Link
+                  href={`/users/search/results?searchId=${request.searchId}&requestId=${request.requestId}`}
+                >
+                  ارسال به بیشتر
+                </Link>
+              ) : (
+                <Link href="/users/search">ارسال به بیشتر</Link>
+              )}
             </Button>
           </div>
         ) : (

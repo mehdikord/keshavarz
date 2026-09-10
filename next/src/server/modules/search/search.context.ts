@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 
 import { getSecurityEnvironment } from "@/server/config/env";
+import { prisma } from "@/server/db/prisma";
 import { stableStringify } from "@/server/idempotency/stable-json";
 import { verifyPayloadSignature } from "@/server/security/crypto";
 
@@ -24,17 +25,12 @@ export interface ServiceSearchContext {
   userId: bigint;
 }
 
-type StoredSearchContext = ServiceSearchContext;
-
 const SEARCH_TTL_MS = 30 * 60 * 1000;
-const store = new Map<string, StoredSearchContext>();
 
-function pruneExpired(now: Date): void {
-  for (const [key, value] of store) {
-    if (value.expiresAt <= now) {
-      store.delete(key);
-    }
-  }
+function pruneExpired(userId: bigint, now: Date): Promise<{ count: number }> {
+  return prisma.serviceSearchContext.deleteMany({
+    where: { expiresAt: { lte: now }, userId },
+  });
 }
 
 export function buildSearchCriteriaSignature(input: {
@@ -87,36 +83,86 @@ function buildSearchCriteriaPayload(input: {
   });
 }
 
-export function saveServiceSearchContext(
+export async function saveServiceSearchContext(
   context: Omit<ServiceSearchContext, "createdAt" | "expiresAt">,
   now: Date,
-): ServiceSearchContext {
-  pruneExpired(now);
-  const stored: StoredSearchContext = {
+): Promise<ServiceSearchContext> {
+  await pruneExpired(context.userId, now);
+
+  const stored: ServiceSearchContext = {
     ...context,
     createdAt: now,
     expiresAt: new Date(now.getTime() + SEARCH_TTL_MS),
   };
-  store.set(stored.searchId, stored);
+
+  await prisma.serviceSearchContext.create({
+    data: {
+      categoryName: stored.categoryName,
+      categorySlug: stored.categorySlug,
+      consumerNote: stored.consumerNote,
+      criteriaSignature: stored.criteriaSignature,
+      dates: stored.dates,
+      expiresAt: stored.expiresAt,
+      landId: stored.landId,
+      landLatitude: stored.landLatitude,
+      landLongitude: stored.landLongitude,
+      landPublicId: stored.landPublicId,
+      landTitle: stored.landTitle,
+      publicId: stored.searchId,
+      serviceId: stored.serviceId,
+      serviceName: stored.serviceName,
+      serviceSlug: stored.serviceSlug,
+      userId: stored.userId,
+    },
+  });
+
   return stored;
 }
 
-export function getServiceSearchContext(
+export async function getServiceSearchContext(
   searchId: string,
   now: Date,
-): ServiceSearchContext | null {
-  pruneExpired(now);
-  const context = store.get(searchId);
-  if (!context) {
+): Promise<ServiceSearchContext | null> {
+  const row = await prisma.serviceSearchContext.findUnique({
+    where: { publicId: searchId },
+  });
+
+  if (!row) {
     return null;
   }
-  if (context.expiresAt <= now) {
-    store.delete(searchId);
+
+  if (row.expiresAt <= now) {
+    await prisma.serviceSearchContext.deleteMany({
+      where: { publicId: searchId, userId: row.userId },
+    });
     return null;
   }
-  return context;
+
+  const dates = Array.isArray(row.dates)
+    ? (row.dates as unknown[]).map((entry) => String(entry))
+    : [];
+
+  return {
+    categoryName: row.categoryName,
+    categorySlug: row.categorySlug,
+    consumerNote: row.consumerNote,
+    createdAt: row.createdAt,
+    criteriaSignature: row.criteriaSignature,
+    dates,
+    expiresAt: row.expiresAt,
+    landId: row.landId,
+    landLatitude: row.landLatitude.toString(),
+    landLongitude: row.landLongitude.toString(),
+    landPublicId: row.landPublicId,
+    landTitle: row.landTitle,
+    searchId: row.publicId,
+    serviceId: row.serviceId,
+    serviceName: row.serviceName,
+    serviceSlug: row.serviceSlug,
+    userId: row.userId,
+  };
 }
 
-export function clearServiceSearchStoreForTests(): void {
-  store.clear();
+export async function clearServiceSearchStoreForTests(): Promise<void> {
+  await prisma.serviceSearchContext.deleteMany({});
 }

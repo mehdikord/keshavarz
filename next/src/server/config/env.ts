@@ -1,5 +1,10 @@
 import * as z from "zod";
 
+import {
+  API_ERROR_CODES,
+  ApiError,
+} from "@/server/errors/api-error";
+
 const MySqlUrlSchema = z
   .string()
   .url("آدرس اتصال دیتابیس معتبر نیست.")
@@ -47,6 +52,14 @@ if (!databaseEnvironmentResult.success) {
 
 export const databaseEnvironment = databaseEnvironmentResult.data;
 
+function throwSecurityEnvError(message: string): never {
+  throw new ApiError(
+    500,
+    API_ERROR_CODES.internalServerError,
+    message,
+  );
+}
+
 export function getSecurityEnvironment(): z.infer<
   typeof SecurityEnvironmentSchema
 > {
@@ -69,21 +82,27 @@ export function getSecurityEnvironment(): z.infer<
   });
 
   if (!result.success) {
-    throw new Error("متغیرهای محیطی امنیت API کامل یا معتبر نیستند.");
+    throwSecurityEnvError(
+      "متغیرهای محیطی امنیت API کامل یا معتبر نیستند.",
+    );
   }
 
   const hasRedisUrl = Boolean(result.data.UPSTASH_REDIS_REST_URL);
   const hasRedisToken = Boolean(result.data.UPSTASH_REDIS_REST_TOKEN);
 
   if (hasRedisUrl !== hasRedisToken) {
-    throw new Error("تنظیمات Upstash Redis باید به‌صورت کامل وارد شوند.");
+    throwSecurityEnvError(
+      "تنظیمات Upstash Redis باید به‌صورت کامل وارد شوند.",
+    );
   }
 
   const hasSmsQueueUrl = Boolean(result.data.SMS_QUEUE_URL);
   const hasSmsQueueToken = Boolean(result.data.SMS_QUEUE_TOKEN);
 
   if (hasSmsQueueUrl !== hasSmsQueueToken) {
-    throw new Error("تنظیمات صف پیامک باید به‌صورت کامل وارد شوند.");
+    throwSecurityEnvError(
+      "تنظیمات صف پیامک باید به‌صورت کامل وارد شوند.",
+    );
   }
 
   const hasStorageUrl = Boolean(result.data.OBJECT_STORAGE_GATEWAY_URL);
@@ -92,7 +111,9 @@ export function getSecurityEnvironment(): z.infer<
   );
 
   if (hasStorageUrl !== hasStorageToken) {
-    throw new Error("تنظیمات درگاه object storage باید کامل وارد شوند.");
+    throwSecurityEnvError(
+      "تنظیمات درگاه object storage باید کامل وارد شوند.",
+    );
   }
 
   return result.data;

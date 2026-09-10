@@ -7,8 +7,12 @@ export type {
   SmsQueue,
 } from "@/server/integrations/contracts";
 export { ConsoleSmsQueue } from "@/server/integrations/console-sms-queue";
-export { HttpObjectStorage } from "@/server/integrations/http-object-storage";
+export {
+  HttpObjectStorage,
+  ObjectStorageUnavailableError,
+} from "@/server/integrations/http-object-storage";
 export { HttpSmsQueue } from "@/server/integrations/http-sms-queue";
+export { LocalObjectStorage } from "@/server/integrations/local-object-storage";
 export {
   createMockPaymentProvider,
   MockPaymentProvider,

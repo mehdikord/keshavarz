@@ -14,7 +14,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { PageContainer } from "@/components/layout/page-container";
-import { PageHeader } from "@/components/layout/page-header";
+import { AppMenuTrigger } from "@/components/layout/app-menu-trigger";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -299,65 +299,81 @@ export default function ProfilePage() {
   };
 
   return (
-    <PageContainer>
-      <PageHeader
-        title="پروفایل"
-        description="مدیریت حساب کاربری شما"
-        backHref="/"
-      />
+    <PageContainer className="flex flex-col">
+      <section className="relative -mx-4 -mt-4 mb-6 overflow-hidden rounded-b-3xl bg-[linear-gradient(145deg,#1f513d_0%,#2d6a4f_55%,#34785a_100%)] px-6 pb-10 pt-12 text-white shadow-[0_18px_38px_rgba(45,106,79,0.25)] animate-slide-up motion-reduce:animate-none">
+        <div
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_-10%,rgba(255,255,255,0.2),transparent_55%)]"
+          aria-hidden="true"
+        />
+        <div
+          className="pointer-events-none absolute -bottom-24 -left-14 size-52 rounded-full bg-secondary/25 blur-3xl"
+          aria-hidden="true"
+        />
+        <div
+          className="pointer-events-none absolute -right-16 -top-14 size-44 rounded-full bg-secondary/20 blur-3xl"
+          aria-hidden="true"
+        />
 
-      <Card className="card-elevated mb-4 border-border/80">
-        <CardContent className="space-y-5 pt-6">
-          <div className="flex items-center gap-4">
+        <div className="relative flex flex-col items-center text-center">
+          <div className="w-full flex items-start justify-between gap-3">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-4 py-1.5 text-[13px] font-bold backdrop-blur-md animate-fade-in motion-reduce:animate-none">
+              پروفایل کاربری
+            </span>
+            <AppMenuTrigger variant="ghost" className="text-white hover:bg-white/10" />
+          </div>
+
+          <div className="mt-5 flex flex-col items-center gap-3 animate-fade-in [animation-delay:100ms] motion-reduce:animate-none">
             <div className="relative">
-              <UserAvatar name={user.displayName} src={image} size="lg" />
+              <UserAvatar name={user.displayName} src={image} size="xl" />
               {imageBusy ? (
                 <span className="absolute inset-0 flex items-center justify-center rounded-full bg-background/70">
                   <LoaderCircle className="size-5 animate-spin text-primary" />
                 </span>
               ) : null}
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-lg font-bold">{user.displayName}</p>
-              <p className="text-sm text-muted-foreground" dir="ltr">
-                {user.phone}
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
+            <div>
+              <p className="text-xl font-bold leading-tight">{user.displayName}</p>
+              <p className="text-sm text-white/80 mt-1" dir="ltr">{user.phone}</p>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="rounded-xl bg-white/10 text-white border-white/20 hover:bg-white/20"
+                disabled={imageBusy}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Camera className="size-4" />
+                {image ? "تغییر تصویر" : "افزودن تصویر"}
+              </Button>
+              {image ? (
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
-                  className="rounded-xl"
+                  className="rounded-xl text-white/90 hover:bg-white/10"
                   disabled={imageBusy}
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => void handleDeleteImage()}
                 >
-                  <Camera className="size-4" />
-                  {image ? "تغییر تصویر" : "افزودن تصویر"}
+                  <Trash2 className="size-4" />
+                  حذف تصویر
                 </Button>
-                {image ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="rounded-xl text-destructive"
-                    disabled={imageBusy}
-                    onClick={() => void handleDeleteImage()}
-                  >
-                    <Trash2 className="size-4" />
-                    حذف تصویر
-                  </Button>
-                ) : null}
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(event) => void handleImageSelect(event)}
-              />
+              ) : null}
             </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(event) => void handleImageSelect(event)}
+            />
           </div>
+        </div>
+      </section>
 
+      <Card className="card-elevated border-border/80 animate-fade-in">
+        <CardContent className="space-y-5 pt-6">
           <div className="space-y-2">
             <Label htmlFor="displayName">نام نمایشی</Label>
             <Input
@@ -387,7 +403,7 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
-      <Card className="card-elevated mb-4 border-border/80">
+      <Card className="card-elevated mb-4 border-border/80 animate-fade-in mt-6">
         <CardContent className="space-y-4 pt-6">
           <div className="flex items-start gap-3">
             <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">

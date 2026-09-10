@@ -120,19 +120,43 @@ export async function createServiceRequestFromSearch(
     },
     { providerIds: uniqueProviderIds, searchId: input.searchId },
     async () => {
+      let context: Awaited<ReturnType<typeof revalidateSearchProviderMatch>>["context"];
       const matches: Array<
         Awaited<ReturnType<typeof revalidateSearchProviderMatch>>
       > = [];
-      for (const providerPublicId of uniqueProviderIds) {
-        const validated = await revalidateSearchProviderMatch({
-          providerPublicId,
-          searchId: input.searchId,
-          userId,
-        });
-        matches.push(validated);
+
+      if (uniqueProviderIds.length > 0) {
+        for (const providerPublicId of uniqueProviderIds) {
+          const validated = await revalidateSearchProviderMatch({
+            providerPublicId,
+            searchId: input.searchId,
+            userId,
+          });
+          matches.push(validated);
+        }
+        context = matches[0]!.context;
+      } else {
+        const now = systemClock.now();
+        const { getServiceSearchContext, verifySearchCriteriaSignature } =
+          await import("@/server/modules/search/search.context");
+        const ctx = await getServiceSearchContext(input.searchId, now);
+        if (!ctx || ctx.userId !== userId) {
+          throw new ApiError(
+            404,
+            API_ERROR_CODES.notFound,
+            "جستجو یافت نشد.",
+          );
+        }
+        if (!verifySearchCriteriaSignature(ctx)) {
+          throw new ApiError(
+            409,
+            API_ERROR_CODES.conflict,
+            "context جستجو معتبر نیست.",
+          );
+        }
+        context = ctx;
       }
 
-      const context = matches[0]!.context;
       const [user, land] = await Promise.all([
         findUserSnapshot(userId),
         findLandSnapshot(context.landId, userId),
@@ -167,6 +191,7 @@ export async function createServiceRequestFromSearch(
                 land,
                 providers: providerPayload,
                 publicId: createPublicId(),
+                searchPublicId: input.searchId,
                 serviceCategoryName: context.categoryName,
                 serviceId: context.serviceId,
                 serviceName: context.serviceName,
@@ -367,7 +392,19 @@ export async function listConsumerServiceRequests(
   const last = page.at(-1);
 
   return {
-    items: page.map(mapConsumerRequestSummary),
+    items: page.map((row) =>
+      mapConsumerRequestSummary({
+        agreedPriceToman: row.agreedPriceToman,
+        assignedProviderNameSnapshot: row.assignedProviderNameSnapshot,
+        createdAt: row.createdAt,
+        landTitleSnapshot: row.landTitleSnapshot,
+        publicId: row.publicId,
+        searchId: row.searchPublicId ?? null,
+        serviceNameSnapshot: row.serviceNameSnapshot,
+        status: row.status,
+        version: row.version,
+      }),
+    ),
     meta: {
       hasMore,
       limit: query.limit,
@@ -976,6 +1013,7 @@ export async function listAdminManagedServiceRequests(query: {
         createdAt: row.createdAt,
         landTitleSnapshot: row.landTitleSnapshot,
         publicId: row.publicId,
+        searchId: row.searchPublicId ?? null,
         serviceNameSnapshot: row.serviceNameSnapshot,
         status: row.status,
         version: row.version,

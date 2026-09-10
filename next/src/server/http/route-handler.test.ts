@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   API_ERROR_CODES,
@@ -61,5 +61,36 @@ describe("withApiHandler", () => {
       },
     });
     expect(JSON.stringify(body)).not.toContain("do-not-expose");
+  });
+
+  it("keeps the real cause in logs while the client response stays redacted", async () => {
+    const writes: string[] = [];
+    const writeSpy = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation((chunk: string | Uint8Array) => {
+        writes.push(String(chunk));
+        return true;
+      });
+
+    const handler = withApiHandler(async () => {
+      throw new Error("SMS queue is not configured.");
+    });
+    const response = await handler(
+      new NextRequest("http://localhost/api/app/v1/example"),
+    );
+    const body = await response.json();
+
+    writeSpy.mockRestore();
+
+    expect(response.status).toBe(500);
+    expect(body).toMatchObject({
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "خطای داخلی رخ داده است.",
+      },
+    });
+    expect(JSON.stringify(body)).not.toContain("SMS queue is not configured");
+    expect(writes.join("\n")).toContain("api.request.failed");
+    expect(writes.join("\n")).toContain("SMS queue is not configured");
   });
 });

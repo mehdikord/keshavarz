@@ -39,6 +39,23 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        source: "/storage/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
+    ];
+  },
+  async rewrites() {
+    return [
+      {
+        source: "/storage/:path*",
+        destination: "/storage/:path*",
+      },
     ];
   },
 };

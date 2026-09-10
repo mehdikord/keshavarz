@@ -97,12 +97,12 @@ function sortValueForRow(
   return sort.startsWith("price") ? Number(row.priceToman) : row.distanceKm;
 }
 
-function requireOwnedValidContext(
+async function requireOwnedValidContext(
   searchId: string,
   userId: bigint,
   now: Date,
-): ServiceSearchContext {
-  const context = getServiceSearchContext(searchId, now);
+): Promise<ServiceSearchContext> {
+  const context = await getServiceSearchContext(searchId, now);
   if (!context || context.userId !== userId) {
     throw new ApiError(404, API_ERROR_CODES.notFound, "جستجو یافت نشد.");
   }
@@ -184,7 +184,7 @@ export async function createServiceSearch(
         userId: userId.toString(),
       });
 
-      const context = saveServiceSearchContext(
+      const context = await saveServiceSearchContext(
         {
           categoryName: service.category.name,
           categorySlug: service.category.slug,
@@ -227,7 +227,7 @@ export async function listSearchProviders(
   },
 ) {
   const now = systemClock.now();
-  const context = requireOwnedValidContext(searchId, userId, now);
+  const context = await requireOwnedValidContext(searchId, userId, now);
 
   const cursor = query.cursor
     ? decodeProviderCursor(query.cursor)
@@ -262,6 +262,7 @@ export async function listSearchProviders(
           statuses.get(row.providerProfileId.toString()) ?? null,
         priceToman: row.priceToman,
         pricingUnit: row.pricingUnit,
+        providerImage: row.providerImage,
         providerName: row.providerName,
         providerPublicId: row.providerPublicId,
       }),
@@ -292,7 +293,7 @@ export async function revalidateSearchProviderMatch(input: {
   userId: bigint;
 }) {
   const now = systemClock.now();
-  const context = requireOwnedValidContext(
+  const context = await requireOwnedValidContext(
     input.searchId,
     input.userId,
     now,

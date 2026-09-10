@@ -16,6 +16,9 @@ export const API_ERROR_CODES = {
   preconditionFailed: "PRECONDITION_FAILED",
   rateLimited: "RATE_LIMITED",
   requestAlreadyAccepted: "REQUEST_ALREADY_ACCEPTED",
+  serviceUnavailable: "SERVICE_UNAVAILABLE",
+  smsServiceUnavailable: "SMS_SERVICE_UNAVAILABLE",
+  storageServiceUnavailable: "STORAGE_SERVICE_UNAVAILABLE",
   unsupportedMediaType: "UNSUPPORTED_MEDIA_TYPE",
   validationFailed: "VALIDATION_FAILED",
 } as const;

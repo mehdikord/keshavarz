@@ -4,7 +4,11 @@ import { getSecurityEnvironment } from "@/server/config/env";
 import { API_ERROR_CODES, ApiError } from "@/server/errors";
 import { createPublicId } from "@/server/identifiers/ulid";
 import type { ObjectStorage } from "@/server/integrations";
-import { HttpObjectStorage } from "@/server/integrations";
+import {
+  HttpObjectStorage,
+  LocalObjectStorage,
+  ObjectStorageUnavailableError,
+} from "@/server/integrations";
 import { findActiveCityById, findActiveProvinceById } from "@/server/modules/location/location.repository";
 import {
   getCurrentUserProfile,
@@ -47,14 +51,23 @@ function hasValidImageSignature(data: Uint8Array, contentType: string): boolean 
 function resolveStorage(): ObjectStorage {
   const environment = getSecurityEnvironment();
   if (
-    !environment.OBJECT_STORAGE_GATEWAY_URL ||
-    !environment.OBJECT_STORAGE_GATEWAY_TOKEN
+    environment.OBJECT_STORAGE_GATEWAY_URL &&
+    environment.OBJECT_STORAGE_GATEWAY_TOKEN
   ) {
-    throw new Error("Object storage is not configured.");
+    return new HttpObjectStorage(
+      environment.OBJECT_STORAGE_GATEWAY_URL,
+      environment.OBJECT_STORAGE_GATEWAY_TOKEN,
+    );
   }
-  return new HttpObjectStorage(
-    environment.OBJECT_STORAGE_GATEWAY_URL,
-    environment.OBJECT_STORAGE_GATEWAY_TOKEN,
+  return new LocalObjectStorage("users/profile");
+}
+
+function raiseStorageUnavailable(error: unknown): never {
+  throw new ApiError(
+    503,
+    API_ERROR_CODES.storageServiceUnavailable,
+    "سرویس ذخیرهسازی تصویر در دسترس نیست؛ کمی بعد دوباره تلاش کنید.",
+    { cause: error },
   );
 }
 
@@ -172,22 +185,44 @@ export async function uploadCurrentUserImage(
 
   const current = await requireCurrentUserProfile(userId);
   const key = `user-${createPublicId()}${extension}`;
-  const uploaded = await storage.put({
-    contentType: file.type,
-    data,
-    key,
-  });
+
+  let uploaded;
+  try {
+    uploaded = await storage.put({
+      contentType: file.type,
+      data,
+      key,
+    });
+  } catch (error) {
+    if (error instanceof ObjectStorageUnavailableError) {
+      raiseStorageUnavailable(error);
+    }
+    throw error;
+  }
 
   try {
     await replaceCurrentUserImage(userId, uploaded.url);
   } catch (error) {
-    await storage.delete(key);
+    try {
+      await storage.delete(key);
+    } catch (deleteError) {
+      if (deleteError instanceof ObjectStorageUnavailableError) {
+        raiseStorageUnavailable(deleteError);
+      }
+    }
     throw error;
   }
 
   const oldKey = current.image ? storageKeyFromUrl(current.image) : null;
   if (oldKey) {
-    await storage.delete(oldKey);
+    try {
+      await storage.delete(oldKey);
+    } catch (error) {
+      if (error instanceof ObjectStorageUnavailableError) {
+        raiseStorageUnavailable(error);
+      }
+      throw error;
+    }
   }
 
   return { image: uploaded.url };
@@ -202,6 +237,13 @@ export async function deleteCurrentUserImage(
 
   const key = current.image ? storageKeyFromUrl(current.image) : null;
   if (key) {
-    await storage.delete(key);
+    try {
+      await storage.delete(key);
+    } catch (error) {
+      if (error instanceof ObjectStorageUnavailableError) {
+        raiseStorageUnavailable(error);
+      }
+      throw error;
+    }
   }
 }

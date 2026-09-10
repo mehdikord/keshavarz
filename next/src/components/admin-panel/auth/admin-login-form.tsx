@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import * as z from "zod";
 
 import { AdminSectionCard } from "@/components/admin-panel/shell/admin-section-card";
@@ -11,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { fetchAdminMe, loginAdmin } from "@/lib/api/admin-auth";
 import { isApiClientError } from "@/lib/api/envelope";
+import { toast } from "@/lib/toast";
 
 const LoginFormSchema = z.object({
   phone: z.string().trim().min(10, "شماره موبایل معتبر نیست."),

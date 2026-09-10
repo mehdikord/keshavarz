@@ -30,6 +30,7 @@ export function mapConsumerRequestSummary(request: {
   createdAt: Date;
   landTitleSnapshot: string;
   publicId: string;
+  searchId: string | null;
   serviceNameSnapshot: string;
   status: string;
   version: number;
@@ -40,6 +41,7 @@ export function mapConsumerRequestSummary(request: {
     createdAt: request.createdAt.toISOString(),
     landTitle: request.landTitleSnapshot,
     requestId: request.publicId,
+    searchId: request.searchId ?? null,
     serviceName: request.serviceNameSnapshot,
     status: request.status,
     version: request.version,
@@ -225,6 +227,7 @@ export function mapAdminRequestSummary(request: {
   createdAt: Date;
   landTitleSnapshot: string;
   publicId: string;
+  searchId: string | null;
   serviceNameSnapshot: string;
   status: string;
   version: number;

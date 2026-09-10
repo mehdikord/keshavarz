@@ -11,7 +11,7 @@ export const RequestParamsSchema = z
 
 export const CreateServiceRequestSchema = z
   .object({
-    providerIds: z.array(PublicIdSchema).min(1).max(30),
+    providerIds: z.array(PublicIdSchema).min(0).max(30),
     searchId: PublicIdSchema,
   })
   .strict();

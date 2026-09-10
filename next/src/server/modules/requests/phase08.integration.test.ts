@@ -104,7 +104,7 @@ async function createProvider(input: {
 }
 
 async function cleanupUsers() {
-  clearServiceSearchStoreForTests();
+  await clearServiceSearchStoreForTests();
   await prisma.notificationDelivery.deleteMany({
     where: { notification: { user: { phone: { in: phones } } } },
   });

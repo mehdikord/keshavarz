@@ -84,7 +84,20 @@ function resolveSmsQueue(): SmsQueue {
     );
   }
 
-  throw new Error("SMS queue is not configured.");
+  throw new ApiError(
+    503,
+    API_ERROR_CODES.smsServiceUnavailable,
+    "سامانه پیامک در دسترس نیست؛ کمی بعد دوباره تلاش کنید.",
+  );
+}
+
+function raiseSmsUnavailable(error: unknown): never {
+  throw new ApiError(
+    503,
+    API_ERROR_CODES.smsServiceUnavailable,
+    "سامانه پیامک در دسترس نیست؛ کمی بعد دوباره تلاش کنید.",
+    { cause: error },
+  );
 }
 
 function createSessionExpiry(now: Date): Date {
@@ -119,8 +132,12 @@ export async function requestLoginOtp(
     ]);
   } catch (error) {
     if (error instanceof ApiError && error.status === 429) {
-      const { emitAlert } = await import("@/server/observability/alerts");
-      emitAlert("auth_abuse", { channel: "otp_request", ipAddress });
+      try {
+        const { emitAlert } = await import("@/server/observability/alerts");
+        emitAlert("auth_abuse", { channel: "otp_request", ipAddress });
+      } catch {
+        // Alert failure must not affect the rate-limit response.
+      }
     }
     throw error;
   }
@@ -164,7 +181,7 @@ export async function requestLoginOtp(
     });
   } catch (error) {
     await consumeOtpRecord(otpId);
-    throw error;
+    raiseSmsUnavailable(error);
   }
 
   return GENERIC_OTP_RESPONSE;
