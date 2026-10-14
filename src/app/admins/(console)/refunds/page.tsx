@@ -1,0 +1,21 @@
+import { Suspense } from "react";
+
+import { AdminRefundsListPage } from "@/components/admin-panel/payments/admin-refunds-list-page";
+import { Skeleton } from "@/components/ui/skeleton";
+
+function Fallback() {
+  return (
+    <div className="space-y-4">
+      <Skeleton className="h-8 w-48" />
+      <Skeleton className="h-64 w-full rounded-xl" />
+    </div>
+  );
+}
+
+export default function AdminRefundsRoutePage() {
+  return (
+    <Suspense fallback={<Fallback />}>
+      <AdminRefundsListPage />
+    </Suspense>
+  );
+}
