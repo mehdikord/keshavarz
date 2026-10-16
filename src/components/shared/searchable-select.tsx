@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { Check, ChevronDown, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -74,16 +74,13 @@ export function SearchableSelect({
     });
   }, [options, query]);
 
-  useEffect(() => {
-    if (!open) setQuery("");
-  }, [open]);
-
   return (
     <Popover
       open={open}
       onOpenChange={(nextOpen) => {
         if (disabled) return;
         setOpen(nextOpen);
+        if (!nextOpen) setQuery("");
       }}
     >
       <PopoverTrigger asChild>
@@ -176,6 +173,7 @@ export function SearchableSelect({
                         if (isOptionDisabled) return;
                         onValueChange(option.value);
                         setOpen(false);
+                        setQuery("");
                       }}
                     >
                       <span className="min-w-0 flex-1">

@@ -68,13 +68,19 @@ export function ProviderPublicProfile({
   const [notFound, setNotFound] = useState(false);
   const [lightbox, setLightbox] =
     useState<AppPublicProviderGalleryImage | null>(null);
+  const [loadedProviderId, setLoadedProviderId] = useState(providerId);
+
+  // Reset per-provider state during render (not inside the effect) when the id changes.
+  if (loadedProviderId !== providerId) {
+    setLoadedProviderId(providerId);
+    setLoading(true);
+    setNotFound(false);
+    setProfile(null);
+  }
 
   useEffect(() => {
     const controller = new AbortController();
     let cancelled = false;
-
-    setLoading(true);
-    setNotFound(false);
 
     void fetchPublicProviderProfile(providerId, controller.signal)
       .then((data) => {

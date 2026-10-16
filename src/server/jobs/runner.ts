@@ -161,6 +161,15 @@ async function runNamedJob(name: Exclude<JobName, "all">) {
   }
 }
 
+export interface JobRunResult {
+  durationMs: number;
+  error?: string;
+  ok: boolean;
+  reason?: string;
+  runId?: string;
+  skipped?: boolean;
+}
+
 export async function runJobs(names: JobName[] = ["all"]) {
   const selected = names.includes("all")
     ? (JOB_NAMES.filter((name) => name !== "all") as Array<
@@ -170,7 +179,7 @@ export async function runJobs(names: JobName[] = ["all"]) {
         Exclude<JobName, "all">
       >);
 
-  const results: Record<string, unknown> = {};
+  const results: Record<string, JobRunResult> = {};
 
   for (const name of selected) {
     const lease = await tryAcquireLease(name);

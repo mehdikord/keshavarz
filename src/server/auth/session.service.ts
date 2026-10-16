@@ -5,6 +5,7 @@ import {
   findUserSessionByTokenHash,
 } from "@/server/auth/session.repository";
 import { systemClock } from "@/server/clock/clock";
+import type { Clock } from "@/server/clock/clock";
 import type { PublicId } from "@/server/contracts";
 import { PublicIdSchema } from "@/server/contracts";
 import { runInTransaction } from "@/server/db/transaction";
@@ -129,14 +130,14 @@ export async function requireAdminSession(
 
 async function findUserSessionForToken(
   token: string,
-  now: Date,
+  clock: Clock,
 ) {
   const secrets = getTokenHashSecrets();
 
   for (const secret of secrets) {
     const session = await findUserSessionByTokenHash(
       hashToken(token, secret),
-      now,
+      clock,
     );
     if (session) {
       return session;
@@ -148,14 +149,14 @@ async function findUserSessionForToken(
 
 async function findActiveAdminSessionForToken(
   token: string,
-  now: Date,
+  clock: Clock,
 ) {
   const secrets = getTokenHashSecrets();
 
   for (const secret of secrets) {
     const session = await findActiveAdminSession(
       hashToken(token, secret),
-      now,
+      clock,
     );
     if (session) {
       return session;
