@@ -1,5 +1,4 @@
 import { getSecurityEnvironment } from "@/server/config/env";
-import { API_ERROR_CODES, ApiError } from "@/server/errors";
 import {
   MemoryRateLimitStore,
   RateLimiter,
@@ -26,11 +25,10 @@ function createRateLimiter(): RateLimiter {
   }
 
   if (process.env.NODE_ENV === "production") {
-    throw new ApiError(
-      503,
-      API_ERROR_CODES.serviceUnavailable,
-      "سرویس در دسترس نیست؛ کمی بعد دوباره تلاش کنید.",
-      { cause: new Error("Production rate limiting requires Upstash Redis.") },
+    // بدون Upstash از حافظهٔ داخلی استفاده می‌شود؛ برای اجرای چندنمونه‌ای
+    // (چند پروسه یا چند سرور) حتماً UPSTASH_REDIS_REST_URL/TOKEN را تنظیم کنید.
+    console.warn(
+      "[rate-limit] Upstash Redis تنظیم نشده؛ از محدودکنندهٔ حافظه‌ای استفاده می‌شود.",
     );
   }
 
