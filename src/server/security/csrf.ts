@@ -36,6 +36,11 @@ export function assertTrustedOrigin(
   request: NextRequest,
   allowedOrigins: ReadonlySet<string>,
 ): void {
+  // بررسی مبدأ غیرفعال است مگر ENFORCE_ORIGIN_CHECK="true" تنظیم شود
+  const enforce = process.env.ENFORCE_ORIGIN_CHECK?.trim().toLowerCase();
+  if (enforce !== "true" && enforce !== "1") {
+    return;
+  }
   const origin = resolveRequestOrigin(request);
   const normalizedAllowed = new Set(
     Array.from(allowedOrigins)
