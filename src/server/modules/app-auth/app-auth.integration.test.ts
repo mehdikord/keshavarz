@@ -268,7 +268,7 @@ describe.sequential("app OTP authentication integration", () => {
     expect(otp.codeHash).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it("treats a production build without an SMS queue configuration as a 503", async () => {
+  it("issues the fixed OTP without any SMS queue, even in production", async () => {
     const phone = phones[11]!;
     vi.stubEnv("APP_ENV", "production");
     vi.stubEnv("SMS_QUEUE_URL", undefined);
@@ -277,10 +277,15 @@ describe.sequential("app OTP authentication integration", () => {
     try {
       await expect(
         requestLoginOtp({ phone }, request("127.0.0.74")),
-      ).rejects.toMatchObject({
-        code: "SMS_SERVICE_UNAVAILABLE",
-        status: 503,
+      ).resolves.toMatchObject({ message: expect.any(String) });
+
+      const otp = await prisma.userOtpCode.findFirstOrThrow({
+        orderBy: { id: "desc" },
+        where: { phone },
       });
+      expect(otp.codeHash).toBe(
+        hashOtp(phone, "login", "123456", getSecurityEnvironment().OTP_HASH_PEPPER),
+      );
     } finally {
       vi.unstubAllEnvs();
     }

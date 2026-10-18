@@ -1,5 +1,3 @@
-import { randomInt } from "node:crypto";
-
 import type { NextRequest } from "next/server";
 
 import { systemClock } from "@/server/clock/clock";
@@ -18,7 +16,7 @@ import {
 } from "@/server/http";
 import { createPublicId } from "@/server/identifiers/ulid";
 import type { SmsQueue } from "@/server/integrations";
-import { ConsoleSmsQueue, HttpSmsQueue } from "@/server/integrations";
+import { ConsoleSmsQueue } from "@/server/integrations";
 import {
   isOtpResendCooldownActive,
   isSessionWithinRefreshWindow,
@@ -55,40 +53,15 @@ const GENERIC_OTP_RESPONSE = {
   message: "اگر شماره معتبر باشد، کد تأیید ارسال می‌شود.",
 } as const;
 
-const FIXED_DEV_OTP_CODE = "123456";
-
-function isProductionEnvironment(): boolean {
-  return getSecurityEnvironment().APP_ENV === "production";
-}
+// ارسال پیامک غیرفعال است: کد ورود همیشه ثابت است و فقط در لاگ سرور چاپ می‌شود.
+const FIXED_OTP_CODE = "123456";
 
 function createOtpCode(): string {
-  if (!isProductionEnvironment()) {
-    return FIXED_DEV_OTP_CODE;
-  }
-
-  const lowerBound = 10 ** (OTP_POLICY.digits - 1);
-  return String(randomInt(lowerBound, 10 ** OTP_POLICY.digits));
+  return FIXED_OTP_CODE;
 }
 
 function resolveSmsQueue(): SmsQueue {
-  if (!isProductionEnvironment()) {
-    return new ConsoleSmsQueue();
-  }
-
-  const environment = getSecurityEnvironment();
-
-  if (environment.SMS_QUEUE_URL && environment.SMS_QUEUE_TOKEN) {
-    return new HttpSmsQueue(
-      environment.SMS_QUEUE_URL,
-      environment.SMS_QUEUE_TOKEN,
-    );
-  }
-
-  throw new ApiError(
-    503,
-    API_ERROR_CODES.smsServiceUnavailable,
-    "سامانه پیامک در دسترس نیست؛ کمی بعد دوباره تلاش کنید.",
-  );
+  return new ConsoleSmsQueue();
 }
 
 function raiseSmsUnavailable(error: unknown): never {
