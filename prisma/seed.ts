@@ -1,6 +1,7 @@
 import "dotenv/config";
 
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 
@@ -10,6 +11,8 @@ import {
 } from "./geo-data";
 
 import { PrismaClient } from "../src/generated/prisma/client";
+
+const seedDir = fileURLToPath(new URL(".", import.meta.url));
 
 const databaseUrl = process.env.DIRECT_DATABASE_URL ?? process.env.DATABASE_URL;
 
@@ -267,8 +270,8 @@ async function seedSettings(): Promise<void> {
 }
 
 async function seedProvincesAndCities(): Promise<void> {
-  const provincesPath = resolve(process.cwd(), "../docs/data/provinces.sql");
-  const citiesPath = resolve(process.cwd(), "../docs/data/cities.sql");
+  const provincesPath = resolve(seedDir, "data/provinces.sql");
+  const citiesPath = resolve(seedDir, "data/cities.sql");
 
   const provinces = await loadProvincesFromSql(provincesPath);
   const cities = await loadCitiesFromSql(citiesPath);
@@ -397,8 +400,9 @@ async function main(): Promise<void> {
 }
 
 main()
-  .catch(() => {
+  .catch((error: unknown) => {
     console.error("اجرای seed دیتابیس ناموفق بود.");
+    console.error(error);
     process.exitCode = 1;
   })
   .finally(async () => {
