@@ -21,6 +21,16 @@ export function mapPrismaError(error: unknown): ApiError | null {
     return null;
   }
 
+  // خطاهای اتصال/احراز هویت دیتابیس (P1000-P1017) و timeout استخر اتصال adapter
+  if (/^P10\d\d$/.test(error.code) || error.code === "45028") {
+    return new ApiError(
+      503,
+      API_ERROR_CODES.serviceUnavailable,
+      "سرویس پایگاه داده در دسترس نیست؛ کمی بعد دوباره تلاش کنید.",
+      { cause: error },
+    );
+  }
+
   if (error.code === "P2002") {
     return new ApiError(
       409,
