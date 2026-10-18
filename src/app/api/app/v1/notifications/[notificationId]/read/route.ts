@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 
 import { requireUserSession } from "@/server/auth";
-import { getSecurityEnvironment } from "@/server/config/env";
+import { getAllowedOrigins } from "@/server/config/env";
 import {
   apiSuccess,
   parseJsonBody,
@@ -21,7 +21,7 @@ export const POST = withApiHandler(async (request: NextRequest, context) => {
   assertMutationProtection(
     request,
     "app",
-    new Set([getSecurityEnvironment().APP_ORIGIN]),
+    getAllowedOrigins("app"),
   );
   const auth = await requireUserSession(request);
   const params = parseWithSchema(NotificationParamsSchema, {

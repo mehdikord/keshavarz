@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 
 import { requireUserSession } from "@/server/auth";
-import { getSecurityEnvironment } from "@/server/config/env";
+import { getAllowedOrigins } from "@/server/config/env";
 import { apiSuccess, parseJsonBody, withApiHandler } from "@/server/http";
 import { ProfileUpdateSchema } from "@/server/modules/app-auth/app-auth.schemas";
 import { mapCurrentUserProfile } from "@/server/modules/app-profile/app-profile.mapper";
@@ -20,7 +20,7 @@ export const GET = withApiHandler(async (request: NextRequest, context) => {
 });
 
 export const PATCH = withApiHandler(async (request: NextRequest, context) => {
-  assertMutationProtection(request, "app", new Set([getSecurityEnvironment().APP_ORIGIN]));
+  assertMutationProtection(request, "app", getAllowedOrigins("app"));
   const auth = await requireUserSession(request);
   const input = await parseJsonBody(request, ProfileUpdateSchema);
   const profile = await patchCurrentUserProfile(auth.internalUserId, input);

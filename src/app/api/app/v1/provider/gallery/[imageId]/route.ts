@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 
 import { requireUserSession } from "@/server/auth";
-import { getSecurityEnvironment } from "@/server/config/env";
+import { getAllowedOrigins } from "@/server/config/env";
 import { apiSuccess, parseWithSchema, withApiHandler } from "@/server/http";
 import { ProviderGalleryImageParamsSchema } from "@/server/modules/provider/provider.schemas";
 import { deleteCurrentProviderGalleryImage } from "@/server/modules/provider/provider.service";
@@ -17,7 +17,7 @@ export const DELETE = withApiHandler(async (request: NextRequest, context) => {
   assertMutationProtection(
     request,
     "app",
-    new Set([getSecurityEnvironment().APP_ORIGIN]),
+    getAllowedOrigins("app"),
   );
   const auth = await requireUserSession(request);
   const params = parseWithSchema(ProviderGalleryImageParamsSchema, {

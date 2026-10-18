@@ -17,12 +17,50 @@ const DatabaseEnvironmentSchema = z.object({
   DIRECT_DATABASE_URL: MySqlUrlSchema,
 });
 
+export function normalizeOrigin(value: string): string | null {
+  try {
+    const parsed = new URL(value.trim());
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+    return parsed.origin.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+export function parseOriginList(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+    .map((item) => normalizeOrigin(item))
+    .filter((item): item is string => item !== null);
+}
+
+const OriginListSchema = (label: string) =>
+  z
+    .string()
+    .refine(
+      (value) => {
+        const entries = value
+          .split(",")
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0);
+        return (
+          entries.length > 0 &&
+          entries.every((item) => normalizeOrigin(item) !== null)
+        );
+      },
+      { message: `Origin ${label} معتبر نیست.` },
+    );
+
 const SecurityEnvironmentSchema = z.object({
   APP_ENV: z.enum(["local", "development", "test", "staging", "production"], {
     message: "APP_ENV باید یکی از مقادیر local, development, test, staging, production باشد.",
   }),
-  APP_ORIGIN: z.string().url("Origin اپ معتبر نیست."),
-  ADMIN_ORIGIN: z.string().url("Origin مدیریت معتبر نیست."),
+  APP_ORIGIN: OriginListSchema("اپ"),
+  ADMIN_ORIGIN: OriginListSchema("مدیریت"),
   OBJECT_STORAGE_GATEWAY_TOKEN: z.string().min(1).optional(),
   OBJECT_STORAGE_GATEWAY_URL: z.string().url().optional(),
   SMS_QUEUE_TOKEN: z.string().min(1).optional(),
@@ -60,9 +98,17 @@ function throwSecurityEnvError(message: string): never {
   );
 }
 
-export function getSecurityEnvironment(): z.infer<
-  typeof SecurityEnvironmentSchema
-> {
+type SecurityEnvironment = z.infer<typeof SecurityEnvironmentSchema> & {
+  APP_ORIGINS: ReadonlySet<string>;
+  ADMIN_ORIGINS: ReadonlySet<string>;
+};
+
+export function getAllowedOrigins(realm: "app" | "admin"): ReadonlySet<string> {
+  const env = getSecurityEnvironment();
+  return realm === "admin" ? env.ADMIN_ORIGINS : env.APP_ORIGINS;
+}
+
+export function getSecurityEnvironment(): SecurityEnvironment {
   const result = SecurityEnvironmentSchema.safeParse({
     APP_ENV: process.env.APP_ENV,
     APP_ORIGIN: process.env.APP_ORIGIN,
@@ -116,5 +162,21 @@ export function getSecurityEnvironment(): z.infer<
     );
   }
 
-  return result.data;
+  const appOrigins = parseOriginList(result.data.APP_ORIGIN);
+  const adminOrigins = parseOriginList(result.data.ADMIN_ORIGIN);
+  const [primaryAppOrigin] = appOrigins;
+  const [primaryAdminOrigin] = adminOrigins;
+
+  if (!primaryAppOrigin || !primaryAdminOrigin) {
+    throwSecurityEnvError("مقدار APP_ORIGIN یا ADMIN_ORIGIN معتبر نیست.");
+  }
+
+  return {
+    ...result.data,
+    // اولین مقدار به‌عنوان origin اصلی (برای ساخت URL) استفاده می‌شود
+    APP_ORIGIN: primaryAppOrigin,
+    ADMIN_ORIGIN: primaryAdminOrigin,
+    APP_ORIGINS: new Set(appOrigins),
+    ADMIN_ORIGINS: new Set(adminOrigins),
+  };
 }

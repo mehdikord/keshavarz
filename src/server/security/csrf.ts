@@ -10,12 +10,13 @@ import {
 } from "@/server/security/cookies";
 import type { AuthRealm } from "@/server/security/cookies";
 import { safeEqual } from "@/server/security/crypto";
+import { normalizeOrigin } from "@/server/config/env";
 
 function resolveRequestOrigin(request: NextRequest): string | null {
   const origin = request.headers.get("origin");
 
   if (origin) {
-    return origin;
+    return normalizeOrigin(origin);
   }
 
   const referer = request.headers.get("referer");
@@ -25,7 +26,7 @@ function resolveRequestOrigin(request: NextRequest): string | null {
   }
 
   try {
-    return new URL(referer).origin;
+    return normalizeOrigin(referer);
   } catch {
     return null;
   }
@@ -36,8 +37,14 @@ export function assertTrustedOrigin(
   allowedOrigins: ReadonlySet<string>,
 ): void {
   const origin = resolveRequestOrigin(request);
+  const normalizedAllowed = new Set(
+    Array.from(allowedOrigins)
+      .flatMap((entry) => entry.split(","))
+      .map((entry) => normalizeOrigin(entry))
+      .filter((entry): entry is string => entry !== null),
+  );
 
-  if (!origin || !allowedOrigins.has(origin)) {
+  if (!origin || !normalizedAllowed.has(origin)) {
     throw new ApiError(
       403,
       API_ERROR_CODES.originNotAllowed,

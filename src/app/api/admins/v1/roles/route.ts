@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 
 import { requireAdminSession } from "@/server/auth";
-import { getSecurityEnvironment } from "@/server/config/env";
+import { getAllowedOrigins } from "@/server/config/env";
 import {
   apiSuccess,
   parseJsonBody,
@@ -29,7 +29,7 @@ export const POST = withApiHandler(async (request: NextRequest, context) => {
   assertMutationProtection(
     request,
     "admins",
-    new Set([getSecurityEnvironment().ADMIN_ORIGIN]),
+    getAllowedOrigins("admin"),
   );
   const auth = await requireAdminSession(request);
   await requireAdminPermission(auth, "roles.manage", request);

@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 
 import { requireUserSession } from "@/server/auth";
-import { getSecurityEnvironment } from "@/server/config/env";
+import { getAllowedOrigins } from "@/server/config/env";
 import { API_ERROR_CODES, ApiError } from "@/server/errors";
 import { apiSuccess, withApiHandler } from "@/server/http";
 import {
@@ -13,7 +13,7 @@ import { assertMutationProtection } from "@/server/security";
 export const runtime = "nodejs";
 
 export const PUT = withApiHandler(async (request: NextRequest, context) => {
-  assertMutationProtection(request, "app", new Set([getSecurityEnvironment().APP_ORIGIN]));
+  assertMutationProtection(request, "app", getAllowedOrigins("app"));
   const auth = await requireUserSession(request);
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.startsWith("multipart/form-data")) {
@@ -32,7 +32,7 @@ export const PUT = withApiHandler(async (request: NextRequest, context) => {
 });
 
 export const DELETE = withApiHandler(async (request: NextRequest, context) => {
-  assertMutationProtection(request, "app", new Set([getSecurityEnvironment().APP_ORIGIN]));
+  assertMutationProtection(request, "app", getAllowedOrigins("app"));
   const auth = await requireUserSession(request);
   await deleteCurrentUserImage(auth.internalUserId);
   return apiSuccess({ deleted: true }, context.requestId);

@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 
 import { requireAdminSession } from "@/server/auth";
-import { getSecurityEnvironment } from "@/server/config/env";
+import { getAllowedOrigins } from "@/server/config/env";
 import { apiSuccess, parseJsonBody, withApiHandler } from "@/server/http";
 import { mapAdminProfile } from "@/server/modules/admin-auth/admin-auth.mapper";
 import { AdminProfileUpdateSchema } from "@/server/modules/admin-auth/admin-auth.schemas";
@@ -35,7 +35,7 @@ export const PATCH = withApiHandler(async (request: NextRequest, context) => {
   assertMutationProtection(
     request,
     "admins",
-    new Set([getSecurityEnvironment().ADMIN_ORIGIN]),
+    getAllowedOrigins("admin"),
   );
   const auth = await requireAdminSession(request);
   const input = await parseJsonBody(request, AdminProfileUpdateSchema);

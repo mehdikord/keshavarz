@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 
 import { requireUserSession } from "@/server/auth";
-import { getSecurityEnvironment } from "@/server/config/env";
+import { getAllowedOrigins } from "@/server/config/env";
 import { apiSuccess, getClientIp, getUserAgent, withApiHandler } from "@/server/http";
 import { setAppAuthCookies } from "@/server/modules/app-auth/app-auth.cookies";
 import { rotateUserSession } from "@/server/modules/app-auth/app-auth.service";
@@ -13,7 +13,7 @@ export const POST = withApiHandler(async (request: NextRequest, context) => {
   assertMutationProtection(
     request,
     "app",
-    new Set([getSecurityEnvironment().APP_ORIGIN]),
+    getAllowedOrigins("app"),
   );
   const auth = await requireUserSession(request);
   const result = await rotateUserSession({
