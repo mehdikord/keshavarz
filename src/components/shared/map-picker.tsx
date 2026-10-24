@@ -1,16 +1,29 @@
 "use client";
 
-import { useState } from "react";
-import { Crosshair, LoaderCircle, LocateFixed, MapPin } from "lucide-react";
-
-import { MeMapsMap } from "@/components/shared/memaps-map";
-import { Button } from "@/components/ui/button";
-import { DEFAULT_MAP_CENTER } from "@/lib/maps/defaults";
+import { useRef, useState } from "react";
+import type { Map as LeafletMap } from "leaflet";
 import {
-  DEFAULT_MEMAPS_LAYER,
-  MEMAPS_LAYERS,
-  type MeMapsLayerId,
-} from "@/lib/maps/memaps";
+  Check,
+  Crosshair,
+  Hand,
+  LoaderCircle,
+  LocateFixed,
+  Maximize2,
+  MapPin,
+  X,
+} from "lucide-react";
+
+import { MapControlButton, ParsimapMap } from "@/components/shared/parsimap-map";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { DEFAULT_MAP_CENTER } from "@/lib/maps/defaults";
+import { normalizeLocation } from "@/lib/maps/parsimap";
 import { cn } from "@/lib/utils";
 import { toPersianDigits } from "@/lib/utils/format";
 import type { GeoLocation } from "@/types";
@@ -20,41 +33,32 @@ interface MapPickerProps {
   onChange?: (location: GeoLocation) => void;
   className?: string;
   interactive?: boolean;
-  showLayerSwitcher?: boolean;
 }
 
-export function MapPicker({
-  value,
-  onChange,
-  className,
-  interactive = true,
-  showLayerSwitcher = true,
-}: MapPickerProps) {
-  const [layer, setLayer] = useState<MeMapsLayerId>(DEFAULT_MEMAPS_LAYER);
+function useCurrentPosition(onLocate: (location: GeoLocation) => void) {
   const [locating, setLocating] = useState(false);
-  const [locationError, setLocationError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleGpsClick = () => {
+  const locate = () => {
     if (!navigator.geolocation) {
-      setLocationError("مرورگر شما دسترسی به موقعیت مکانی را پشتیبانی نمی‌کند");
+      setError("مرورگر شما دسترسی به موقعیت مکانی را پشتیبانی نمی‌کند");
       return;
     }
 
     setLocating(true);
-    setLocationError(null);
+    setError(null);
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        onChange?.({
-          lat: Number(position.coords.latitude.toFixed(6)),
-          lng: Number(position.coords.longitude.toFixed(6)),
-        });
+        onLocate(
+          normalizeLocation(position.coords.latitude, position.coords.longitude),
+        );
         setLocating(false);
       },
-      (error) => {
+      (positionError) => {
         setLocating(false);
-        setLocationError(
-          error.code === error.PERMISSION_DENIED
+        setError(
+          positionError.code === positionError.PERMISSION_DENIED
             ? "برای دریافت موقعیت، دسترسی Location را فعال کنید"
             : "دریافت موقعیت فعلی ناموفق بود؛ نقطه را روی نقشه انتخاب کنید",
         );
@@ -67,83 +71,200 @@ export function MapPicker({
     );
   };
 
+  return { locate, locating, error };
+}
+
+function LocationLabel({ value }: { value: GeoLocation | null }) {
+  if (!value) {
+    return <span className="text-xs text-muted-foreground">موقعیت انتخاب نشده</span>;
+  }
+
   return (
-    <div className={cn("space-y-3", className)}>
-      <div className="relative overflow-hidden rounded-2xl border border-border shadow-sm">
-        <MeMapsMap
+    <span
+      className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-foreground"
+      dir="ltr"
+    >
+      <MapPin className="size-3.5 shrink-0 text-primary" />
+      <span className="truncate tabular-nums">
+        {toPersianDigits(value.lat)}, {toPersianDigits(value.lng)}
+      </span>
+    </span>
+  );
+}
+
+function PickerHint({ selected }: { selected: boolean }) {
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-8 z-[500] flex justify-center px-3">
+      <span className="flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 text-[11px] text-white shadow-md backdrop-blur-md">
+        <Hand className="size-3.5" />
+        {selected
+          ? "نقشه را جابه‌جا کنید تا پین روی زمین قرار بگیرد"
+          : "نقشه را بکشید و پین را روی زمین موردنظر بگذارید"}
+      </span>
+    </div>
+  );
+}
+
+export function MapPicker({
+  value,
+  onChange,
+  className,
+  interactive = true,
+}: MapPickerProps) {
+  const [fullscreen, setFullscreen] = useState(false);
+  const [fullscreenCenter, setFullscreenCenter] =
+    useState<GeoLocation>(DEFAULT_MAP_CENTER);
+  const inlineMapRef = useRef<LeafletMap | null>(null);
+  const fullscreenMapRef = useRef<LeafletMap | null>(null);
+  const { locate, locating, error } = useCurrentPosition((location) =>
+    onChange?.(location),
+  );
+
+  const selectCenter = (map: LeafletMap | null) => {
+    if (!map) return;
+    const point = map.getCenter();
+    onChange?.(normalizeLocation(point.lat, point.lng));
+  };
+
+  const openFullscreen = () => {
+    setFullscreenCenter(inlineCenter(inlineMapRef.current));
+    setFullscreen(true);
+  };
+
+  const gpsButton = (
+    <MapControlButton
+      label="موقعیت من"
+      onClick={locate}
+      disabled={locating}
+      className="text-primary"
+    >
+      {locating ? (
+        <LoaderCircle className="size-4.5 animate-spin" />
+      ) : (
+        <Crosshair className="size-4.5" />
+      )}
+    </MapControlButton>
+  );
+
+  return (
+    <div className={cn("space-y-2.5", className)}>
+      <div className="relative isolate overflow-hidden rounded-3xl border border-border shadow-sm">
+        <ParsimapMap
           center={value ?? DEFAULT_MAP_CENTER}
           value={value}
           onChange={onChange}
-          layer={layer}
           interactive={interactive}
+          onMapReady={(map) => {
+            inlineMapRef.current = map;
+          }}
+          className="h-80 sm:h-96"
+          controls={
+            interactive ? (
+              <>
+                {gpsButton}
+                <MapControlButton label="تمام‌صفحه" onClick={openFullscreen}>
+                  <Maximize2 className="size-4" />
+                </MapControlButton>
+              </>
+            ) : null
+          }
         />
-
-        {interactive && showLayerSwitcher ? (
-          <div className="absolute left-3 top-3 z-[500] flex rounded-xl border border-white/30 bg-black/45 p-1 text-white shadow-md backdrop-blur-md">
-            {(["satellite", "hybrid", "street"] as MeMapsLayerId[]).map(
-              (item) => (
-                <button
-                  key={item}
-                  type="button"
-                  onClick={() => setLayer(item)}
-                  className={cn(
-                    "rounded-lg px-2.5 py-1.5 text-[10px] font-medium transition-colors",
-                    layer === item ? "bg-white text-foreground" : "hover:bg-white/15",
-                  )}
-                >
-                  {MEMAPS_LAYERS[item].label}
-                </button>
-              ),
-            )}
-          </div>
-        ) : null}
-
-        {interactive ? (
-          <div className="pointer-events-none absolute bottom-7 right-3 z-[500] rounded-lg bg-black/50 px-2.5 py-1.5 text-[10px] text-white backdrop-blur-sm">
-            برای انتخاب، روی زمین موردنظر بزنید
-          </div>
-        ) : null}
+        {interactive ? <PickerHint selected={Boolean(value)} /> : null}
       </div>
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex min-h-9 items-center justify-between gap-3 rounded-2xl bg-muted/60 px-3 py-1.5">
         {interactive ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleGpsClick}
-            disabled={locating}
-            className="rounded-xl"
-          >
-            {locating ? (
-              <LoaderCircle className="size-4 animate-spin" />
-            ) : (
-              <Crosshair className="size-4" />
-            )}
-            موقعیت من
-          </Button>
+          <LocationLabel value={value} />
         ) : (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="flex items-center gap-2 text-xs text-muted-foreground">
             <LocateFixed className="size-4 text-primary" />
             موقعیت ثبت‌شده
-          </div>
+          </span>
         )}
 
-        {value ? (
-          <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground" dir="ltr">
-            <MapPin className="size-3.5 shrink-0 text-primary" />
-            <span className="truncate">
-              {toPersianDigits(value.lat)}, {toPersianDigits(value.lng)}
-            </span>
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground">موقعیت انتخاب نشده</p>
-        )}
+        {interactive && !value ? (
+          <Button
+            type="button"
+            size="sm"
+            className="h-7 shrink-0 rounded-full px-3 text-[11px]"
+            onClick={() => selectCenter(inlineMapRef.current)}
+          >
+            <Check className="size-3.5" />
+            انتخاب همین نقطه
+          </Button>
+        ) : null}
+
+        {!interactive ? <LocationLabel value={value} /> : null}
       </div>
 
-      {locationError ? (
-        <p className="text-xs leading-5 text-destructive">{locationError}</p>
+      {error ? <p className="text-xs leading-5 text-destructive">{error}</p> : null}
+
+      {interactive ? (
+        <Dialog open={fullscreen} onOpenChange={setFullscreen}>
+          <DialogContent
+            showCloseButton={false}
+            className="flex h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:max-w-none"
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-border/60 bg-background px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+              <div className="min-w-0 text-right">
+                <DialogTitle className="text-sm font-bold">انتخاب موقعیت</DialogTitle>
+                <DialogDescription className="mt-0.5 text-[11px]">
+                  پین را دقیقاً روی زمین موردنظر قرار دهید
+                </DialogDescription>
+              </div>
+              <DialogClose asChild>
+                <button
+                  type="button"
+                  aria-label="بستن"
+                  className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted transition active:scale-90"
+                >
+                  <X className="size-4" />
+                </button>
+              </DialogClose>
+            </div>
+
+            <div className="relative min-h-0 flex-1">
+              {fullscreen ? (
+                <ParsimapMap
+                  center={value ?? fullscreenCenter}
+                  value={value}
+                  onChange={onChange}
+                  onMapReady={(map) => {
+                    fullscreenMapRef.current = map;
+                  }}
+                  className="h-full"
+                  controls={gpsButton}
+                />
+              ) : null}
+            </div>
+
+            <div className="space-y-3 border-t border-border/60 bg-background px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs text-muted-foreground">مختصات</span>
+                <LocationLabel value={value} />
+              </div>
+              {error ? <p className="text-xs leading-5 text-destructive">{error}</p> : null}
+              <Button
+                type="button"
+                className="h-12 w-full rounded-2xl text-sm"
+                onClick={() => {
+                  if (!value) selectCenter(fullscreenMapRef.current);
+                  setFullscreen(false);
+                }}
+              >
+                <Check className="size-4" />
+                تایید موقعیت
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       ) : null}
     </div>
   );
+}
+
+function inlineCenter(map: LeafletMap | null): GeoLocation {
+  if (!map) return DEFAULT_MAP_CENTER;
+  const point = map.getCenter();
+  return normalizeLocation(point.lat, point.lng);
 }

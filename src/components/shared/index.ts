@@ -8,7 +8,7 @@ export { LoadingSpinner } from "@/components/shared/loading-spinner";
 export { ConfirmDialog } from "@/components/shared/confirm-dialog";
 export { OTPInput } from "@/components/shared/otp-input";
 export { MapPicker } from "@/components/shared/map-picker";
-export { MeMapsMap } from "@/components/shared/memaps-map";
+export { ParsimapMap } from "@/components/shared/parsimap-map";
 export { PersianCalendar } from "@/components/shared/persian-calendar";
 export { WeatherWidget } from "@/components/shared/weather-widget";
 export { LiveClock } from "@/components/shared/live-clock";

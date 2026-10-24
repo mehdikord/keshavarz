@@ -2,32 +2,31 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { MotionConfig, motion } from "framer-motion";
 import {
+  Ban,
   CalendarDays,
-  LoaderCircle,
+  Check,
+  Lock,
   MapPin,
+  MessageSquareQuote,
+  Navigation,
   Phone,
-  ShieldAlert,
+  Ruler,
+  SearchX,
   UserRound,
+  X,
 } from "lucide-react";
 
 import { PageContainer } from "@/components/layout/page-container";
-import { PageHeader } from "@/components/layout/page-header";
-import { MapPicker } from "@/components/shared/map-picker";
-import { PriceDisplay } from "@/components/shared/price-display";
-import { StatusBadge } from "@/components/shared/status-badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { ProviderPageHero } from "@/components/providers-panel/provider-page-hero";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+  RequestActionSheet,
+  type RequestAction,
+} from "@/components/providers-panel/requests/request-action-sheet";
+import { TONE_PILL } from "@/components/providers-panel/requests/request-card";
+import { MapPicker } from "@/components/shared/map-picker";
+import { Skeleton } from "@/components/ui/skeleton";
 import { canShowPhone } from "@/lib/contact-privacy";
 import { isApiClientError } from "@/lib/api/envelope";
 import {
@@ -38,100 +37,87 @@ import {
   viewProviderRequest,
   type AppProviderRequestDetail,
 } from "@/lib/api/app-requests";
+import { classifyProviderRequest } from "@/lib/requests/provider-tabs";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
-import { toPersianDigits } from "@/lib/utils/format";
-import { useAuthStore } from "@/stores/auth-store";
+import { formatRelativeTime } from "@/lib/utils/date";
+import { formatAreaSqm, formatDistance, toPersianDigits } from "@/lib/utils/format";
 import type { GeoLocation, RequestStatus } from "@/types";
 
-function formatDate(date: string): string {
-  return new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  }).format(new Date(date));
-}
+const WORK_DATE = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
+  weekday: "long",
+  month: "long",
+  day: "numeric",
+});
 
-function landToLocation(
-  land: AppProviderRequestDetail["land"],
-): GeoLocation | null {
+const STAMP = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
+  month: "long",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+function landToLocation(land: AppProviderRequestDetail["land"]): GeoLocation | null {
   if (!land.latitude || !land.longitude) return null;
-  return {
-    lat: Number(land.latitude),
-    lng: Number(land.longitude),
-  };
+  return { lat: Number(land.latitude), lng: Number(land.longitude) };
 }
 
-function ProviderConsumerPhone({
-  detail,
+function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45, delay, ease: [0.16, 1, 0.3, 1] }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+function SectionCard({
+  icon: Icon,
+  title,
+  children,
   className,
 }: {
-  detail: AppProviderRequestDetail;
+  icon: typeof MapPin;
+  title: string;
+  children: React.ReactNode;
   className?: string;
 }) {
-  const maskedMessage = "پس از قبول درخواست، شماره تماس نمایش داده می‌شود";
-
-  if (!canShowPhone(detail.status as RequestStatus)) {
-    return (
-      <div
-        className={cn(
-          "inline-flex items-center gap-2 rounded-xl border border-dashed border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground",
-          className,
-        )}
-      >
-        <ShieldAlert className="size-4 shrink-0 text-accent" />
-        {maskedMessage}
-      </div>
-    );
-  }
-
-  if (detail.consumer.phone) {
-    return (
-      <a
-        href={`tel:${detail.consumer.phone}`}
-        dir="ltr"
-        className={cn(
-          "inline-flex items-center gap-2 rounded-xl bg-primary/10 px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/15",
-          className,
-        )}
-      >
-        <Phone className="size-4 shrink-0" />
-        {detail.consumer.phone}
-      </a>
-    );
-  }
-
   return (
-    <div
+    <section
       className={cn(
-        "inline-flex items-center gap-2 rounded-xl border border-dashed border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground",
+        "rounded-[24px] bg-surface p-4 shadow-[0_14px_30px_-22px_rgba(45,106,79,0.5)] ring-1 ring-border/60",
         className,
       )}
     >
-      <ShieldAlert className="size-4 shrink-0 text-accent" />
-      {maskedMessage}
-    </div>
+      <h2 className="mb-3 flex items-center gap-2 text-[13.5px] font-black text-foreground">
+        <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <Icon className="size-4" />
+        </span>
+        {title}
+      </h2>
+      {children}
+    </section>
   );
 }
 
 export default function ProviderRequestDetailPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
-  const user = useAuthStore((state) => state.user);
 
   const [detail, setDetail] = useState<AppProviderRequestDetail | null>(null);
-  const [loadState, setLoadState] = useState<"loading" | "ready" | "not_found">(
-    "loading",
-  );
-  const [actionBusy, setActionBusy] = useState(false);
-  const [cancelOpen, setCancelOpen] = useState(false);
-  const [cancelReason, setCancelReason] = useState("");
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "not_found">("loading");
+  const [action, setAction] = useState<RequestAction>("accept");
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetKey, setSheetKey] = useState(0);
   const viewedRef = useRef(false);
 
-  const reloadDetail = useCallback(async (signal?: AbortSignal) => {
-    return fetchProviderRequest(params.id, signal);
-  }, [params.id]);
+  const reloadDetail = useCallback(
+    (signal?: AbortSignal) => fetchProviderRequest(params.id, signal),
+    [params.id],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -146,11 +132,7 @@ export default function ProviderRequestDetailPage() {
         setDetail(nextDetail);
         setLoadState("ready");
 
-        if (
-          !viewedRef.current &&
-          nextDetail.linkStatus === "sent" &&
-          !nextDetail.viewedAt
-        ) {
+        if (!viewedRef.current && nextDetail.linkStatus === "sent" && !nextDetail.viewedAt) {
           viewedRef.current = true;
           try {
             await viewProviderRequest(nextDetail.requestId);
@@ -163,16 +145,11 @@ export default function ProviderRequestDetailPage() {
       } catch (cause: unknown) {
         if (cancelled || controller.signal.aborted) return;
 
-        if (isApiClientError(cause) && cause.status === 404) {
-          setLoadState("not_found");
-          return;
+        if (!(isApiClientError(cause) && cause.status === 404)) {
+          toast.error(
+            isApiClientError(cause) ? cause.message : "بارگذاری جزئیات درخواست ناموفق بود.",
+          );
         }
-
-        toast.error(
-          isApiClientError(cause)
-            ? cause.message
-            : "بارگذاری جزئیات درخواست ناموفق بود.",
-        );
         setLoadState("not_found");
       }
     })();
@@ -183,22 +160,50 @@ export default function ProviderRequestDetailPage() {
     };
   }, [reloadDetail]);
 
-  const landLocation = useMemo(
-    () => (detail ? landToLocation(detail.land) : null),
-    [detail],
-  );
+  const landLocation = useMemo(() => (detail ? landToLocation(detail.land) : null), [detail]);
 
-  const displayPrice =
-    detail?.agreedPriceToman ?? detail?.priceToman ?? 0;
+  const openAction = (next: RequestAction) => {
+    setAction(next);
+    setSheetKey((key) => key + 1);
+    setSheetOpen(true);
+  };
 
-  if (!user) return null;
+  const handleConfirm = async (reason?: string) => {
+    if (!detail) return false;
+
+    try {
+      if (action === "accept") {
+        await acceptProviderRequest(detail.requestId, { expectedVersion: detail.version });
+        toast.success("درخواست پذیرفته شد", "اکنون می‌توانید با کشاورز تماس بگیرید");
+      } else if (action === "reject") {
+        await rejectProviderRequest(detail.requestId, { expectedVersion: detail.version, reason });
+        toast.info("درخواست رد شد");
+      } else {
+        await cancelProviderRequest(detail.requestId, { expectedVersion: detail.version, reason });
+        toast.success("کار لغو شد");
+      }
+      setSheetOpen(false);
+      if (action === "reject") {
+        router.push("/providers/requests");
+      } else {
+        setDetail(await reloadDetail());
+      }
+      return true;
+    } catch (cause: unknown) {
+      toast.error(isApiClientError(cause) ? cause.message : "انجام عملیات ناموفق بود.");
+      void reloadDetail().then(setDetail).catch(() => undefined);
+      return false;
+    }
+  };
 
   if (loadState === "loading") {
     return (
-      <PageContainer withDock>
-        <PageHeader title="جزئیات درخواست" backHref="/providers/requests" />
-        <div className="flex justify-center py-16">
-          <LoaderCircle className="size-8 animate-spin text-primary" />
+      <PageContainer withDock className="px-0 pt-0">
+        <ProviderPageHero title="جزئیات درخواست" backHref="/providers/requests" />
+        <div className="relative z-10 -mt-4 space-y-3 px-4">
+          <Skeleton className="h-32 rounded-[24px]" />
+          <Skeleton className="h-24 rounded-[24px]" />
+          <Skeleton className="h-64 rounded-[24px]" />
         </div>
       </PageContainer>
     );
@@ -206,232 +211,267 @@ export default function ProviderRequestDetailPage() {
 
   if (loadState === "not_found" || !detail) {
     return (
-      <PageContainer withDock>
-        <PageHeader title="جزئیات درخواست" backHref="/providers/requests" />
-        <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            درخواست یافت نشد
-          </CardContent>
-        </Card>
+      <PageContainer withDock className="px-0 pt-0">
+        <ProviderPageHero title="جزئیات درخواست" backHref="/providers/requests" />
+        <div className="relative z-10 -mt-4 px-4">
+          <div className="flex flex-col items-center rounded-[26px] bg-surface px-6 py-10 text-center ring-1 ring-border/60">
+            <span className="flex size-14 items-center justify-center rounded-[20px] bg-muted text-muted-foreground">
+              <SearchX className="size-7" strokeWidth={1.75} />
+            </span>
+            <h2 className="mt-3 text-[15px] font-black">درخواست پیدا نشد</h2>
+            <p className="mt-1 text-[12px] text-muted-foreground">ممکن است حذف شده یا دیگر در دسترس شما نباشد.</p>
+          </div>
+        </div>
       </PageContainer>
     );
   }
 
-  const canRespond =
-    detail.linkStatus === "sent" && detail.status === "pending_provider";
-  const canCancel =
-    detail.status === "in_progress" && detail.isAssigned;
+  const state = classifyProviderRequest(detail);
+  const backHref = state.tab === "new" ? "/providers/requests" : `/providers/requests?tab=${state.tab}`;
+  const canRespond = state.tab === "new";
+  const canCancel = detail.status === "in_progress" && detail.isAssigned;
+  const showPhone = canShowPhone(detail.status as RequestStatus) && Boolean(detail.consumer.phone);
+  const price = detail.agreedPriceToman ?? detail.priceToman;
+  const area = detail.land.areaSquareMeters ? formatAreaSqm(Number(detail.land.areaSquareMeters)) : null;
+  const ownFlow = detail.linkStatus === "accepted" || canRespond;
 
-  const handleAccept = async () => {
-    setActionBusy(true);
-    try {
-      await acceptProviderRequest(detail.requestId, {
-        expectedVersion: detail.version,
-      });
-      const refreshed = await reloadDetail();
-      setDetail(refreshed);
-      toast.success("درخواست پذیرفته شد");
-      router.push("/providers/requests");
-    } catch (cause: unknown) {
-      toast.error(
-        isApiClientError(cause) ? cause.message : "پذیرش درخواست ناموفق بود.",
-      );
-    } finally {
-      setActionBusy(false);
-    }
-  };
-
-  const handleReject = async () => {
-    setActionBusy(true);
-    try {
-      await rejectProviderRequest(detail.requestId, {
-        expectedVersion: detail.version,
-      });
-      const refreshed = await reloadDetail();
-      setDetail(refreshed);
-      toast.info("درخواست رد شد");
-      router.push("/providers/requests");
-    } catch (cause: unknown) {
-      toast.error(
-        isApiClientError(cause) ? cause.message : "رد درخواست ناموفق بود.",
-      );
-    } finally {
-      setActionBusy(false);
-    }
-  };
-
-  const handleCancel = async () => {
-    if (cancelReason.trim().length < 3) {
-      toast.error("دلیل لغو را وارد کنید");
-      return;
-    }
-
-    setActionBusy(true);
-    try {
-      await cancelProviderRequest(detail.requestId, {
-        expectedVersion: detail.version,
-        reason: cancelReason.trim(),
-      });
-      const refreshed = await reloadDetail();
-      setDetail(refreshed);
-      setCancelOpen(false);
-      toast.success("درخواست لغو شد");
-      router.push("/providers/requests");
-    } catch (cause: unknown) {
-      toast.error(
-        isApiClientError(cause) ? cause.message : "لغو درخواست ناموفق بود.",
-      );
-    } finally {
-      setActionBusy(false);
-    }
-  };
+  const steps = [
+    { label: "درخواست ثبت شد", at: detail.createdAt, done: true },
+    { label: "شما پذیرفتید", at: detail.acceptedAt, done: Boolean(detail.acceptedAt) },
+    detail.status === "cancelled"
+      ? { label: "لغو شد", at: detail.cancelledAt, done: true, cancelled: true }
+      : { label: "کار انجام شد", at: detail.completedAt, done: Boolean(detail.completedAt) },
+  ];
 
   return (
-    <PageContainer withDock>
-      <PageHeader
-        title="جزئیات درخواست"
-        description={detail.serviceName}
-        backHref="/providers/requests"
-      />
-
-      <div className="space-y-4 animate-fade-in">
-        <Card className="card-elevated border-border/70">
-          <CardContent className="space-y-4 p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  {detail.serviceCategoryName}
+    <MotionConfig reducedMotion="user">
+      <PageContainer withDock className="px-0 pt-0">
+        <ProviderPageHero eyebrow={detail.serviceCategoryName} title={detail.serviceName} backHref={backHref}>
+          <div className="mt-5 rounded-[24px] bg-white/[0.08] p-4 ring-1 ring-white/12 backdrop-blur-xl">
+            <div className="flex items-center justify-between gap-2">
+              <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-black", TONE_PILL[state.tone])}>
+                {state.label}
+              </span>
+              <span className="text-[11px] text-white/60">{formatRelativeTime(detail.createdAt)}</span>
+            </div>
+            {price > 0 ? (
+              <>
+                <p className="mt-3 text-[11px] text-white/60">
+                  {detail.agreedPriceToman ? "مبلغ توافقی" : "مبلغ بر اساس قیمت خدمت شما"}
                 </p>
-                <h2 className="text-lg font-bold">{detail.serviceName}</h2>
-              </div>
-              <StatusBadge status={detail.status as RequestStatus} />
-            </div>
-
-            <div className="grid gap-3 text-sm">
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <UserRound className="size-4 text-primary" />
-                {detail.consumer.name}
-              </div>
-              <ProviderConsumerPhone detail={detail} />
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <MapPin className="size-4 text-primary" />
-                {detail.land.title}
-                {detail.land.areaSquareMeters
-                  ? ` · ${toPersianDigits(detail.land.areaSquareMeters)} m²`
-                  : ""}
-                {detail.distanceKm > 0
-                  ? ` · ${toPersianDigits(detail.distanceKm.toFixed(1))} km`
-                  : ""}
-              </div>
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <CalendarDays className="size-4 text-primary" />
-                {detail.dates.map((date) => formatDate(date)).join(" · ")}
-              </div>
-            </div>
-
-            {detail.consumerNote ? (
-              <div className="rounded-xl bg-muted/50 px-3 py-2 text-sm">
-                <p className="text-xs text-muted-foreground">یادداشت مشتری</p>
-                <p className="mt-1">{detail.consumerNote}</p>
-              </div>
+                <p className="mt-0.5 flex items-baseline gap-1.5">
+                  <span className="text-[30px] font-black leading-none tabular-nums">
+                    {new Intl.NumberFormat("fa-IR").format(price)}
+                  </span>
+                  <span className="text-sm font-bold text-[#95d5b2]">تومان</span>
+                </p>
+              </>
             ) : null}
-
-            <div className="rounded-xl bg-muted/50 px-3 py-2">
-              <p className="text-xs text-muted-foreground">قیمت</p>
-              <PriceDisplay amount={displayPrice > 0 ? displayPrice : 0} size="lg" />
-            </div>
-
-            <p className="text-xs text-muted-foreground">
-              ایجاد: {formatDate(detail.createdAt)}
-            </p>
-          </CardContent>
-        </Card>
-
-        {landLocation ? (
-          <Card className="overflow-hidden border-border/70">
-            <CardContent className="p-4">
-              <p className="mb-3 text-sm font-semibold">موقعیت زمین</p>
-              <MapPicker value={landLocation} interactive={false} />
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {detail.status === "cancelled" && detail.cancelReason ? (
-          <Card className="border-destructive/20 bg-destructive/5">
-            <CardContent className="p-4 text-sm">
-              <p className="font-semibold text-destructive">دلیل لغو</p>
-              <p className="mt-1 text-muted-foreground">{detail.cancelReason}</p>
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {canRespond ? (
-          <div className="grid grid-cols-2 gap-3">
-            <Button
-              className="h-11 rounded-xl"
-              onClick={() => void handleAccept()}
-              disabled={actionBusy}
-            >
-              {actionBusy ? (
-                <LoaderCircle className="size-4 animate-spin" />
-              ) : (
-                "قبول درخواست"
-              )}
-            </Button>
-            <Button
-              variant="outline"
-              className="h-11 rounded-xl border-destructive/30 text-destructive"
-              onClick={() => void handleReject()}
-              disabled={actionBusy}
-            >
-              رد درخواست
-            </Button>
           </div>
-        ) : null}
+        </ProviderPageHero>
 
-        {canCancel ? (
-          <Button
-            variant="destructive"
-            className="h-11 w-full rounded-xl"
-            onClick={() => setCancelOpen(true)}
-            disabled={actionBusy}
-          >
-            لغو درخواست
-          </Button>
-        ) : null}
-      </div>
+        <div className="relative z-10 -mt-4 space-y-4 px-4">
+          {canRespond ? (
+            <Reveal>
+              <section className="rounded-[24px] bg-[linear-gradient(150deg,#fff6e6_0%,#ffffff_80%)] p-4 shadow-[0_18px_36px_-22px_rgba(224,138,43,0.6)] ring-1 ring-[#e9c46a]/50">
+                <p className="text-[14px] font-black text-foreground">این درخواست منتظر پاسخ شماست</p>
+                <p className="mt-1 text-[11.5px] leading-5 text-muted-foreground">
+                  اولین خدمات‌دهنده‌ای که قبول کند، کار به او سپرده می‌شود.
+                </p>
+                <div className="mt-3.5 grid grid-cols-[1fr_auto] gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openAction("accept")}
+                    className="flex h-12 items-center justify-center gap-1.5 rounded-2xl bg-primary text-[14px] font-black text-primary-foreground shadow-[0_12px_24px_-12px_rgba(45,106,79,0.9)] transition active:scale-[0.98]"
+                  >
+                    <Check className="size-5" strokeWidth={2.75} />
+                    قبول درخواست
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openAction("reject")}
+                    className="flex h-12 items-center justify-center gap-1 rounded-2xl bg-surface px-5 text-[13px] font-bold text-destructive ring-1 ring-destructive/25 transition hover:bg-destructive/5"
+                  >
+                    <X className="size-4" />
+                    رد
+                  </button>
+                </div>
+              </section>
+            </Reveal>
+          ) : null}
 
-      <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
-        <DialogContent className="rounded-2xl sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>لغو درخواست</DialogTitle>
-            <DialogDescription>
-              لطفاً دلیل لغو را بنویسید. این فیلد اجباری است.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="cancelReason">دلیل لغو</Label>
-            <Textarea
-              id="cancelReason"
-              value={cancelReason}
-              onChange={(event) => setCancelReason(event.target.value)}
-              placeholder="مثلاً عدم دسترسی به تجهیزات در تاریخ مقرر"
-            />
-          </div>
-          <DialogFooter className="gap-2 sm:justify-start">
-            <Button variant="outline" onClick={() => setCancelOpen(false)}>
-              انصراف
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => void handleCancel()}
-              disabled={actionBusy}
-            >
-              تأیید لغو
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </PageContainer>
+          {ownFlow ? (
+            <Reveal delay={0.05}>
+              <section className="rounded-[24px] bg-surface p-4 shadow-[0_14px_30px_-22px_rgba(45,106,79,0.5)] ring-1 ring-border/60">
+                <ol className="relative">
+                  {steps.map((step, index) => (
+                    <li key={step.label} className="relative flex gap-3 pb-4 last:pb-0">
+                      {index < steps.length - 1 ? (
+                        <span
+                          aria-hidden
+                          className={cn(
+                            "absolute right-[13px] top-7 h-[calc(100%-1.25rem)] w-0.5 rounded-full",
+                            steps[index + 1]?.done ? "bg-primary/40" : "bg-border",
+                          )}
+                        />
+                      ) : null}
+                      <span
+                        className={cn(
+                          "relative flex size-7 shrink-0 items-center justify-center rounded-full",
+                          "cancelled" in step && step.cancelled
+                            ? "bg-destructive text-white"
+                            : step.done
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted text-muted-foreground ring-2 ring-background",
+                        )}
+                      >
+                        {"cancelled" in step && step.cancelled ? (
+                          <Ban className="size-3.5" />
+                        ) : step.done ? (
+                          <Check className="size-3.5" strokeWidth={3} />
+                        ) : (
+                          <span className="size-1.5 rounded-full bg-current" />
+                        )}
+                      </span>
+                      <div className="pt-0.5">
+                        <p className={cn("text-[13px] font-bold", step.done ? "text-foreground" : "text-muted-foreground")}>
+                          {step.label}
+                        </p>
+                        {step.at ? (
+                          <p className="mt-0.5 text-[11px] text-muted-foreground">{STAMP.format(new Date(step.at))}</p>
+                        ) : null}
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+                {detail.status === "cancelled" && detail.cancelReason ? (
+                  <p className="mt-3 rounded-2xl bg-[#fde2dc]/60 px-3 py-2.5 text-[12px] leading-5 text-[#8a2a15]">
+                    <span className="font-black">دلیل لغو: </span>
+                    {detail.cancelReason}
+                  </p>
+                ) : null}
+              </section>
+            </Reveal>
+          ) : (
+            <Reveal delay={0.05}>
+              <p className="rounded-[20px] bg-muted/70 px-4 py-3 text-[12px] leading-5 text-muted-foreground">
+                این درخواست در بایگانی شماست: {state.label}.
+              </p>
+            </Reveal>
+          )}
+
+          <Reveal delay={0.1}>
+            <SectionCard icon={UserRound} title="کشاورز">
+              <div className="flex items-center gap-3">
+                <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#fdefd6] to-[#f8dcae] text-[17px] font-black text-[#9a5b13]">
+                  {detail.consumer.name.trim().charAt(0) || "؟"}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[14px] font-black text-foreground">{detail.consumer.name}</p>
+                  {showPhone ? (
+                    <p dir="ltr" className="text-right text-[12px] font-bold tabular-nums text-muted-foreground">
+                      {toPersianDigits(detail.consumer.phone ?? "")}
+                    </p>
+                  ) : (
+                    <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                      <Lock className="size-3" />
+                      شماره پس از قبول درخواست نمایش داده می‌شود
+                    </p>
+                  )}
+                </div>
+                {showPhone ? (
+                  <a
+                    href={`tel:${detail.consumer.phone}`}
+                    className="flex h-11 shrink-0 items-center gap-1.5 rounded-2xl bg-primary px-4 text-[13px] font-black text-primary-foreground shadow-[0_10px_20px_-12px_rgba(45,106,79,0.9)] transition active:scale-95"
+                  >
+                    <Phone className="size-4" />
+                    تماس
+                  </a>
+                ) : null}
+              </div>
+              {detail.consumerNote ? (
+                <div className="mt-3 flex gap-2 rounded-2xl bg-muted/60 px-3 py-2.5">
+                  <MessageSquareQuote className="mt-0.5 size-4 shrink-0 text-primary" />
+                  <p className="text-[12.5px] leading-6 text-foreground/85">{detail.consumerNote}</p>
+                </div>
+              ) : null}
+            </SectionCard>
+          </Reveal>
+
+          {detail.dates.length > 0 ? (
+            <Reveal delay={0.15}>
+              <SectionCard icon={CalendarDays} title="زمان درخواستی برای انجام کار">
+                <ul className="flex flex-wrap gap-2">
+                  {detail.dates.map((date) => (
+                    <li
+                      key={date}
+                      className="rounded-xl bg-[#e3f4ff] px-3 py-1.5 text-[12px] font-bold text-sky-800"
+                    >
+                      {WORK_DATE.format(new Date(date))}
+                    </li>
+                  ))}
+                </ul>
+              </SectionCard>
+            </Reveal>
+          ) : null}
+
+          <Reveal delay={0.2}>
+            <SectionCard icon={MapPin} title="زمین">
+              <p className="text-[14px] font-black text-foreground">{detail.land.title}</p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {area ? (
+                  <span className="inline-flex items-center gap-1 rounded-lg bg-muted px-2 py-1 text-[11px] font-bold text-foreground/75">
+                    <Ruler className="size-3" />
+                    {area.primary} {area.primaryUnit}
+                  </span>
+                ) : null}
+                {detail.distanceKm > 0 ? (
+                  <span className="inline-flex items-center gap-1 rounded-lg bg-muted px-2 py-1 text-[11px] font-bold text-foreground/75">
+                    <Navigation className="size-3" />
+                    {formatDistance(detail.distanceKm)} از شما
+                  </span>
+                ) : null}
+              </div>
+              {landLocation ? (
+                <>
+                  <MapPicker value={landLocation} interactive={false} className="mt-3" />
+                  <a
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${landLocation.lat},${landLocation.lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-3 flex h-11 w-full items-center justify-center gap-1.5 rounded-2xl bg-primary/10 text-[13px] font-bold text-primary transition-colors hover:bg-primary/15"
+                  >
+                    <Navigation className="size-4" />
+                    مسیریابی تا زمین
+                  </a>
+                </>
+              ) : null}
+            </SectionCard>
+          </Reveal>
+
+          {canCancel ? (
+            <Reveal delay={0.25}>
+              <button
+                type="button"
+                onClick={() => openAction("cancel")}
+                className="flex h-12 w-full items-center justify-center gap-1.5 rounded-2xl bg-surface text-[13px] font-bold text-destructive ring-1 ring-destructive/25 transition hover:bg-destructive/5"
+              >
+                <Ban className="size-4" />
+                لغو این کار
+              </button>
+            </Reveal>
+          ) : null}
+        </div>
+
+        <RequestActionSheet
+          open={sheetOpen}
+          onOpenChange={setSheetOpen}
+          action={action}
+          target={{ serviceName: detail.serviceName, landTitle: detail.land.title, priceToman: price }}
+          formKey={sheetKey}
+          onConfirm={handleConfirm}
+        />
+      </PageContainer>
+    </MotionConfig>
   );
 }

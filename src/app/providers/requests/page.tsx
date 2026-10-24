@@ -1,28 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { MotionConfig, motion } from "framer-motion";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { AnimatePresence, MotionConfig, motion } from "framer-motion";
 import {
+  Archive,
   BadgeCheck,
-  CalendarDays,
-  ChevronLeft,
   Inbox,
-  LoaderCircle,
-  MapPin,
+  RotateCw,
+  Tractor,
+  Wallet,
   Wrench,
-  XCircle,
-  type LucideIcon,
 } from "lucide-react";
 
 import { PageContainer } from "@/components/layout/page-container";
-import { PageHeader } from "@/components/layout/page-header";
-import { EmptyState } from "@/components/shared/empty-state";
-import { PriceDisplay } from "@/components/shared/price-display";
-import { StatusBadge } from "@/components/shared/status-badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { ProviderPageHero } from "@/components/providers-panel/provider-page-hero";
+import {
+  RequestActionSheet,
+  type RequestAction,
+} from "@/components/providers-panel/requests/request-action-sheet";
+import { RequestCard } from "@/components/providers-panel/requests/request-card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { isApiClientError } from "@/lib/api/envelope";
 import {
   acceptProviderRequest,
@@ -30,184 +29,73 @@ import {
   rejectProviderRequest,
   type AppProviderRequestSummary,
 } from "@/lib/api/app-requests";
-import { cn } from "@/lib/utils";
+import {
+  classifyProviderRequest,
+  parseProviderRequestTab,
+  type ProviderRequestTab,
+} from "@/lib/requests/provider-tabs";
 import { toast } from "@/lib/toast";
+import { cn } from "@/lib/utils";
 import { toPersianDigits } from "@/lib/utils/format";
-import type { ProviderRequestTab } from "@/lib/requests/provider-tabs";
-import { useAuthStore } from "@/stores/auth-store";
-import type { RequestStatus } from "@/types";
 
-const TAB_CONFIG: {
-  value: ProviderRequestTab;
+interface TabConfig {
+  key: ProviderRequestTab;
   label: string;
-  icon: LucideIcon;
+  icon: typeof Inbox;
   emptyTitle: string;
   emptyDescription: string;
-}[] = [
+}
+
+const TABS: [TabConfig, TabConfig, TabConfig, TabConfig] = [
   {
-    value: "new",
+    key: "new",
     label: "جدید",
     icon: Inbox,
-    emptyTitle: "درخواست جدیدی ندارید",
-    emptyDescription: "درخواست‌های جدید اینجا نمایش داده می‌شوند",
+    emptyTitle: "درخواست تازه‌ای ندارید",
+    emptyDescription: "درخواست کشاورزان نزدیک شما به‌محض ثبت، همین‌جا نمایش داده می‌شود.",
   },
   {
-    value: "in_progress",
+    key: "active",
     label: "در حال انجام",
-    icon: Wrench,
+    icon: Tractor,
     emptyTitle: "کار فعالی ندارید",
-    emptyDescription: "درخواست‌های پذیرفته‌شده اینجا قرار می‌گیرند",
+    emptyDescription: "درخواست‌هایی که قبول کنید اینجا قرار می‌گیرند.",
   },
   {
-    value: "completed",
-    label: "پایان‌یافته",
+    key: "done",
+    label: "انجام‌شده",
     icon: BadgeCheck,
-    emptyTitle: "کار تمام‌شده‌ای نیست",
-    emptyDescription: "تاریخچه کارهای انجام‌شده",
+    emptyTitle: "هنوز کاری تکمیل نشده",
+    emptyDescription: "کارهایی که کشاورز تکمیل‌شده اعلام کند اینجا می‌آیند.",
   },
   {
-    value: "cancelled",
-    label: "لغوشده",
-    icon: XCircle,
-    emptyTitle: "درخواست لغوشده‌ای نیست",
-    emptyDescription: "درخواست‌های لغوشده اینجا نمایش داده می‌شوند",
+    key: "archive",
+    label: "بایگانی",
+    icon: Archive,
+    emptyTitle: "بایگانی خالی است",
+    emptyDescription: "درخواست‌های ردشده، لغوشده یا سپرده‌شده به دیگران اینجا هستند.",
   },
 ];
 
-function filterRequestsForTab(
-  tab: ProviderRequestTab,
-  items: AppProviderRequestSummary[],
-): AppProviderRequestSummary[] {
-  switch (tab) {
-    case "new":
-      return items.filter(
-        (item) =>
-          item.linkStatus === "sent" && item.status === "pending_provider",
-      );
-    case "in_progress":
-      return items.filter(
-        (item) =>
-          item.linkStatus === "accepted" && item.status === "in_progress",
-      );
-    case "completed":
-      return items.filter((item) => item.status === "completed");
-    case "cancelled":
-      return items.filter((item) => item.status === "cancelled");
-    default:
-      return [];
-  }
-}
-
-function formatScheduledDates(dates: string[]): string {
-  if (dates.length === 0) return "تاریخ نامشخص";
-
-  const formatter = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
-    month: "short",
-    day: "numeric",
-  });
-
-  return dates.map((date) => formatter.format(new Date(date))).join(" · ");
-}
-
-function ProviderRequestSummaryCard({
-  request,
-  showQuickActions = false,
-  onAccept,
-  onReject,
-  busy = false,
-}: {
+interface ActionState {
+  action: Exclude<RequestAction, "cancel">;
   request: AppProviderRequestSummary;
-  showQuickActions?: boolean;
-  onAccept?: () => void;
-  onReject?: () => void;
-  busy?: boolean;
-}) {
-  return (
-    <Card className="card-elevated overflow-hidden border-border/70">
-      <CardContent className="space-y-4 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="font-semibold text-foreground">{request.serviceName}</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {request.landTitle}
-            </p>
-          </div>
-          <StatusBadge status={request.status as RequestStatus} />
-        </div>
-
-        <div className="space-y-2 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <MapPin className="size-4 shrink-0 text-primary" />
-            <span className="truncate">
-              {request.landTitle}
-              {request.distanceKm > 0
-                ? ` · ${toPersianDigits(request.distanceKm.toFixed(1))} km`
-                : ""}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <CalendarDays className="size-4 shrink-0 text-primary" />
-            <span>{formatScheduledDates([request.sentAt])}</span>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-3">
-          <PriceDisplay
-            amount={request.priceToman > 0 ? request.priceToman : 0}
-            size="sm"
-          />
-          {request.priceToman <= 0 ? (
-            <span className="text-xs text-muted-foreground">قیمت پس از قبول</span>
-          ) : null}
-        </div>
-
-        {showQuickActions ? (
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              type="button"
-              className="h-10 rounded-xl"
-              onClick={onAccept}
-              disabled={busy}
-            >
-              {busy ? (
-                <LoaderCircle className="size-4 animate-spin" />
-              ) : (
-                "قبول درخواست"
-              )}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-10 rounded-xl border-destructive/30 text-destructive hover:bg-destructive/5"
-              onClick={onReject}
-              disabled={busy}
-            >
-              رد درخواست
-            </Button>
-          </div>
-        ) : (
-          <Button asChild variant="secondary" className="h-10 w-full rounded-xl">
-            <Link href={`/providers/requests/${request.requestId}`}>
-              مشاهده جزئیات
-              <ChevronLeft className="size-4" />
-            </Link>
-          </Button>
-        )}
-      </CardContent>
-    </Card>
-  );
 }
 
-export default function ProviderRequestsPage() {
-  const user = useAuthStore((state) => state.user);
-  const [activeTab, setActiveTab] = useState<ProviderRequestTab>("new");
-  const [requests, setRequests] = useState<AppProviderRequestSummary[]>([]);
-  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">(
-    "loading",
-  );
-  const [busyRequestId, setBusyRequestId] = useState<string | null>(null);
+function ProviderRequestsContent() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const tab = parseProviderRequestTab(searchParams.get("tab"));
 
-  const reloadRequests = useCallback(async (signal?: AbortSignal) => {
+  const [requests, setRequests] = useState<AppProviderRequestSummary[]>([]);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
+  const [refreshing, setRefreshing] = useState(false);
+  const [actionState, setActionState] = useState<ActionState | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetKey, setSheetKey] = useState(0);
+
+  const loadRequests = useCallback(async (signal?: AbortSignal) => {
     const result = await fetchProviderRequests({ signal, limit: 50 });
     return result.items;
   }, []);
@@ -216,197 +104,293 @@ export default function ProviderRequestsPage() {
     const controller = new AbortController();
     let cancelled = false;
 
-    void (async () => {
-      try {
-        const items = await reloadRequests(controller.signal);
+    loadRequests(controller.signal)
+      .then((items) => {
         if (cancelled) return;
         setRequests(items);
         setLoadState("ready");
-      } catch (cause: unknown) {
+      })
+      .catch((cause: unknown) => {
         if (cancelled || controller.signal.aborted) return;
         setLoadState("error");
         toast.error(
-          isApiClientError(cause)
-            ? cause.message
-            : "بارگذاری درخواست‌ها ناموفق بود.",
+          isApiClientError(cause) ? cause.message : "بارگذاری درخواست‌ها ناموفق بود.",
         );
-      }
-    })();
+      });
 
     return () => {
       cancelled = true;
       controller.abort();
     };
-  }, [reloadRequests]);
+  }, [loadRequests]);
 
-  const tabData = useMemo(() => {
-    return TAB_CONFIG.reduce(
-      (acc, tab) => {
-        acc[tab.value] = filterRequestsForTab(tab.value, requests);
-        return acc;
-      },
-      {} as Record<ProviderRequestTab, AppProviderRequestSummary[]>,
-    );
+  const grouped = useMemo(() => {
+    const groups: Record<ProviderRequestTab, AppProviderRequestSummary[]> = {
+      new: [],
+      active: [],
+      done: [],
+      archive: [],
+    };
+    for (const item of requests) {
+      groups[classifyProviderRequest(item).tab].push(item);
+    }
+    for (const list of Object.values(groups)) {
+      list.sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
+    }
+    return groups;
   }, [requests]);
 
-  if (!user) return null;
+  const doneRevenue = grouped.done.reduce((sum, item) => sum + item.priceToman, 0);
 
-  const handleAccept = async (request: AppProviderRequestSummary) => {
-    setBusyRequestId(request.requestId);
+  const selectTab = (next: ProviderRequestTab) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === "new") params.delete("tab");
+    else params.set("tab", next);
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  };
+
+  const refresh = async () => {
+    setRefreshing(true);
     try {
-      await acceptProviderRequest(request.requestId, {
-        expectedVersion: request.version,
-      });
-      const items = await reloadRequests();
-      setRequests(items);
-      toast.success("درخواست پذیرفته شد");
-      setActiveTab("in_progress");
+      setRequests(await loadRequests());
+      setLoadState("ready");
     } catch (cause: unknown) {
       toast.error(
-        isApiClientError(cause) ? cause.message : "پذیرش درخواست ناموفق بود.",
+        isApiClientError(cause) ? cause.message : "به‌روزرسانی درخواست‌ها ناموفق بود.",
       );
     } finally {
-      setBusyRequestId(null);
+      setRefreshing(false);
     }
   };
 
-  const handleReject = async (request: AppProviderRequestSummary) => {
-    setBusyRequestId(request.requestId);
+  const openAction = (action: ActionState["action"], request: AppProviderRequestSummary) => {
+    setActionState({ action, request });
+    setSheetKey((key) => key + 1);
+    setSheetOpen(true);
+  };
+
+  const handleConfirm = async (reason?: string) => {
+    if (!actionState) return false;
+    const { action, request } = actionState;
+
     try {
-      await rejectProviderRequest(request.requestId, {
-        expectedVersion: request.version,
-      });
-      const items = await reloadRequests();
-      setRequests(items);
-      toast.info("درخواست رد شد");
+      if (action === "accept") {
+        await acceptProviderRequest(request.requestId, { expectedVersion: request.version });
+        toast.success("درخواست پذیرفته شد", "برای هماهنگی با کشاورز تماس بگیرید");
+      } else {
+        await rejectProviderRequest(request.requestId, {
+          expectedVersion: request.version,
+          reason,
+        });
+        toast.info("درخواست رد شد");
+      }
+      setSheetOpen(false);
+      setRequests(await loadRequests());
+      if (action === "accept") selectTab("active");
+      return true;
     } catch (cause: unknown) {
       toast.error(
-        isApiClientError(cause) ? cause.message : "رد درخواست ناموفق بود.",
+        isApiClientError(cause)
+          ? cause.message
+          : action === "accept"
+            ? "پذیرش درخواست ناموفق بود."
+            : "رد درخواست ناموفق بود.",
       );
-    } finally {
-      setBusyRequestId(null);
+      // Another provider may have taken it; show the current state.
+      void loadRequests().then(setRequests).catch(() => undefined);
+      return false;
     }
   };
 
-  if (loadState === "loading") {
-    return (
-      <PageContainer withDock>
-        <PageHeader
-          title="درخواست‌ها"
-          description="مدیریت درخواست‌های دریافتی"
-        />
-        <div className="flex justify-center py-16">
-          <LoaderCircle className="size-8 animate-spin text-primary" />
-        </div>
-      </PageContainer>
-    );
-  }
-
-  if (loadState === "error") {
-    return (
-      <PageContainer withDock>
-        <PageHeader
-          title="درخواست‌ها"
-          description="مدیریت درخواست‌های دریافتی"
-        />
-        <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            بارگذاری درخواست‌ها ناموفق بود.
-          </CardContent>
-        </Card>
-      </PageContainer>
-    );
-  }
+  const loading = loadState === "loading";
+  const activeTab = TABS.find((item) => item.key === tab) ?? TABS[0];
+  const visible = grouped[tab];
 
   return (
-    <PageContainer withDock>
-      <PageHeader
-        title="درخواست‌ها"
-        description="مدیریت درخواست‌های دریافتی"
-      />
+    <MotionConfig reducedMotion="user">
+      <PageContainer withDock className="px-0 pt-0">
+        <ProviderPageHero
+          title="درخواست‌ها"
+          subtitle="درخواست کشاورزان را بررسی کنید، بپذیرید و کارها را پیگیری کنید."
+          actions={
+            <button
+              type="button"
+              onClick={() => void refresh()}
+              disabled={refreshing || loading}
+              aria-label="به‌روزرسانی"
+              className="flex size-11 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/15 backdrop-blur-md transition-colors hover:bg-white/20 disabled:opacity-60"
+            >
+              <RotateCw className={cn("size-5", refreshing && "animate-spin")} strokeWidth={1.9} />
+            </button>
+          }
+          stats={[
+            {
+              icon: Inbox,
+              label: "منتظر پاسخ",
+              value: loading ? "…" : toPersianDigits(grouped.new.length),
+              warn: !loading && grouped.new.length > 0,
+            },
+            {
+              icon: Wrench,
+              label: "کار فعال",
+              value: loading ? "…" : toPersianDigits(grouped.active.length),
+            },
+            {
+              icon: Wallet,
+              label: "درآمد انجام‌شده",
+              value: loading ? "…" : new Intl.NumberFormat("fa-IR", { notation: "compact" }).format(doneRevenue),
+            },
+          ]}
+        />
 
-      <MotionConfig reducedMotion="user">
-        <Tabs
-          dir="rtl"
-          value={activeTab}
-          onValueChange={(value) => setActiveTab(value as ProviderRequestTab)}
-          className="space-y-4"
-        >
-          <TabsList
-            dir="rtl"
-            variant="line"
-            className="relative grid w-full grid-cols-4 gap-1 rounded-2xl border border-primary/10 bg-surface/95 p-1.5 shadow-[0_6px_20px_rgba(45,106,79,0.08)] group-data-[orientation=horizontal]/tabs:h-auto"
+        <div className="sticky top-0 z-20 -mt-5 px-4 pb-3 pt-2">
+          <div
+            role="tablist"
+            aria-label="وضعیت درخواست‌ها"
+            className="grid grid-cols-4 gap-1 rounded-[20px] bg-surface/90 p-1.5 shadow-[0_12px_30px_-16px_rgba(45,106,79,0.45)] ring-1 ring-border/60 backdrop-blur-xl"
           >
-            {TAB_CONFIG.map((tab) => {
-              const isActive = tab.value === activeTab;
-              const count = tabData[tab.value].length;
-              const urgent = tab.value === "new" && count > 0;
-
+            {TABS.map((item) => {
+              const Icon = item.icon;
+              const active = item.key === tab;
+              const count = grouped[item.key].length;
+              const urgent = item.key === "new" && count > 0;
               return (
-                <TabsTrigger
-                  key={tab.value}
-                  value={tab.value}
-                  className="relative flex h-16 min-h-0 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] font-bold whitespace-nowrap text-muted-foreground transition-colors duration-200 hover:text-foreground data-[state=active]:text-white group-data-[variant=line]/tabs-list:data-[state=active]:after:opacity-0"
+                <button
+                  key={item.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => selectTab(item.key)}
+                  className={cn(
+                    "relative flex h-14 flex-col items-center justify-center gap-1 rounded-[14px] text-[11px] font-bold transition-colors",
+                    active ? "text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                  )}
                 >
-                  {isActive ? (
+                  {active ? (
                     <motion.span
-                      layoutId="provider-requests-active-tab"
-                      className="absolute inset-0 rounded-xl bg-gradient-to-l from-primary to-success shadow-[0_4px_12px_rgba(45,106,79,0.28)]"
-                      transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                      layoutId="requests-tab-pill"
+                      className="absolute inset-0 rounded-[14px] bg-primary shadow-[0_8px_18px_-10px_rgba(45,106,79,0.9)]"
+                      transition={{ type: "spring", stiffness: 420, damping: 34 }}
                     />
                   ) : null}
-
-                  <span className="relative z-10 flex h-5 items-center">
-                    <tab.icon
-                      className="size-5"
-                      strokeWidth={2.2}
-                      aria-hidden="true"
-                    />
-                    <span
-                      className={cn(
-                        "absolute -left-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[8px] font-bold tabular-nums shadow-sm",
-                        isActive
-                          ? "bg-white text-primary"
-                          : urgent
-                            ? "bg-destructive text-white"
-                            : "bg-muted text-muted-foreground",
-                      )}
-                    >
-                      {toPersianDigits(count)}
-                    </span>
+                  <span className="relative">
+                    <Icon className="size-[18px]" strokeWidth={2} />
+                    {!loading && count > 0 ? (
+                      <span
+                        className={cn(
+                          "absolute -left-3 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-black tabular-nums",
+                          active
+                            ? "bg-white text-primary"
+                            : urgent
+                              ? "bg-[#e8892c] text-white"
+                              : "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        {toPersianDigits(count > 99 ? "99+" : count)}
+                      </span>
+                    ) : null}
                   </span>
-                  <span className="relative z-10 max-w-full truncate leading-none">
-                    {tab.label}
-                  </span>
-                </TabsTrigger>
+                  <span className="relative max-w-full truncate px-1">{item.label}</span>
+                </button>
               );
             })}
-          </TabsList>
+          </div>
+        </div>
 
-          {TAB_CONFIG.map((tab) => (
-            <TabsContent key={tab.value} value={tab.value} className="space-y-3">
-              {tabData[tab.value].length === 0 ? (
-                <EmptyState
-                  icon={Inbox}
-                  title={tab.emptyTitle}
-                  description={tab.emptyDescription}
-                />
-              ) : (
-                tabData[tab.value].map((request) => (
-                  <ProviderRequestSummaryCard
-                    key={request.requestId}
-                    request={request}
-                    showQuickActions={tab.value === "new"}
-                    busy={busyRequestId === request.requestId}
-                    onAccept={() => void handleAccept(request)}
-                    onReject={() => void handleReject(request)}
-                  />
-                ))
-              )}
-            </TabsContent>
-          ))}
-        </Tabs>
-      </MotionConfig>
-    </PageContainer>
+        <div className="px-4 pt-2">
+          {loading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-40 rounded-[24px]" />
+              <Skeleton className="h-40 rounded-[24px]" />
+              <Skeleton className="h-28 rounded-[24px]" />
+            </div>
+          ) : loadState === "error" ? (
+            <div className="flex flex-col items-center gap-3 rounded-[24px] bg-surface px-6 py-10 text-center ring-1 ring-border/60">
+              <p className="text-sm text-muted-foreground">بارگذاری درخواست‌ها ناموفق بود.</p>
+              <button
+                type="button"
+                onClick={() => void refresh()}
+                className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-xs font-bold text-primary-foreground"
+              >
+                <RotateCw className="size-3.5" />
+                تلاش مجدد
+              </button>
+            </div>
+          ) : (
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={tab}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.22, ease: "easeOut" }}
+              >
+                {visible.length === 0 ? (
+                  <div className="flex flex-col items-center rounded-[26px] border-2 border-dashed border-border bg-surface/60 px-6 py-10 text-center">
+                    <span className="flex size-14 items-center justify-center rounded-[20px] bg-muted text-muted-foreground">
+                      <activeTab.icon className="size-7" strokeWidth={1.75} />
+                    </span>
+                    <h2 className="mt-3 text-[15px] font-black text-foreground">{activeTab.emptyTitle}</h2>
+                    <p className="mt-1 max-w-72 text-[12px] leading-6 text-muted-foreground">
+                      {activeTab.emptyDescription}
+                    </p>
+                    {tab === "new" ? (
+                      <Link
+                        href="/providers/services"
+                        className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-4 py-2 text-[12px] font-bold text-primary"
+                      >
+                        <Wrench className="size-3.5" />
+                        تکمیل خدمات و محدوده کاری
+                      </Link>
+                    ) : null}
+                  </div>
+                ) : (
+                  <ul className="space-y-3">
+                    <AnimatePresence initial={false}>
+                      {visible.map((request) => (
+                        <motion.li
+                          key={request.requestId}
+                          layout
+                          initial={{ opacity: 0, scale: 0.97 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, x: -40 }}
+                          transition={{ duration: 0.2 }}
+                        >
+                          <RequestCard
+                            request={request}
+                            state={classifyProviderRequest(request)}
+                            busy={sheetOpen && actionState?.request.requestId === request.requestId}
+                            onAccept={() => openAction("accept", request)}
+                            onReject={() => openAction("reject", request)}
+                          />
+                        </motion.li>
+                      ))}
+                    </AnimatePresence>
+                  </ul>
+                )}
+              </motion.div>
+            </AnimatePresence>
+          )}
+        </div>
+
+        <RequestActionSheet
+          open={sheetOpen}
+          onOpenChange={setSheetOpen}
+          action={actionState?.action ?? "accept"}
+          target={actionState?.request ?? null}
+          formKey={sheetKey}
+          onConfirm={handleConfirm}
+        />
+      </PageContainer>
+    </MotionConfig>
+  );
+}
+
+export default function ProviderRequestsPage() {
+  return (
+    <Suspense>
+      <ProviderRequestsContent />
+    </Suspense>
   );
 }

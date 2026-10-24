@@ -19,13 +19,14 @@ pnpm dev
 
 ## نقشه
 
-نقشه عمومی پروژه با Leaflet و سرویس MeMaps پیاده‌سازی شده است.
+نقشه عمومی پروژه با Leaflet و سرویس [پارسی‌مپ](https://docs.parsimap.ir/) پیاده‌سازی شده است.
 
-- تنظیمات و URL لایه‌ها: `src/lib/maps/memaps.ts`
-- کامپوننت عمومی نقشه: `src/components/shared/memaps-map.tsx`
-- انتخابگر موقعیت با GPS و انتخاب روی نقشه: `src/components/shared/map-picker.tsx`
-- لایه پیش‌فرض: تصویر ماهواره‌ای Google Earth از طریق MeMaps
-- استفاده از سرویس فعلی نیاز به API Key ندارد.
+- تنظیمات لایه‌ها (ماهواره‌ای و نقشه خیابانی): `src/lib/maps/parsimap.ts`
+- کامپوننت عمومی نقشه: `src/components/shared/parsimap-map.tsx`
+- انتخابگر موقعیت (پین ثابت وسط نقشه، GPS و حالت تمام‌صفحه): `src/components/shared/map-picker.tsx`
+- لایه پیش‌فرض: تصویر ماهواره‌ای پارسی‌مپ
+- توکن نقشه (PMI_MAP_TOKEN) در متغیر `NEXT_PUBLIC_PARSIMAP_MAP_TOKEN` قرار می‌گیرد و پس از تغییر آن باید سرور dev را دوباره اجرا کنید.
+- طبق شرایط پارسی‌مپ، attribution گوشه پایین نقشه نباید حذف یا تغییر داده شود.
 
 برای نمایش صرفاً خواندنی از `interactive={false}` و برای انتخاب موقعیت از `onChange` استفاده کنید.
 

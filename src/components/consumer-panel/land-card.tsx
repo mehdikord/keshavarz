@@ -5,7 +5,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { MapPinned, Pencil, Trash2 } from "lucide-react";
 
-import { MeMapsMap } from "@/components/shared/memaps-map";
+import { ParsimapMap } from "@/components/shared/parsimap-map";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -120,7 +120,7 @@ export function LandCard({ land, index = 0, onDelete }: LandCardProps) {
             </DialogDescription>
           </DialogHeader>
           {mapOpen ? (
-            <MeMapsMap
+            <ParsimapMap
               center={land.location}
               value={land.location}
               interactive={false}

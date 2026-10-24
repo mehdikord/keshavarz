@@ -1,24 +1,16 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  AlertTriangle,
-  ArrowLeft,
-  Bell,
-  CircleDollarSign,
-  ClipboardList,
-  LoaderCircle,
-  Tractor,
-  Wrench,
-} from "lucide-react";
+import { MotionConfig, motion } from "framer-motion";
 
 import { PageContainer } from "@/components/layout/page-container";
-import { PageHeader } from "@/components/layout/page-header";
-import { StatCard } from "@/components/shared/stat-card";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { DashboardHero } from "@/components/providers-panel/dashboard/dashboard-hero";
+import { IncomingRequests } from "@/components/providers-panel/dashboard/incoming-requests";
+import { ReadinessCard } from "@/components/providers-panel/dashboard/readiness-card";
+import { RecentNotifications } from "@/components/providers-panel/dashboard/recent-notifications";
+import { StatGrid } from "@/components/providers-panel/dashboard/stat-grid";
+import { SubscriptionCard } from "@/components/providers-panel/dashboard/subscription-card";
 import { isApiClientError } from "@/lib/api/envelope";
 import {
   fetchAppNotifications,
@@ -30,35 +22,52 @@ import {
 import {
   fetchAppProviderDashboard,
   fetchAppProviderServices,
+  patchAppProviderWorkArea,
   type AppProviderDashboard,
 } from "@/lib/api/app-provider";
 import {
+  fetchProviderRequests,
+  type AppProviderRequestSummary,
+} from "@/lib/api/app-requests";
+import {
   fetchAppProviderSubscription,
   isAppSubscriptionActive,
+  type AppActiveSubscription,
 } from "@/lib/api/app-subscriptions";
 import { toast } from "@/lib/toast";
-import { toPersianDigits } from "@/lib/utils/format";
 import { useAuthStore } from "@/stores/auth-store";
 
 type DashboardLoadState = "loading" | "ready" | "needs_profile";
 
-function formatMonthlyRevenue(amount: number): string {
-  if (amount <= 0) return "۰";
-  if (amount >= 1_000_000) {
-    return `${toPersianDigits((amount / 1_000_000).toFixed(1))}M`;
-  }
-  return `${toPersianDigits(Math.round(amount / 1000))}K`;
+/** Everything is missing until the provider profile is created. */
+const ALL_READINESS_KEYS = ["services", "workArea", "subscription", "availability", "active"];
+
+function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 18 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay, ease: [0.16, 1, 0.3, 1] }}
+    >
+      {children}
+    </motion.div>
+  );
 }
 
 export default function ProviderHomePage() {
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
+  const image = useAuthStore((state) => state.image);
 
   const [loadState, setLoadState] = useState<DashboardLoadState>("loading");
   const [dashboard, setDashboard] = useState<AppProviderDashboard | null>(null);
+  const [missing, setMissing] = useState<string[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [activeServicesCount, setActiveServicesCount] = useState(0);
-  const [hasSubscription, setHasSubscription] = useState(false);
+  const [subscription, setSubscription] = useState<AppActiveSubscription | null>(null);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [newRequests, setNewRequests] = useState<AppProviderRequestSummary[]>([]);
+  const [togglingAvailability, setTogglingAvailability] = useState(false);
   const [markingAll, startMarkAll] = useTransition();
 
   useEffect(() => {
@@ -67,7 +76,7 @@ export default function ProviderHomePage() {
 
     void (async () => {
       try {
-        const [dash, services, subscription, notificationsResult] =
+        const [dash, services, activeSubscription, notificationsResult, requests] =
           await Promise.all([
             fetchAppProviderDashboard(controller.signal),
             fetchAppProviderServices({
@@ -86,21 +95,36 @@ export default function ProviderHomePage() {
               limit: 20,
               signal: controller.signal,
             }),
+            fetchProviderRequests({
+              linkStatus: "sent",
+              limit: 20,
+              signal: controller.signal,
+            }),
           ]);
 
         if (cancelled) return;
 
         setDashboard(dash);
+        setMissing(dash.warnings);
+        setUnreadCount(dash.counts.unreadNotifications);
         setActiveServicesCount(
           services.items.filter((item) => item.isActive).length,
         );
-        setHasSubscription(isAppSubscriptionActive(subscription));
+        setSubscription(
+          isAppSubscriptionActive(activeSubscription) ? activeSubscription : null,
+        );
         setNotifications(notificationsResult.items.slice(0, 3));
+        setNewRequests(
+          requests.items
+            .filter((item) => item.status === "pending_provider")
+            .slice(0, 3),
+        );
         setLoadState("ready");
       } catch (cause: unknown) {
         if (cancelled || controller.signal.aborted) return;
 
         if (isApiClientError(cause) && cause.status === 404) {
+          setMissing(ALL_READINESS_KEYS);
           setLoadState("needs_profile");
           return;
         }
@@ -122,6 +146,25 @@ export default function ProviderHomePage() {
 
   if (!user) return null;
 
+  const loading = loadState === "loading";
+  const hasProfile = loadState === "ready";
+  const isAvailable = !missing.includes("availability");
+
+  const setAvailability = async (next: boolean) => {
+    setTogglingAvailability(true);
+    try {
+      const profile = await patchAppProviderWorkArea({ isAvailable: next });
+      setMissing(profile.eligibility.missing);
+      toast.success(next ? "آماده دریافت درخواست هستید" : "از دسترس خارج شدید");
+    } catch (cause: unknown) {
+      toast.error(
+        isApiClientError(cause) ? cause.message : "تغییر وضعیت ناموفق بود",
+      );
+    } finally {
+      setTogglingAvailability(false);
+    }
+  };
+
   const handleNotificationClick = async (notification: AppNotification) => {
     try {
       if (!notification.readAt) {
@@ -133,6 +176,7 @@ export default function ProviderHomePage() {
               : item,
           ),
         );
+        setUnreadCount((count) => Math.max(0, count - 1));
       }
     } catch (cause: unknown) {
       toast.error(
@@ -153,6 +197,7 @@ export default function ProviderHomePage() {
               : { ...item, readAt: new Date().toISOString() },
           ),
         );
+        setUnreadCount(0);
       } catch (cause: unknown) {
         toast.error(
           isApiClientError(cause)
@@ -163,154 +208,67 @@ export default function ProviderHomePage() {
     });
   };
 
-  if (loadState === "loading") {
-    return (
-      <PageContainer withDock>
-        <PageHeader
-          title="داشبورد"
-          description={`سلام ${user.displayName}، خوش آمدید`}
+  return (
+    <MotionConfig reducedMotion="user">
+      <PageContainer withDock className="px-0 pt-0">
+        <DashboardHero
+          name={user.displayName}
+          avatarSrc={image}
+          loading={loading}
+          monthlyRevenue={dashboard?.monthlyRevenueToman ?? 0}
+          unreadNotifications={unreadCount}
+          isAvailable={hasProfile ? isAvailable : null}
+          isSearchable={missing.length === 0}
+          togglingAvailability={togglingAvailability}
+          onToggleAvailability={() => void setAvailability(!isAvailable)}
         />
-        <div className="flex justify-center py-16">
-          <LoaderCircle className="size-8 animate-spin text-primary" />
+
+        <div className="relative z-10 -mt-4 flex flex-col gap-6 px-4">
+          {!loading && missing.length > 0 ? (
+            <Reveal>
+              <ReadinessCard
+                missing={missing}
+                togglingAvailability={togglingAvailability}
+                onEnableAvailability={
+                  hasProfile ? () => void setAvailability(true) : undefined
+                }
+              />
+            </Reveal>
+          ) : null}
+
+          <Reveal delay={0.08}>
+            <StatGrid
+              loading={loading}
+              newRequests={dashboard?.counts.newRequests ?? 0}
+              inProgress={dashboard?.counts.inProgressRequests ?? 0}
+              activeServices={activeServicesCount}
+            />
+          </Reveal>
+
+          {hasProfile || loading ? (
+            <Reveal delay={0.16}>
+              <IncomingRequests loading={loading} requests={newRequests} />
+            </Reveal>
+          ) : null}
+
+          {subscription ? (
+            <Reveal delay={0.22}>
+              <SubscriptionCard subscription={subscription} />
+            </Reveal>
+          ) : null}
+
+          {!loading ? (
+            <Reveal delay={0.28}>
+              <RecentNotifications
+                notifications={notifications}
+                markingAll={markingAll}
+                onMarkAllRead={handleMarkAllRead}
+                onOpen={(notification) => void handleNotificationClick(notification)}
+              />
+            </Reveal>
+          ) : null}
         </div>
       </PageContainer>
-    );
-  }
-
-  return (
-    <PageContainer withDock>
-      <PageHeader
-        title="داشبورد"
-        description={`سلام ${user.displayName}، خوش آمدید`}
-      />
-
-      {loadState === "needs_profile" ? (
-        <Card className="mb-4 overflow-hidden border-primary/20 bg-primary/[0.04]">
-          <CardContent className="flex items-start gap-3 p-4">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Wrench className="size-5" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="font-semibold">پروفایل خدمات‌دهنده تکمیل نشده</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                برای دریافت درخواست، ابتدا محدوده کاری و خدمات خود را تنظیم
-                کنید.
-              </p>
-              <Button asChild size="sm" className="mt-3 rounded-xl">
-                <Link href="/providers/services">تنظیم خدمات</Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {!hasSubscription && loadState === "ready" ? (
-        <Card className="mb-4 overflow-hidden border-amber-200/80 bg-gradient-to-l from-amber-50 to-orange-50">
-          <CardContent className="flex items-start gap-3 p-4">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
-              <AlertTriangle className="size-5" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="font-semibold text-amber-900">اشتراک فعال نیست</p>
-              <p className="mt-1 text-sm text-amber-800/80">
-                برای ارائه خدمات و دیده شدن در جستجو، اشتراک فعال کنید.
-              </p>
-              <Button asChild size="sm" className="mt-3 rounded-xl">
-                <Link href="/providers/subscription">فعال‌سازی اشتراک</Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      <div className="mb-5 grid grid-cols-2 gap-3 animate-slide-up">
-        <StatCard
-          label="درخواست جدید"
-          value={dashboard?.counts.newRequests ?? 0}
-          icon={ClipboardList}
-        />
-        <StatCard
-          label="در حال انجام"
-          value={dashboard?.counts.inProgressRequests ?? 0}
-          icon={Tractor}
-        />
-        <StatCard
-          label="درآمد ماه"
-          value={formatMonthlyRevenue(dashboard?.monthlyRevenueToman ?? 0)}
-          icon={CircleDollarSign}
-        />
-        <StatCard
-          label="خدمات فعال"
-          value={activeServicesCount}
-          icon={Wrench}
-        />
-      </div>
-
-      <section className="mb-5 space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">
-            اعلان‌های اخیر
-          </h2>
-          <div className="flex items-center gap-2">
-            {notifications.some((item) => !item.readAt) ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-8 rounded-lg text-xs"
-                disabled={markingAll}
-                onClick={handleMarkAllRead}
-              >
-                خواندن همه
-              </Button>
-            ) : null}
-            <Bell className="size-4 text-muted-foreground" />
-          </div>
-        </div>
-
-        {notifications.length > 0 ? (
-          <div className="space-y-2">
-            {notifications.map((notification) => (
-              <button
-                key={notification.notificationId}
-                type="button"
-                onClick={() => void handleNotificationClick(notification)}
-                className="flex w-full items-start gap-3 rounded-2xl border border-border/70 bg-surface px-4 py-3 text-right transition-colors hover:bg-muted/40"
-              >
-                <span
-                  className={
-                    notification.readAt
-                      ? "mt-1 size-2 shrink-0 rounded-full bg-transparent"
-                      : "mt-1 size-2 shrink-0 rounded-full bg-destructive"
-                  }
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">{notification.title}</p>
-                  <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-                    {notification.body}
-                  </p>
-                </div>
-                <ArrowLeft className="size-4 shrink-0 text-muted-foreground" />
-              </button>
-            ))}
-          </div>
-        ) : (
-          <Card className="border-dashed">
-            <CardContent className="py-6 text-center text-sm text-muted-foreground">
-              اعلان جدیدی ندارید
-            </CardContent>
-          </Card>
-        )}
-      </section>
-
-      <section className="grid gap-3">
-        <Button asChild className="h-12 rounded-xl">
-          <Link href="/providers/requests">مشاهده درخواست‌های جدید</Link>
-        </Button>
-        <Button asChild variant="outline" className="h-12 rounded-xl">
-          <Link href="/providers/services">مدیریت خدمات</Link>
-        </Button>
-      </section>
-    </PageContainer>
+    </MotionConfig>
   );
 }

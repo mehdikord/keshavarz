@@ -13,6 +13,18 @@ export const PRICING_UNITS = [
 
 export type AppPricingUnit = (typeof PRICING_UNITS)[number];
 
+export const PRICING_UNIT_LABELS: Record<AppPricingUnit, string> = {
+  fixed: "قیمت پایه",
+  per_hectare: "هر هکتار",
+  per_square_meter: "هر متر مربع",
+  per_hour: "هر ساعت",
+  per_day: "هر روز",
+};
+
+export function pricingUnitLabel(unit: string): string {
+  return PRICING_UNIT_LABELS[unit as AppPricingUnit] ?? PRICING_UNIT_LABELS.fixed;
+}
+
 export const AppProviderProfileSchema = z
   .object({
     approved: z.boolean(),

@@ -1,32 +1,20 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import {
-  AlertTriangle,
-  Calendar,
-  CheckCircle2,
-  Clock,
-  CreditCard,
-  History,
-  Sparkles,
-  Wrench,
-  Zap,
-} from "lucide-react";
+import { MotionConfig, motion } from "framer-motion";
+import { ArrowLeft, Clock3, Inbox, RotateCw, Search, UserRoundCheck, Wrench } from "lucide-react";
 
 import { PageContainer } from "@/components/layout/page-container";
-import { PageHeader } from "@/components/layout/page-header";
-import { ConfirmDialog } from "@/components/shared/confirm-dialog";
-import { EmptyState } from "@/components/shared/empty-state";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+import { ProviderPageHero } from "@/components/providers-panel/provider-page-hero";
+import { BillingHistory } from "@/components/providers-panel/subscription/billing-history";
+import { CheckoutSheet } from "@/components/providers-panel/subscription/checkout-sheet";
+import { MembershipCard } from "@/components/providers-panel/subscription/membership-card";
+import { PlanCard } from "@/components/providers-panel/subscription/plan-card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { isApiClientError } from "@/lib/api/envelope";
-import {
-  fetchAppPayments,
-  type AppPaymentSummary,
-} from "@/lib/api/app-payments";
+import { fetchAppPayments, type AppPaymentSummary } from "@/lib/api/app-payments";
 import {
   fetchAppProviderSubscription,
   fetchAppProviderSubscriptions,
@@ -37,96 +25,24 @@ import {
   type AppSubscriptionHistoryItem,
   type AppSubscriptionPlan,
 } from "@/lib/api/app-subscriptions";
+import { isPaymentPending } from "@/lib/subscriptions/labels";
 import { toast } from "@/lib/toast";
-import { cn } from "@/lib/utils";
-import { formatPrice, toPersianDigits } from "@/lib/utils/format";
 
-function formatPersianDate(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  return new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  }).format(new Date(iso));
-}
+const BENEFITS = [
+  { icon: Search, title: "دیده شدن در جستجو", text: "کشاورزان منطقه شما را در نتایج پیدا می‌کنند." },
+  { icon: Inbox, title: "دریافت درخواست", text: "درخواست کار مستقیم برای شما ارسال می‌شود." },
+  { icon: UserRoundCheck, title: "پروفایل عمومی", text: "خدمات، قیمت‌ها و نمونه‌کارهایتان نمایش داده می‌شود." },
+];
 
-function remainingDaysFromSeconds(seconds: number): number {
-  return Math.max(0, Math.ceil(seconds / (60 * 60 * 24)));
-}
-
-function planFeatureList(features: unknown): string[] {
-  if (!Array.isArray(features)) return [];
-  return features.filter((item): item is string => typeof item === "string");
-}
-
-function subscriptionStatusLabel(status: string, active: boolean): string {
-  if (active) return "فعال";
-  if (status === "pending_payment") return "در انتظار پرداخت";
-  if (status === "cancelled") return "لغو شده";
-  if (status === "expired") return "منقضی";
-  return "غیرفعال";
-}
-
-function paymentStatusLabel(status: string): string {
-  switch (status) {
-    case "paid":
-      return "پرداخت‌شده";
-    case "pending":
-    case "initiated":
-      return "در انتظار";
-    case "failed":
-      return "ناموفق";
-    default:
-      return status;
-  }
-}
-
-/* ------------------------------------------------------------------ */
-/*  SVG ring progress (app-style)                                      */
-/* ------------------------------------------------------------------ */
-function ProgressRing({
-  percent,
-  size = 80,
-  stroke = 6,
-}: {
-  percent: number;
-  size?: number;
-  stroke?: number;
-}) {
-  const radius = (size - stroke) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (percent / 100) * circumference;
-
+function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
   return (
-    <svg width={size} height={size} className="shrink-0 -rotate-90">
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={stroke}
-        className="text-muted/60"
-      />
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        fill="none"
-        stroke="url(#ring-gradient)"
-        strokeWidth={stroke}
-        strokeLinecap="round"
-        strokeDasharray={circumference}
-        strokeDashoffset={offset}
-        className="transition-all duration-700 ease-out"
-      />
-      <defs>
-        <linearGradient id="ring-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="var(--primary)" />
-          <stop offset="100%" stopColor="var(--success)" />
-        </linearGradient>
-      </defs>
-    </svg>
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45, delay, ease: [0.16, 1, 0.3, 1] }}
+    >
+      {children}
+    </motion.div>
   );
 }
 
@@ -134,13 +50,14 @@ export default function ProviderSubscriptionPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [needsProfile, setNeedsProfile] = useState(false);
   const [plans, setPlans] = useState<AppSubscriptionPlan[]>([]);
-  const [subscription, setSubscription] =
-    useState<AppActiveSubscription | null>(null);
+  const [subscription, setSubscription] = useState<AppActiveSubscription | null>(null);
   const [history, setHistory] = useState<AppSubscriptionHistoryItem[]>([]);
   const [payments, setPayments] = useState<AppPaymentSummary[]>([]);
-  const [selectedPlanCode, setSelectedPlanCode] = useState<string | null>(null);
+  const [selectedCode, setSelectedCode] = useState<string | null>(null);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [purchasing, startPurchase] = useTransition();
 
   useEffect(() => {
@@ -148,524 +65,227 @@ export default function ProviderSubscriptionPage() {
 
     void (async () => {
       try {
-        const [planList, current, historyResult, paymentsResult] =
-          await Promise.all([
-            fetchAppSubscriptionPlans(controller.signal),
-            fetchAppProviderSubscription(controller.signal).catch(
-              (cause: unknown) => {
-                if (isApiClientError(cause) && cause.status === 404) {
-                  setNeedsProfile(true);
-                  return null;
-                }
-                throw cause;
-              },
-            ),
-            fetchAppProviderSubscriptions({
-              limit: 20,
-              signal: controller.signal,
-            }).catch((cause: unknown) => {
+        const [planList, current, historyResult, paymentsResult] = await Promise.all([
+          fetchAppSubscriptionPlans(controller.signal),
+          fetchAppProviderSubscription(controller.signal).catch((cause: unknown) => {
+            if (isApiClientError(cause) && cause.status === 404) {
+              setNeedsProfile(true);
+              return null;
+            }
+            throw cause;
+          }),
+          fetchAppProviderSubscriptions({ limit: 20, signal: controller.signal }).catch(
+            (cause: unknown) => {
               if (isApiClientError(cause) && cause.status === 404) {
                 return { items: [] as AppSubscriptionHistoryItem[] };
               }
               throw cause;
-            }),
-            fetchAppPayments({ limit: 20, signal: controller.signal }),
-          ]);
+            },
+          ),
+          fetchAppPayments({ limit: 20, signal: controller.signal }),
+        ]);
 
         if (controller.signal.aborted) return;
 
-        setPlans(
-          [...planList].sort((a, b) => a.sortOrder - b.sortOrder),
-        );
-        setSubscription(current);
+        const sorted = [...planList].sort((a, b) => a.sortOrder - b.sortOrder);
+        setPlans(sorted);
+        setSelectedCode((sorted.find((plan) => plan.isRecommended) ?? sorted[0])?.code ?? null);
+        setSubscription(isAppSubscriptionActive(current) ? current : null);
         setHistory(historyResult.items);
         setPayments(paymentsResult.items);
         setError(null);
       } catch (cause: unknown) {
         if (controller.signal.aborted) return;
-        setError(
-          isApiClientError(cause)
-            ? cause.message
-            : "بارگذاری اشتراک ناموفق بود",
-        );
+        setError(isApiClientError(cause) ? cause.message : "بارگذاری اشتراک ناموفق بود");
       } finally {
         if (!controller.signal.aborted) setLoading(false);
       }
     })();
 
     return () => controller.abort();
-  }, []);
+  }, [reloadKey]);
 
-  const isActive = isAppSubscriptionActive(subscription);
-  const remainingDays = subscription
-    ? remainingDaysFromSeconds(subscription.remainingSeconds)
-    : 0;
-  const totalSpanDays =
-    subscription?.startsAt && subscription.endsAt
-      ? Math.max(
-          1,
-          Math.ceil(
-            (new Date(subscription.endsAt).getTime() -
-              new Date(subscription.startsAt).getTime()) /
-              (1000 * 60 * 60 * 24),
-          ),
-        )
-      : 1;
-  const progress = subscription
-    ? Math.min(100, Math.round((remainingDays / totalSpanDays) * 100))
-    : 0;
-
-  const selectedPlan = plans.find((plan) => plan.code === selectedPlanCode);
+  const selectedPlan = plans.find((plan) => plan.code === selectedCode) ?? null;
+  const pendingPayment = payments.find((payment) => isPaymentPending(payment.status));
+  const isActive = subscription !== null;
 
   const handlePurchase = () => {
-    if (!selectedPlanCode) return;
+    if (!selectedPlan) return;
 
     startPurchase(async () => {
       try {
-        const result = await purchaseAppProviderSubscription({
-          planCode: selectedPlanCode,
-        });
-        setSelectedPlanCode(null);
+        const result = await purchaseAppProviderSubscription({ planCode: selectedPlan.code });
         toast.success("در حال تأیید پرداخت…");
         router.push(
           `/providers/subscription/return?paymentId=${encodeURIComponent(result.paymentId)}`,
         );
       } catch (cause: unknown) {
-        toast.error(
-          isApiClientError(cause)
-            ? cause.message
-            : "شروع خرید اشتراک ناموفق بود",
-        );
+        toast.error(isApiClientError(cause) ? cause.message : "شروع خرید اشتراک ناموفق بود");
       }
     });
   };
 
-  if (loading) {
-    return (
-      <PageContainer withDock>
-        <PageHeader
-          title="اشتراک‌ها"
-          description="مدیریت اشتراک و دسترسی به جستجو"
-        />
-        <div className="flex justify-center py-16">
-          <div className="size-8 animate-spin rounded-full border-4 border-primary/20 border-t-primary" />
-        </div>
-      </PageContainer>
-    );
-  }
-
-  if (error) {
-    return (
-      <PageContainer withDock>
-        <PageHeader
-          title="اشتراک‌ها"
-          description="مدیریت اشتراک و دسترسی به جستجو"
-        />
-        <EmptyState
-          icon={AlertTriangle}
-          title="خطا در بارگذاری"
-          description={error}
-        />
-      </PageContainer>
-    );
-  }
-
-  if (needsProfile) {
-    return (
-      <PageContainer withDock>
-        <PageHeader
-          title="اشتراک‌ها"
-          description="مدیریت اشتراک و دسترسی به جستجو"
-        />
-        <EmptyState
-          icon={Wrench}
-          title="پروفایل خدمات‌دهنده تکمیل نشده"
-          description="قبل از خرید اشتراک، ابتدا خدمات و محدوده کاری را تنظیم کنید."
-          action={{
-            label: "تنظیم خدمات",
-            href: "/providers/services",
-          }}
-        />
-      </PageContainer>
-    );
-  }
-
   return (
-    <PageContainer withDock>
-      <PageHeader
-        title="اشتراک‌ها"
-        description="مدیریت اشتراک و دسترسی به جستجو"
-      />
+    <MotionConfig reducedMotion="user">
+      <PageContainer withDock className="px-0 pt-0">
+        <ProviderPageHero
+          title="اشتراک"
+          subtitle="با اشتراک فعال، کشاورزان منطقه شما را می‌بینند و برایتان درخواست می‌فرستند."
+        >
+          {loading ? (
+            <div className="mt-5 h-[188px] animate-pulse rounded-[26px] bg-white/10" />
+          ) : !error && !needsProfile ? (
+            <MembershipCard subscription={subscription} />
+          ) : null}
+        </ProviderPageHero>
 
-      {/* ── Hero: Current Subscription ───────────────────────────── */}
-      {subscription ? (
-        <div className="mb-6 animate-fade-in">
-          <div
-            className={cn(
-              "relative overflow-hidden rounded-3xl border p-5 sm:p-6",
-              isActive
-                ? "border-primary/20 bg-gradient-to-br from-primary/[0.06] via-surface to-success/[0.06]"
-                : "border-border/60 bg-surface",
-            )}
-          >
-            {/* Decorative glow */}
-            {isActive && (
-              <div className="pointer-events-none absolute -left-16 -top-16 size-48 rounded-full bg-primary/8 blur-3xl" />
-            )}
-
-            {/* Top row: status + remaining days */}
-            <div className="relative flex items-start justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div
-                  className={cn(
-                    "flex size-12 items-center justify-center rounded-2xl",
-                    isActive
-                      ? "bg-gradient-to-br from-primary to-success text-white shadow-md shadow-primary/20"
-                      : "bg-muted text-muted-foreground",
-                  )}
-                >
-                  <CreditCard className="size-6" />
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground">
-                    اشتراک فعال
-                  </p>
-                  <p className="mt-0.5 text-lg font-bold leading-tight">
-                    {subscription.planName}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-col items-end gap-1">
-                <Badge
-                  className={cn(
-                    "rounded-full px-3 py-1 text-xs font-semibold",
-                    isActive
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : "border-rose-200 bg-rose-50 text-rose-700",
-                  )}
-                >
-                  {subscriptionStatusLabel(subscription.status, isActive)}
-                </Badge>
-              </div>
+        <div className="relative z-10 -mt-4 space-y-6 px-4 pt-1">
+          {loading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-52 rounded-[26px]" />
+              <Skeleton className="h-52 rounded-[26px]" />
             </div>
-
-            {/* Progress ring + dates */}
-            <div className="relative mt-5 flex items-center gap-5">
-              <div className="relative flex shrink-0 items-center justify-center">
-                <ProgressRing percent={progress} size={88} stroke={7} />
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-lg font-bold leading-none">
-                    {toPersianDigits(remainingDays)}
-                  </span>
-                  <span className="mt-0.5 text-[10px] font-medium text-muted-foreground">
-                    روز
-                  </span>
-                </div>
-              </div>
-
-              <div className="min-w-0 flex-1 space-y-2">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Calendar className="size-3.5 shrink-0" />
-                  <span className="truncate">
-                    {formatPersianDate(subscription.startsAt)}
-                  </span>
-                  <span className="text-muted-foreground/50">—</span>
-                  <span className="truncate">
-                    {formatPersianDate(subscription.endsAt)}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Clock className="size-3.5 shrink-0" />
-                  <span>
-                    {toPersianDigits(remainingDays)} روز از{" "}
-                    {toPersianDigits(totalSpanDays)} روز باقی‌مانده
-                  </span>
-                </div>
-                {/* Linear progress */}
-                <div className="h-1.5 overflow-hidden rounded-full bg-muted/60">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-l from-primary to-success transition-all duration-700 ease-out"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-              </div>
+          ) : error ? (
+            <div className="flex flex-col items-center gap-3 rounded-[24px] bg-surface px-6 py-10 text-center ring-1 ring-border/60">
+              <p className="text-sm text-muted-foreground">{error}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoading(true);
+                  setReloadKey((key) => key + 1);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-xs font-bold text-primary-foreground"
+              >
+                <RotateCw className="size-3.5" />
+                تلاش مجدد
+              </button>
             </div>
-          </div>
-        </div>
-      ) : (
-        <div className="mb-6 animate-fade-in">
-          <div className="relative overflow-hidden rounded-3xl border border-dashed border-border/60 bg-surface/50 p-5 text-center sm:p-6">
-            <div className="mx-auto mb-3 flex size-14 items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground">
-              <CreditCard className="size-7" />
+          ) : needsProfile ? (
+            <div className="flex flex-col items-center rounded-[26px] bg-[linear-gradient(160deg,#fff6e6_0%,#ffffff_75%)] px-6 py-8 text-center ring-1 ring-[#e9c46a]/40">
+              <span className="flex size-16 items-center justify-center rounded-[22px] bg-gradient-to-br from-[#ffb85c] to-[#e07b1f] text-white">
+                <Wrench className="size-8" strokeWidth={1.75} />
+              </span>
+              <h2 className="mt-4 text-[16px] font-black">ابتدا پروفایل خود را بسازید</h2>
+              <p className="mt-1.5 max-w-72 text-[12px] leading-6 text-muted-foreground">
+                قبل از خرید اشتراک، خدمات و محدوده کاری خود را ثبت کنید.
+              </p>
+              <Link
+                href="/providers/services"
+                className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-primary px-6 py-3 text-[13.5px] font-black text-primary-foreground"
+              >
+                تنظیم خدمات
+                <ArrowLeft className="size-4" />
+              </Link>
             </div>
-            <p className="text-sm font-medium text-foreground">
-              هیچ اشتراکی فعال نیست
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              برای دیده شدن در جستجوی خدمات‌گیرندگان، یک پلن انتخاب کنید.
-            </p>
-          </div>
-        </div>
-      )}
+          ) : (
+            <>
+              {pendingPayment ? (
+                <Reveal>
+                  <Link
+                    href={`/providers/subscription/return?paymentId=${encodeURIComponent(pendingPayment.paymentId)}`}
+                    className="flex items-center gap-3 rounded-[22px] bg-[#fdefd6] px-4 py-3 ring-1 ring-[#e9c46a]/50"
+                  >
+                    <Clock3 className="size-5 shrink-0 text-[#b4661a]" />
+                    <span className="min-w-0 flex-1 text-[12px] leading-5 text-[#6b4210]">
+                      یک پرداخت در انتظار تأیید دارید. برای بررسی وضعیت ضربه بزنید.
+                    </span>
+                    <ArrowLeft className="size-4 shrink-0 text-[#b4661a]" />
+                  </Link>
+                </Reveal>
+              ) : null}
 
-      {/* ── Purchase Plans ───────────────────────────────────────── */}
-      <section className="mb-6 space-y-4">
-        <div className="flex items-center gap-2">
-          <Zap className="size-4 text-primary" />
-          <h2 className="text-sm font-semibold">خرید اشتراک</h2>
-        </div>
-
-        {plans.length === 0 ? (
-          <EmptyState
-            icon={CreditCard}
-            title="پلنی موجود نیست"
-            description="در حال حاضر پلن فعالی برای خرید وجود ندارد."
-          />
-        ) : (
-          <div className="grid gap-4">
-            {plans.map((plan) => {
-              const features = planFeatureList(plan.features);
-              return (
-                <div
-                  key={plan.planId}
-                  className={cn(
-                    "group relative overflow-hidden rounded-3xl border-2 transition-all duration-200",
-                    plan.isRecommended
-                      ? "border-primary/30 bg-gradient-to-br from-primary/[0.05] via-surface to-success/[0.04] shadow-md shadow-primary/8"
-                      : "border-border/50 bg-surface hover:border-border/80 hover:shadow-sm",
-                  )}
-                >
-                  {/* Recommended ribbon */}
-                  {plan.isRecommended && (
-                    <div className="absolute left-0 top-0">
-                      <div className="flex items-center gap-1 rounded-br-xl rounded-tl-2xl bg-gradient-to-l from-primary to-success px-3.5 py-1.5 text-xs font-bold text-white shadow-sm">
-                        <Sparkles className="size-3" />
-                        پیشنهادی
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="p-5 sm:p-6">
-                    {/* Header: icon + title + duration */}
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={cn(
-                          "flex size-12 items-center justify-center rounded-2xl",
-                          plan.isRecommended
-                            ? "bg-gradient-to-br from-primary to-success text-white shadow-md shadow-primary/20"
-                            : "bg-primary/10 text-primary",
-                        )}
-                      >
-                        <CreditCard className="size-6" />
-                      </div>
-                      <div>
-                        <p className="text-base font-bold">{plan.name}</p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {toPersianDigits(plan.durationMonths)} ماه دسترسی
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Description */}
-                    {plan.description && (
-                      <p className="mt-3.5 text-sm leading-relaxed text-muted-foreground">
-                        {plan.description}
-                      </p>
-                    )}
-
-                    {/* Features */}
-                    {features.length > 0 && (
-                      <div className="mt-4 grid grid-cols-1 gap-2">
-                        {features.map((feature) => (
-                          <div
-                            key={feature}
-                            className="flex items-center gap-2.5 rounded-xl bg-muted/40 px-3 py-2 text-sm"
-                          >
-                            <div className="flex size-5 shrink-0 items-center justify-center rounded-full bg-success/15">
-                              <CheckCircle2 className="size-3 text-success" />
-                            </div>
-                            <span className="text-foreground/80">
-                              {feature}
+              {!isActive ? (
+                <Reveal>
+                  <section className="space-y-3 rounded-[24px] bg-surface p-4 ring-1 ring-border/60">
+                    <h2 className="text-[13.5px] font-black text-foreground">با اشتراک چه چیزی به دست می‌آورید؟</h2>
+                    <ul className="space-y-3">
+                      {BENEFITS.map((benefit) => {
+                        const Icon = benefit.icon;
+                        return (
+                          <li key={benefit.title} className="flex items-center gap-3">
+                            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#d8f3dc] text-[#2d6a4f]">
+                              <Icon className="size-5" />
                             </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                            <span className="min-w-0">
+                              <span className="block text-[13px] font-black text-foreground">{benefit.title}</span>
+                              <span className="block text-[11.5px] leading-5 text-muted-foreground">{benefit.text}</span>
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </section>
+                </Reveal>
+              ) : null}
 
-                    {/* Price — its own row */}
-                    <div className="mt-5 flex items-baseline justify-center gap-1.5" dir="ltr">
-                      <span className="text-xl font-extrabold tracking-tight text-primary">
-                        {plan.priceToman.toLocaleString("fa-IR")}
-                      </span>
-                      <span className="text-xs font-medium text-muted-foreground">
-                        تومان
-                      </span>
+              <Reveal delay={0.08}>
+                <section aria-labelledby="plans-title">
+                  <div className="mb-3 px-1">
+                    <h2 id="plans-title" className="text-[15px] font-black text-foreground">
+                      {isActive ? "تمدید اشتراک" : "انتخاب طرح"}
+                    </h2>
+                    <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+                      {isActive
+                        ? "با تمدید، مدت جدید به انتهای اشتراک فعلی اضافه می‌شود."
+                        : "طرح مناسب خود را انتخاب کنید."}
+                    </p>
+                  </div>
+
+                  {plans.length === 0 ? (
+                    <p className="rounded-[22px] bg-surface px-4 py-8 text-center text-[12px] text-muted-foreground ring-1 ring-border/60">
+                      در حال حاضر طرح فعالی برای خرید وجود ندارد.
+                    </p>
+                  ) : (
+                    <div role="radiogroup" aria-labelledby="plans-title" className="space-y-3">
+                      {plans.map((plan) => (
+                        <PlanCard
+                          key={plan.planId}
+                          plan={plan}
+                          selected={plan.code === selectedCode}
+                          onSelect={() => setSelectedCode(plan.code)}
+                        />
+                      ))}
                     </div>
+                  )}
 
-                    {/* Separator */}
-                    <div className="my-4 h-px bg-border/50" />
-
-                    {/* Full-width buy button */}
-                    <Button
+                  {selectedPlan ? (
+                    <button
                       type="button"
-                      className={cn(
-                        "h-12 w-full rounded-2xl text-sm font-bold",
-                        plan.isRecommended
-                          ? "shadow-md shadow-primary/20"
-                          : "",
-                      )}
-                      variant={plan.isRecommended ? "default" : "outline"}
-                      disabled={purchasing}
-                      onClick={() => setSelectedPlanCode(plan.code)}
+                      onClick={() => setCheckoutOpen(true)}
+                      className="mt-4 flex w-full items-center justify-between gap-3 rounded-[22px] bg-primary py-3 pe-3 ps-5 text-primary-foreground shadow-[0_18px_36px_-18px_rgba(45,106,79,0.95)] transition active:scale-[0.98]"
                     >
-                      <CreditCard className="size-4" />
-                      خرید پلن {plan.name}
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
+                      <span className="text-right">
+                        <span className="block text-[14px] font-black">
+                          {isActive ? "تمدید با" : "خرید"} {selectedPlan.name}
+                        </span>
+                        <span className="block text-[11px] text-primary-foreground/75">
+                          {new Intl.NumberFormat("fa-IR").format(selectedPlan.priceToman)} تومان
+                        </span>
+                      </span>
+                      <span className="flex size-10 items-center justify-center rounded-xl bg-white text-primary">
+                        <ArrowLeft className="size-5" strokeWidth={2.25} />
+                      </span>
+                    </button>
+                  ) : null}
+                </section>
+              </Reveal>
 
-      {/* ── History ──────────────────────────────────────────────── */}
-      {(history.length > 0 || payments.length > 0) && (
-        <section className="mb-6 space-y-4">
-          <div className="flex items-center gap-2">
-            <History className="size-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold">تاریخچه</h2>
-          </div>
-
-          {/* Subscription history */}
-          {history.length > 0 && (
-            <div className="space-y-2">
-              {history.map((record) => (
-                <div
-                  key={record.subscriptionId}
-                  className="flex items-center justify-between gap-3 rounded-2xl border border-border/50 bg-surface/80 px-4 py-3 transition-colors hover:bg-muted/30"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex size-9 items-center justify-center rounded-xl bg-primary/8 text-primary">
-                      <CreditCard className="size-4.5" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium">{record.planName}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatPersianDate(record.createdAt)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2.5">
-                    <Badge
-                      variant={
-                        record.status === "active"
-                          ? "success"
-                          : record.status === "cancelled"
-                            ? "destructive"
-                            : "secondary"
-                      }
-                      className="text-[10px]"
-                    >
-                      {subscriptionStatusLabel(
-                        record.status,
-                        record.status === "active",
-                      )}
-                    </Badge>
-                    <p className="text-sm font-bold text-primary">
-                      {formatPrice(record.amountToman)}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
+              <Reveal delay={0.16}>
+                <BillingHistory payments={payments} subscriptions={history} />
+              </Reveal>
+            </>
           )}
+        </div>
 
-          {history.length > 0 && payments.length > 0 && (
-            <Separator className="opacity-50" />
-          )}
-
-          {/* Payments */}
-          {payments.length > 0 && (
-            <div className="space-y-2">
-              {payments.map((payment) => (
-                <div
-                  key={payment.paymentId}
-                  className="flex items-center justify-between gap-3 rounded-2xl border border-border/50 bg-surface/80 px-4 py-3 transition-colors hover:bg-muted/30"
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={cn(
-                        "flex size-9 items-center justify-center rounded-xl",
-                        payment.status === "paid"
-                          ? "bg-success/10 text-success"
-                          : payment.status === "failed"
-                            ? "bg-destructive/10 text-destructive"
-                            : "bg-accent/10 text-accent",
-                      )}
-                    >
-                      {payment.status === "paid" ? (
-                        <CheckCircle2 className="size-4.5" />
-                      ) : (
-                        <Clock className="size-4.5" />
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium">
-                        {paymentStatusLabel(payment.status)}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatPersianDate(
-                          payment.paidAt ?? payment.createdAt,
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2.5">
-                    {payment.status === "pending" ||
-                    payment.status === "initiated" ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-7 rounded-lg px-2.5 text-[10px]"
-                        onClick={() =>
-                          router.push(
-                            `/providers/subscription/return?paymentId=${encodeURIComponent(payment.paymentId)}`,
-                          )
-                        }
-                      >
-                        تأیید
-                      </Button>
-                    ) : null}
-                    <p className="text-sm font-bold text-primary">
-                      {formatPrice(payment.amountToman)}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* ── Confirm Dialog ───────────────────────────────────────── */}
-      <ConfirmDialog
-        open={selectedPlanCode !== null}
-        onOpenChange={(open) =>
-          !open && !purchasing && setSelectedPlanCode(null)
-        }
-        title="تأیید خرید اشتراک"
-        description={
-          selectedPlan
-            ? `پرداخت ${formatPrice(selectedPlan.priceToman)} برای «${selectedPlan.name}» آغاز می‌شود و پس از تأیید درگاه، اشتراک فعال خواهد شد.`
-            : "پرداخت از طریق درگاه انجام و سپس تأیید می‌شود."
-        }
-        confirmLabel={purchasing ? "در حال انتقال…" : "ادامه پرداخت"}
-        loading={purchasing}
-        onConfirm={handlePurchase}
-      />
-    </PageContainer>
+        <CheckoutSheet
+          open={checkoutOpen}
+          onOpenChange={setCheckoutOpen}
+          plan={selectedPlan}
+          current={subscription}
+          purchasing={purchasing}
+          onConfirm={handlePurchase}
+        />
+      </PageContainer>
+    </MotionConfig>
   );
 }

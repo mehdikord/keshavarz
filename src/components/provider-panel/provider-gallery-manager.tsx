@@ -8,8 +8,6 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   deleteAppProviderGalleryImage,
   fetchAppProviderGallery,
@@ -96,89 +94,89 @@ export function ProviderGalleryManager() {
   const canUpload = gallery.length < maxImages;
 
   return (
-    <section className="mb-8">
-      <div className="mb-3 flex items-end justify-between gap-3 px-0.5">
-        <div>
-          <h2 className="text-base font-bold text-foreground">گالری پروفایل عمومی</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            تصاویر نمونه‌کار برای نمایش در پروفایل عمومی شما
+    <section className="space-y-4">
+      <div className="flex items-center gap-3 rounded-[22px] bg-surface px-4 py-3 ring-1 ring-border/60">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#fdefd6] text-[#b4661a]">
+          <Images className="size-5" strokeWidth={1.9} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-[14px] font-black text-foreground">نمونه‌کارها</h2>
+          <p className="mt-0.5 text-[11.5px] leading-5 text-muted-foreground">
+            عکس ادوات و کارهای انجام‌شده در پروفایل عمومی شما نمایش داده می‌شود.
           </p>
         </div>
-        <span className="rounded-full bg-primary/8 px-2.5 py-1 text-[10px] font-semibold text-primary tabular-nums">
+        <span className="shrink-0 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-black tabular-nums text-primary">
           {toPersianDigits(gallery.length)}/{toPersianDigits(maxImages)}
         </span>
       </div>
 
-      <Card className="card-elevated overflow-hidden rounded-2xl border-border/70">
-        <CardContent className="space-y-4 p-4">
-          {loading ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              در حال بارگذاری…
-            </p>
-          ) : gallery.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/80 bg-muted/30 px-4 py-8 text-center">
-              <Images className="mb-2 size-8 text-primary/60" strokeWidth={1.5} />
-              <p className="text-sm font-semibold text-foreground">گالری خالی است</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                با افزودن تصویر، پروفایل عمومی شما جذاب‌تر می‌شود
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-              {gallery.map((item) => (
-                <div
-                  key={item.imageId}
-                  className="group relative aspect-square overflow-hidden rounded-xl border border-border/60 bg-muted/40"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={item.url}
-                    alt={item.caption || ""}
-                    className="size-full object-cover"
-                  />
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="destructive"
-                    className="absolute end-1.5 top-1.5 size-8 rounded-lg opacity-90 shadow-sm"
-                    disabled={busyId === item.imageId}
-                    onClick={() => void handleDelete(item.imageId)}
-                    aria-label="حذف تصویر"
-                  >
-                    {busyId === item.imageId ? (
-                      <LoaderCircle className="size-3.5 animate-spin" />
-                    ) : (
-                      <Trash2 className="size-3.5" />
-                    )}
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <Button
+      {loading ? (
+        <div className="grid grid-cols-3 gap-2">
+          {Array.from({ length: 6 }, (_, i) => (
+            <div key={i} className="aspect-square animate-pulse rounded-2xl bg-muted" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-2">
+          <button
             type="button"
-            variant="outline"
-            className="h-11 w-full rounded-xl border-primary/20"
             disabled={!canUpload || uploading}
             onClick={() => fileInputRef.current?.click()}
+            className="flex aspect-square flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-primary/30 bg-primary/[0.04] text-primary transition-colors hover:bg-primary/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {uploading ? (
-              <LoaderCircle className="size-4 animate-spin" />
+              <LoaderCircle className="size-6 animate-spin" />
             ) : (
-              <Plus className="size-4" />
+              <Plus className="size-6" strokeWidth={2.25} />
             )}
-            {canUpload ? "افزودن تصویر به گالری" : "ظرفیت گالری تکمیل است"}
-          </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            className="hidden"
-            onChange={(event) => void handleUpload(event)}
-          />
-        </CardContent>
-      </Card>
+            <span className="px-1 text-center text-[11px] font-bold leading-4">
+              {uploading ? "در حال ارسال" : canUpload ? "افزودن عکس" : "ظرفیت تکمیل"}
+            </span>
+          </button>
+
+          {gallery.map((item) => (
+            <div
+              key={item.imageId}
+              className="group relative aspect-square overflow-hidden rounded-2xl bg-muted/40 ring-1 ring-border/60"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={item.url}
+                alt={item.caption || ""}
+                className="size-full object-cover transition-transform duration-500 group-hover:scale-105"
+              />
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-black/35 to-transparent" />
+              <button
+                type="button"
+                className="absolute end-1.5 top-1.5 flex size-8 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm transition hover:bg-destructive disabled:opacity-60"
+                disabled={busyId === item.imageId}
+                onClick={() => void handleDelete(item.imageId)}
+                aria-label="حذف تصویر"
+              >
+                {busyId === item.imageId ? (
+                  <LoaderCircle className="size-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="size-3.5" />
+                )}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!loading && gallery.length === 0 ? (
+        <p className="text-center text-[11.5px] leading-5 text-muted-foreground">
+          پروفایل‌های دارای نمونه‌کار اعتماد بیشتری از کشاورزان جلب می‌کنند.
+        </p>
+      ) : null}
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={(event) => void handleUpload(event)}
+      />
     </section>
   );
 }

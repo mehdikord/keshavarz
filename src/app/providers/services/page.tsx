@@ -1,42 +1,28 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  AlertTriangle,
-  Check,
-  ChevronDown,
-  CircleDollarSign,
-  LoaderCircle,
-  MapPin,
-  Pencil,
-  Plus,
-  Sparkles,
-  Trash2,
-  Wrench,
-  X,
-} from "lucide-react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { AnimatePresence, MotionConfig, motion } from "framer-motion";
+import { ChevronDown, Images, MapPinned, Plus, RotateCw, Wrench } from "lucide-react";
 
 import { PageContainer } from "@/components/layout/page-container";
-import { PageHeader } from "@/components/layout/page-header";
 import { ProviderGalleryManager } from "@/components/provider-panel/provider-gallery-manager";
-import { ConfirmDialog } from "@/components/shared/confirm-dialog";
-import { MapPicker } from "@/components/shared/map-picker";
-import { PriceDisplay } from "@/components/shared/price-display";
-import { SearchableSelect } from "@/components/shared/searchable-select";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { ServiceCard } from "@/components/providers-panel/services/service-card";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Slider } from "@/components/ui/slider";
-import { fetchAppCatalogTree, type AppService } from "@/lib/api/app-catalog";
+  ServiceEditorSheet,
+  type CatalogTree,
+  type ServiceEditorMode,
+  type ServiceEditorValues,
+} from "@/components/providers-panel/services/service-editor-sheet";
+import { ServicesHero } from "@/components/providers-panel/services/services-hero";
+import {
+  MAX_RADIUS_KM,
+  MIN_RADIUS_KM,
+  WorkAreaPanel,
+} from "@/components/providers-panel/services/work-area-panel";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { Skeleton } from "@/components/ui/skeleton";
+import { fetchAppCatalogTree } from "@/lib/api/app-catalog";
 import { isApiClientError } from "@/lib/api/envelope";
 import {
   createAppProviderService,
@@ -49,14 +35,23 @@ import {
   type AppProviderProfile,
   type AppProviderService,
 } from "@/lib/api/app-provider";
-import { usePriceInput } from "@/hooks/use-price-input";
-import { DEFAULT_MAP_CENTER } from "@/lib/maps/defaults";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { toPersianDigits } from "@/lib/utils/format";
 import type { GeoLocation } from "@/types";
 
 type LoadState = "loading" | "ready" | "error";
+type TabKey = "services" | "area" | "gallery";
+
+const TABS: { key: TabKey; label: string; icon: typeof Wrench }[] = [
+  { key: "services", label: "خدمات من", icon: Wrench },
+  { key: "area", label: "محدوده کاری", icon: MapPinned },
+  { key: "gallery", label: "نمونه‌کار", icon: Images },
+];
+
+function parseTab(value: string | null): TabKey {
+  return value === "area" || value === "gallery" ? value : "services";
+}
 
 function profileToWorkCenter(profile: AppProviderProfile): GeoLocation | null {
   if (!profile.workLatitude || !profile.workLongitude) return null;
@@ -64,6 +59,10 @@ function profileToWorkCenter(profile: AppProviderProfile): GeoLocation | null {
     lat: Number(profile.workLatitude),
     lng: Number(profile.workLongitude),
   };
+}
+
+function clampRadius(radiusKm: number) {
+  return Math.min(MAX_RADIUS_KM, Math.max(MIN_RADIUS_KM, radiusKm));
 }
 
 async function ensureProviderProfile(
@@ -79,48 +78,28 @@ async function ensureProviderProfile(
   }
 }
 
-export default function ProviderServicesPage() {
+function ProviderServicesContent() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const tab = parseTab(searchParams.get("tab"));
+
   const [loadState, setLoadState] = useState<LoadState>("loading");
+  const [reloadKey, setReloadKey] = useState(0);
   const [profile, setProfile] = useState<AppProviderProfile | null>(null);
   const [services, setServices] = useState<AppProviderService[]>([]);
-  const [catalog, setCatalog] = useState<
-    Array<{ categoryId: string; name: string; services: AppService[] }>
-  >([]);
+  const [catalog, setCatalog] = useState<CatalogTree>([]);
 
   const [workCenter, setWorkCenter] = useState<GeoLocation | null>(null);
   const [workRadiusKm, setWorkRadiusKm] = useState(50);
   const [savingWorkArea, setSavingWorkArea] = useState(false);
 
-  const [workAreaOpen, setWorkAreaOpen] = useState(false);
-  const [isAddFormOpen, setIsAddFormOpen] = useState(false);
-  const [categoryId, setCategoryId] = useState("");
-  const [serviceId, setServiceId] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [editTarget, setEditTarget] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  const {
-    rawValue: priceInput,
-    displayValue: priceDisplay,
-    persianWords: priceWords,
-    handleChange: handlePriceChange,
-    handleBlur: handlePriceBlur,
-    reset: resetPrice,
-  } = usePriceInput("");
-  const {
-    rawValue: editPriceRaw,
-    displayValue: editPriceDisplay,
-    persianWords: editPriceWords,
-    handleChange: handleEditPriceChange,
-    handleBlur: handleEditPriceBlur,
-    setRawValue: setEditPriceRaw,
-    reset: resetEditPrice,
-  } = usePriceInput("");
-
-  const reloadServices = useCallback(async (signal?: AbortSignal) => {
-    const result = await fetchAppProviderServices({ signal, limit: 50 });
-    return result.items;
-  }, []);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorMode, setEditorMode] = useState<ServiceEditorMode>({ kind: "add" });
+  const [editorKey, setEditorKey] = useState(0);
+  const [deleteTarget, setDeleteTarget] = useState<AppProviderService | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [showRemoved, setShowRemoved] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -128,24 +107,21 @@ export default function ProviderServicesPage() {
 
     void (async () => {
       try {
-        // First, ensure the provider profile exists (creates if missing)
+        // The profile must exist before services can be listed.
         const nextProfile = await ensureProviderProfile(controller.signal);
-
         if (cancelled) return;
 
-        // Then, fetch services and catalog (now that profile is guaranteed to exist)
         const [nextServices, nextCatalog] = await Promise.all([
-          reloadServices(controller.signal),
+          fetchAppProviderServices({ signal: controller.signal, limit: 50 }),
           fetchAppCatalogTree(controller.signal),
         ]);
-
         if (cancelled) return;
 
         setProfile(nextProfile);
-        setServices(nextServices);
+        setServices(nextServices.items);
         setCatalog(nextCatalog);
         setWorkCenter(profileToWorkCenter(nextProfile));
-        setWorkRadiusKm(nextProfile.workRadiusKm);
+        setWorkRadiusKm(clampRadius(nextProfile.workRadiusKm));
         setLoadState("ready");
       } catch (cause: unknown) {
         if (cancelled || controller.signal.aborted) return;
@@ -162,28 +138,114 @@ export default function ProviderServicesPage() {
       cancelled = true;
       controller.abort();
     };
-  }, [reloadServices]);
+  }, [reloadKey]);
 
-  const selectedCategory = catalog.find(
-    (category) => category.categoryId === categoryId,
+  const activeServices = useMemo(
+    () => services.filter((item) => item.isActive),
+    [services],
   );
-
-  const offeredServiceIds = useMemo(
-    () => new Set(services.map((item) => item.serviceId)),
+  const removedServices = useMemo(
+    () => services.filter((item) => !item.isActive),
+    [services],
+  );
+  const offered = useMemo(
+    () => new Map(services.map((item) => [item.serviceId, item.isActive])),
     [services],
   );
 
+  const savedCenter = profile ? profileToWorkCenter(profile) : null;
+  const workAreaConfigured = savedCenter !== null;
+  const workAreaDirty =
+    !profile ||
+    workRadiusKm !== profile.workRadiusKm ||
+    workCenter?.lat !== savedCenter?.lat ||
+    workCenter?.lng !== savedCenter?.lng;
+
+  const selectTab = (next: TabKey) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === "services") params.delete("tab");
+    else params.set("tab", next);
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  };
+
+  const openEditor = (mode: ServiceEditorMode) => {
+    setEditorMode(mode);
+    setEditorKey((key) => key + 1);
+    setEditorOpen(true);
+  };
+
+  const handleSubmitService = async (values: ServiceEditorValues) => {
+    try {
+      if (editorMode.kind === "edit") {
+        const target = editorMode.service;
+        const updated = await updateAppProviderService(target.providerServiceId, {
+          description: values.description,
+          priceToman: values.priceToman,
+          pricingUnit: values.pricingUnit,
+        });
+        setServices((prev) =>
+          prev.map((item) =>
+            item.providerServiceId === target.providerServiceId ? updated : item,
+          ),
+        );
+        toast.success("تغییرات خدمت ذخیره شد");
+      } else {
+        const created = await createAppProviderService(values);
+        setServices((prev) => [created, ...prev]);
+        toast.success("خدمت اضافه شد", "اکنون در نتایج جستجوی کشاورزان قابل نمایش است");
+      }
+      setEditorOpen(false);
+      return true;
+    } catch (cause: unknown) {
+      toast.error(
+        isApiClientError(cause) ? cause.message : "ذخیره خدمت ناموفق بود.",
+      );
+      return false;
+    }
+  };
+
+  const handleDeleteService = async () => {
+    if (!deleteTarget) return;
+    const target = deleteTarget;
+
+    setDeleting(true);
+    try {
+      await deleteAppProviderService(target.providerServiceId);
+      // The API deactivates rather than deletes, so keep the row as inactive.
+      setServices((prev) =>
+        prev.map((item) =>
+          item.providerServiceId === target.providerServiceId
+            ? { ...item, isActive: false }
+            : item,
+        ),
+      );
+      setDeleteTarget(null);
+      toast.success("خدمت حذف شد");
+    } catch (cause: unknown) {
+      toast.error(
+        isApiClientError(cause) ? cause.message : "حذف خدمت ناموفق بود.",
+      );
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const handleSaveWorkArea = async () => {
-    const center = workCenter ?? DEFAULT_MAP_CENTER;
+    if (!workCenter) {
+      toast.error("ابتدا مرکز فعالیت را روی نقشه انتخاب کنید");
+      return;
+    }
 
     setSavingWorkArea(true);
     try {
       const nextProfile = await patchAppProviderWorkArea({
-        workLatitude: String(center.lat),
-        workLongitude: String(center.lng),
+        workLatitude: String(workCenter.lat),
+        workLongitude: String(workCenter.lng),
         workRadiusKm,
       });
       setProfile(nextProfile);
+      setWorkCenter(profileToWorkCenter(nextProfile));
       toast.success("محدوده کاری ذخیره شد");
     } catch (cause: unknown) {
       toast.error(
@@ -196,541 +258,238 @@ export default function ProviderServicesPage() {
     }
   };
 
-  const handleAddService = async () => {
-    const price = Number(priceInput);
-
-    if (!serviceId) {
-      toast.error("خدمت را انتخاب کنید");
-      return;
-    }
-
-    if (!price || price < 1000) {
-      toast.error("قیمت معتبر وارد کنید");
-      return;
-    }
-
-    if (offeredServiceIds.has(serviceId)) {
-      toast.error("این خدمت قبلاً ثبت شده است");
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const created = await createAppProviderService({
-        priceToman: price,
-        serviceId,
-      });
-      setServices((prev) => [...prev, created]);
-      setServiceId("");
-      setCategoryId("");
-      resetPrice();
-      setIsAddFormOpen(false);
-      toast.success("خدمت اضافه شد");
-    } catch (cause: unknown) {
-      toast.error(
-        isApiClientError(cause) ? cause.message : "ثبت خدمت ناموفق بود.",
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleUpdatePrice = async () => {
-    if (!editTarget) return;
-
-    const price = Number(editPriceRaw);
-    if (!price || price < 1000) {
-      toast.error("قیمت معتبر وارد کنید");
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const updated = await updateAppProviderService(editTarget, {
-        priceToman: price,
-      });
-      setServices((prev) =>
-        prev.map((item) =>
-          item.providerServiceId === editTarget ? updated : item,
-        ),
-      );
-      setEditTarget(null);
-      resetEditPrice();
-      toast.success("قیمت به‌روزرسانی شد");
-    } catch (cause: unknown) {
-      toast.error(
-        isApiClientError(cause)
-          ? cause.message
-          : "به‌روزرسانی قیمت ناموفق بود.",
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleDeleteService = async () => {
-    if (!deleteTarget) return;
-
-    setSubmitting(true);
-    try {
-      await deleteAppProviderService(deleteTarget);
-      setServices((prev) =>
-        prev.filter((item) => item.providerServiceId !== deleteTarget),
-      );
-      setDeleteTarget(null);
-      toast.success("خدمت حذف شد");
-    } catch (cause: unknown) {
-      toast.error(
-        isApiClientError(cause) ? cause.message : "حذف خدمت ناموفق بود.",
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  if (loadState === "loading") {
-    return (
-      <PageContainer withDock>
-        <PageHeader
-          title="ارائه خدمات"
-          description="محدوده کاری و خدمات قابل ارائه"
-        />
-        <div className="flex justify-center py-16">
-          <LoaderCircle className="size-8 animate-spin text-primary" />
-        </div>
-      </PageContainer>
-    );
-  }
-
-  if (loadState === "error") {
-    return (
-      <PageContainer withDock>
-        <PageHeader
-          title="ارائه خدمات"
-          description="محدوده کاری و خدمات قابل ارائه"
-        />
-        <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            بارگذاری اطلاعات ناموفق بود. صفحه را دوباره باز کنید.
-          </CardContent>
-        </Card>
-      </PageContainer>
-    );
-  }
-
-  const workAreaConfigured = Boolean(profile?.workLatitude && profile?.workLongitude);
+  const loading = loadState === "loading";
 
   return (
-    <PageContainer withDock>
-      <PageHeader
-        title="ارائه خدمات"
-        description="محدوده کاری و خدمات قابل ارائه"
-      />
+    <MotionConfig reducedMotion="user">
+      <PageContainer withDock className="px-0 pt-0">
+        <ServicesHero
+          loading={loading}
+          activeServices={activeServices.length}
+          workRadiusKm={workRadiusKm}
+          workAreaConfigured={workAreaConfigured}
+        />
 
-      {!workAreaConfigured ? (
-        <div className="mb-4 flex items-center gap-2.5 rounded-2xl border border-amber-200/80 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 animate-fade-in">
-          <AlertTriangle className="size-4.5 shrink-0 text-amber-600" />
-          <span>موقعیت و محدوده کاری خود را ثبت کنید !</span>
-        </div>
-      ) : null}
-
-      <Card className="card-elevated mb-8 gap-0 overflow-hidden rounded-2xl border-primary/10 p-0 shadow-[0_8px_24px_rgba(45,106,79,0.08)]">
-        <button
-          type="button"
-          onClick={() => setWorkAreaOpen((value) => !value)}
-          className="flex w-full items-center justify-between px-3.5 py-2.5 text-right transition-colors hover:bg-primary/[0.025]"
-          aria-expanded={workAreaOpen}
-          aria-controls="provider-work-area"
-        >
-          <div className="flex min-w-0 items-center gap-2.5">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <MapPin className="size-4.5" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-bold">محدوده کاری</p>
-              <p className="mt-0.5 text-[10px] text-muted-foreground">
-                پوشش فعلی تا شعاع {toPersianDigits(workRadiusKm)} کیلومتر
-              </p>
-            </div>
-          </div>
-          <span className="flex items-center gap-2">
-            <Badge
-              variant={workAreaConfigured ? "success" : "outline"}
-              className="border border-success/10 px-2 py-0.5 text-[9px]"
-            >
-              {workAreaConfigured ? "تنظیم شده" : "نیاز به تنظیم"}
-            </Badge>
-            <ChevronDown
-              className={cn(
-                "size-4 text-muted-foreground transition-transform duration-200",
-                workAreaOpen && "rotate-180",
-              )}
-            />
-          </span>
-        </button>
-
-        {workAreaOpen ? (
-          <CardContent
-            id="provider-work-area"
-            className="space-y-3.5 border-t border-border/60 p-3.5 animate-fade-in"
+        <div className="sticky top-0 z-20 -mt-5 px-4 pb-3 pt-2">
+          <div
+            role="tablist"
+            aria-label="بخش‌های ارائه خدمات"
+            className="grid grid-cols-3 gap-1 rounded-[20px] bg-surface/90 p-1.5 shadow-[0_12px_30px_-16px_rgba(45,106,79,0.45)] ring-1 ring-border/60 backdrop-blur-xl"
           >
-            <MapPicker
-              value={workCenter}
-              onChange={(location) => setWorkCenter(location)}
-            />
-
-            <div className="rounded-xl border border-primary/10 bg-primary/[0.035] p-3">
-              <div className="mb-3 flex items-center justify-between text-xs">
-                <Label className="font-semibold">شعاع پوشش خدمات</Label>
-                <span className="rounded-full bg-surface px-2.5 py-1 font-bold text-primary shadow-sm">
-                  {toPersianDigits(workRadiusKm)} کیلومتر
-                </span>
-              </div>
-              <Slider
-                min={20}
-                max={100}
-                step={5}
-                value={[workRadiusKm]}
-                onValueChange={(value) => setWorkRadiusKm(value[0] ?? 50)}
-              />
-            </div>
-
-            <Button
-              type="button"
-              className="h-10 w-full rounded-xl text-xs"
-              onClick={() => void handleSaveWorkArea()}
-              disabled={savingWorkArea}
-            >
-              {savingWorkArea ? (
-                <LoaderCircle className="size-4 animate-spin" />
-              ) : (
-                <Check className="size-4" />
-              )}
-              ذخیره محدوده کاری
-            </Button>
-          </CardContent>
-        ) : null}
-      </Card>
-
-      <section className="space-y-5">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-success/10 text-success">
-              <Wrench className="size-5" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold">خدمات قابل ارائه</h2>
-                <Badge
-                  variant="success"
-                  className="px-2 py-0.5 text-[9px] font-bold"
-                >
-                  {toPersianDigits(services.length)} خدمت
-                </Badge>
-              </div>
-              <p className="mt-0.5 text-[10px] text-muted-foreground">
-                مدیریت خدمات و قیمت‌های پیشنهادی شما
-              </p>
-            </div>
-          </div>
-
-          <Button
-            type="button"
-            size="sm"
-            variant={isAddFormOpen ? "outline" : "default"}
-            className={cn(
-              "h-9 shrink-0 rounded-xl px-3 text-[11px]",
-              !isAddFormOpen &&
-                "shadow-[0_7px_16px_rgba(45,106,79,0.18)]",
-            )}
-            onClick={() => setIsAddFormOpen((open) => !open)}
-            aria-expanded={isAddFormOpen}
-            aria-controls="add-provider-service-form"
-          >
-            {isAddFormOpen ? (
-              <X className="size-3.5" />
-            ) : (
-              <Plus className="size-3.5" />
-            )}
-            {isAddFormOpen ? "بستن" : "افزودن خدمت"}
-          </Button>
-        </div>
-
-        {isAddFormOpen ? (
-          <Card
-            id="add-provider-service-form"
-            className="gap-0 overflow-hidden rounded-[22px] border-accent/20 bg-surface p-0 shadow-[0_12px_28px_rgba(244,162,97,0.12)] animate-fade-in"
-          >
-            <div className="flex items-center gap-2.5 bg-gradient-to-l from-accent/10 via-accent/[0.04] to-transparent px-3.5 py-3">
-              <span className="flex size-8 items-center justify-center rounded-xl bg-accent/15 text-[#d97832]">
-                <Sparkles className="size-4" />
-              </span>
-              <div>
-                <p className="text-sm font-bold">افزودن خدمت جدید</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  نوع خدمت و قیمت پیشنهادی را مشخص کنید
-                </p>
-              </div>
-            </div>
-
-            <CardContent className="space-y-4 border-t border-border/50 p-4">
-              <div className="space-y-1.5">
-                <Label className="text-sm font-semibold">دسته‌بندی</Label>
-                <Select
-                  dir="rtl"
-                  value={categoryId}
-                  onValueChange={(value) => {
-                    setCategoryId(value);
-                    setServiceId("");
-                  }}
-                >
-                  <SelectTrigger className="h-12 w-full rounded-xl bg-surface shadow-sm">
-                    <SelectValue placeholder="انتخاب دسته‌بندی خدمت" />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl text-right" dir="rtl">
-                    {catalog.map((category) => (
-                      <SelectItem
-                        key={category.categoryId}
-                        value={category.categoryId}
-                        className="justify-start rounded-lg text-right"
-                      >
-                        {category.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-sm font-semibold">خدمت</Label>
-                <SearchableSelect
-                  value={serviceId}
-                  onValueChange={setServiceId}
-                  disabled={!selectedCategory}
-                  placeholder={
-                    selectedCategory
-                      ? "انتخاب خدمت قابل ارائه"
-                      : "ابتدا دسته‌بندی را انتخاب کنید"
-                  }
-                  searchPlaceholder="جستجوی خدمت..."
-                  emptyText="خدمتی در این دسته نیست"
-                  noResultsText="خدمتی با این عبارت پیدا نشد"
-                  options={
-                    selectedCategory?.services.map((service) => {
-                      const alreadyOffered = offeredServiceIds.has(
-                        service.serviceId,
-                      );
-                      return {
-                        value: service.serviceId,
-                        label: service.name,
-                        keywords: service.description ?? undefined,
-                        disabled: alreadyOffered,
-                        hint: alreadyOffered
-                          ? "قبلاً به لیست خدمات شما اضافه شده"
-                          : undefined,
-                      };
-                    }) ?? []
-                  }
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="price" className="text-sm font-semibold">
-                  قیمت پیشنهادی (تومان)
-                </Label>
-                <div className="relative">
-                  <CircleDollarSign className="pointer-events-none absolute right-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    id="price"
-                    inputMode="numeric"
-                    value={priceDisplay}
-                    onChange={(event) => handlePriceChange(event.target.value)}
-                    onBlur={(event) => handlePriceBlur(event.target.value)}
-                    className="h-12 rounded-xl bg-surface pr-10 shadow-sm"
-                    placeholder="مثلاً ۵۰۰۰۰۰۰"
-                  />
-                </div>
-                {priceInput && (
-                  <p className="mt-1 text-xs text-primary font-medium text-right">
-                    {priceWords}
-                  </p>
-                )}
-              </div>
-
-              <Button
-                type="button"
-                className="h-12 w-full rounded-xl"
-                onClick={() => void handleAddService()}
-                disabled={submitting}
-              >
-                {submitting ? (
-                  <LoaderCircle className="size-4 animate-spin" />
-                ) : (
-                  <Plus className="size-4" />
-                )}
-                ثبت خدمت جدید
-              </Button>
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {services.length === 0 ? (
-          <Card className="gap-0 rounded-[22px] border-dashed border-primary/20 bg-primary/[0.025] p-0 shadow-none">
-            <CardContent className="px-5 py-7 text-center">
-              <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                <Wrench className="size-6" />
-              </div>
-              <p className="mt-3 text-sm font-bold">هنوز خدمتی ثبت نشده</p>
-              <p className="mx-auto mt-1 max-w-64 text-[11px] leading-5 text-muted-foreground">
-                اولین خدمت خود را اضافه کنید تا خدمات‌گیرندگان بتوانند شما را
-                در نتایج جستجو ببینند.
-              </p>
-              {!isAddFormOpen ? (
-                <Button
+            {TABS.map((item) => {
+              const Icon = item.icon;
+              const active = item.key === tab;
+              const warn = item.key === "area" && loadState === "ready" && !workAreaConfigured;
+              return (
+                <button
+                  key={item.key}
                   type="button"
-                  variant="outline"
-                  size="sm"
-                  className="mt-4 rounded-xl"
-                  onClick={() => setIsAddFormOpen(true)}
-                >
-                  <Plus className="size-4" />
-                  افزودن اولین خدمت
-                </Button>
-              ) : null}
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-4">
-            {services.map((service) => (
-              <Card
-                key={service.providerServiceId}
-                className="group gap-0 overflow-hidden rounded-[22px] border-primary/10 bg-surface p-0 shadow-[0_7px_22px_rgba(45,106,79,0.07)] transition-all duration-200 hover:border-primary/20 hover:shadow-[0_11px_26px_rgba(45,106,79,0.11)]"
-              >
-                <CardContent className="p-0">
-                  <div className="flex items-start gap-3 p-3.5">
-                    <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-success/10 text-primary">
-                      <Wrench className="size-4.5" />
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-bold text-foreground">
-                            {service.serviceName}
-                          </p>
-                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                            <Badge
-                              variant={service.isActive ? "success" : "outline"}
-                              className="px-2 py-0.5 text-[9px]"
-                            >
-                              {service.isActive ? "فعال" : "غیرفعال"}
-                            </Badge>
-                          </div>
-                        </div>
-
-                        <div className="flex shrink-0 items-center gap-1 rounded-xl bg-muted/45 p-1">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="size-8 rounded-lg text-primary hover:bg-surface hover:text-primary"
-                            onClick={() => {
-                              setEditTarget(service.providerServiceId);
-                              setEditPriceRaw(String(service.priceToman));
-                            }}
-                            aria-label={`ویرایش قیمت ${service.serviceName}`}
-                          >
-                            <Pencil className="size-3.5" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="size-8 rounded-lg text-destructive hover:bg-surface hover:text-destructive"
-                            onClick={() =>
-                              setDeleteTarget(service.providerServiceId)
-                            }
-                            aria-label={`حذف ${service.serviceName}`}
-                          >
-                            <Trash2 className="size-3.5" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {editTarget === service.providerServiceId ? (
-                    <div className="border-t border-primary/10 bg-primary/[0.035] p-3 animate-fade-in">
-                      <div className="flex items-center gap-2">
-                        <Input
-                          inputMode="numeric"
-                          value={editPriceDisplay}
-                          onChange={(event) => handleEditPriceChange(event.target.value)}
-                          onBlur={(event) => handleEditPriceBlur(event.target.value)}
-                          className="h-10 min-w-0 flex-1 rounded-xl bg-surface"
-                          aria-label={`قیمت جدید ${service.serviceName}`}
-                        />
-                        {editPriceRaw && (
-                          <p className="text-xs text-primary font-medium text-right">
-                            {editPriceWords}
-                          </p>
-                        )}
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="h-10 rounded-xl"
-                          onClick={() => void handleUpdatePrice()}
-                          disabled={submitting}
-                        >
-                          <Check className="size-3.5" />
-                          ذخیره
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="size-10 rounded-xl text-muted-foreground"
-                          onClick={() => {
-                            setEditTarget(null);
-                            resetEditPrice();
-                          }}
-                          aria-label="انصراف از ویرایش"
-                        >
-                          <X className="size-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between border-t border-primary/10 bg-gradient-to-l from-primary/[0.055] to-transparent px-3.5 py-2.5">
-                      <div className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground">
-                        <CircleDollarSign className="size-3.5 text-accent" />
-                        قیمت پیشنهادی
-                      </div>
-                      <PriceDisplay
-                        amount={service.priceToman}
-                        size="sm"
-                        className="font-black"
-                      />
-                    </div>
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => selectTab(item.key)}
+                  className={cn(
+                    "relative flex h-11 items-center justify-center gap-1.5 rounded-[14px] text-[12.5px] font-bold transition-colors",
+                    active ? "text-primary-foreground" : "text-muted-foreground hover:text-foreground",
                   )}
-                </CardContent>
-              </Card>
-            ))}
+                >
+                  {active ? (
+                    <motion.span
+                      layoutId="services-tab-pill"
+                      className="absolute inset-0 rounded-[14px] bg-primary shadow-[0_8px_18px_-10px_rgba(45,106,79,0.9)]"
+                      transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                    />
+                  ) : null}
+                  <Icon className="relative size-4" strokeWidth={2} />
+                  <span className="relative">{item.label}</span>
+                  {warn ? (
+                    <span className="absolute left-2 top-2 size-2 rounded-full bg-[#e8892c] ring-2 ring-surface" />
+                  ) : null}
+                </button>
+              );
+            })}
           </div>
-        )}
-      </section>
+        </div>
 
-      <ProviderGalleryManager />
+        <div className="px-4 pt-2">
+          {loading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-20 rounded-[24px]" />
+              <Skeleton className="h-36 rounded-[24px]" />
+              <Skeleton className="h-36 rounded-[24px]" />
+            </div>
+          ) : loadState === "error" ? (
+            <div className="flex flex-col items-center gap-3 rounded-[24px] bg-surface px-6 py-10 text-center ring-1 ring-border/60">
+              <p className="text-sm text-muted-foreground">بارگذاری اطلاعات ناموفق بود.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoadState("loading");
+                  setReloadKey((key) => key + 1);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-xs font-bold text-primary-foreground"
+              >
+                <RotateCw className="size-3.5" />
+                تلاش مجدد
+              </button>
+            </div>
+          ) : (
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={tab}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.22, ease: "easeOut" }}
+              >
+                {tab === "services" ? (
+                  <div className="space-y-3">
+                    {activeServices.length === 0 ? (
+                      <div className="flex flex-col items-center rounded-[26px] bg-[linear-gradient(160deg,#fff6e6_0%,#ffffff_75%)] px-6 py-8 text-center ring-1 ring-[#e9c46a]/40">
+                        <span className="flex size-16 items-center justify-center rounded-[22px] bg-gradient-to-br from-[#ffb85c] to-[#e07b1f] text-white shadow-[0_14px_28px_-12px_rgba(224,123,31,0.8)]">
+                          <Wrench className="size-8" strokeWidth={1.75} />
+                        </span>
+                        <h2 className="mt-4 text-[16px] font-black text-foreground">
+                          اولین خدمت خود را ثبت کنید
+                        </h2>
+                        <p className="mt-1.5 max-w-72 text-[12px] leading-6 text-muted-foreground">
+                          با ثبت خدمت و قیمت، کشاورزان منطقه شما را در نتایج جستجو می‌بینند و
+                          برایتان درخواست می‌فرستند.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => openEditor({ kind: "add" })}
+                          className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-primary px-6 py-3 text-[13.5px] font-black text-primary-foreground shadow-[0_14px_28px_-14px_rgba(45,106,79,0.9)] transition active:scale-[0.98]"
+                        >
+                          <Plus className="size-5" strokeWidth={2.5} />
+                          افزودن خدمت
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => openEditor({ kind: "add" })}
+                          className="group flex w-full items-center gap-3 rounded-[24px] border-2 border-dashed border-primary/30 bg-primary/[0.04] p-3.5 text-right transition-colors hover:bg-primary/[0.08] active:scale-[0.99]"
+                        >
+                          <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_10px_20px_-10px_rgba(45,106,79,0.9)] transition-transform group-hover:rotate-90">
+                            <Plus className="size-5" strokeWidth={2.5} />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-[14px] font-black text-primary">افزودن خدمت جدید</span>
+                            <span className="block text-[11.5px] text-muted-foreground">
+                              هر خدمت بیشتر، شانس دیده‌شدن بیشتر
+                            </span>
+                          </span>
+                        </button>
 
-      <ConfirmDialog
-        open={deleteTarget !== null}
-        onOpenChange={(open) => !open && setDeleteTarget(null)}
-        title="حذف خدمت"
-        description="آیا از حذف این خدمت مطمئن هستید؟"
-        confirmLabel="حذف"
-        variant="destructive"
-        onConfirm={() => void handleDeleteService()}
-      />
-    </PageContainer>
+                        <div className="flex items-center justify-between px-1 pt-2">
+                          <h2 className="text-[15px] font-black text-foreground">خدمات فعال</h2>
+                          <span className="rounded-full bg-[#d8f3dc] px-2.5 py-0.5 text-[11px] font-black text-[#1b5e3b]">
+                            {toPersianDigits(activeServices.length)} خدمت
+                          </span>
+                        </div>
+
+                        <ul className="space-y-3">
+                          <AnimatePresence initial={false}>
+                            {activeServices.map((service) => (
+                              <motion.li
+                                key={service.providerServiceId}
+                                layout
+                                initial={{ opacity: 0, scale: 0.97 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.95 }}
+                                transition={{ duration: 0.2 }}
+                              >
+                                <ServiceCard
+                                  service={service}
+                                  onEdit={() => openEditor({ kind: "edit", service })}
+                                  onDelete={() => setDeleteTarget(service)}
+                                />
+                              </motion.li>
+                            ))}
+                          </AnimatePresence>
+                        </ul>
+                      </>
+                    )}
+
+                    {removedServices.length > 0 ? (
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowRemoved((value) => !value)}
+                          aria-expanded={showRemoved}
+                          className="flex w-full items-center justify-between rounded-2xl px-1 py-2 text-[12.5px] font-bold text-muted-foreground"
+                        >
+                          خدمات حذف‌شده ({toPersianDigits(removedServices.length)})
+                          <ChevronDown
+                            className={cn("size-4 transition-transform", showRemoved && "rotate-180")}
+                          />
+                        </button>
+                        {showRemoved ? (
+                          <div className="mt-2 space-y-2">
+                            <p className="px-1 text-[11px] leading-5 text-muted-foreground">
+                              این خدمات به کشاورزان نمایش داده نمی‌شوند.
+                            </p>
+                            {removedServices.map((service) => (
+                              <ServiceCard key={service.providerServiceId} service={service} />
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : tab === "area" ? (
+                  <WorkAreaPanel
+                    configured={workAreaConfigured}
+                    center={workCenter}
+                    radiusKm={workRadiusKm}
+                    dirty={workAreaDirty}
+                    saving={savingWorkArea}
+                    onCenterChange={setWorkCenter}
+                    onRadiusChange={setWorkRadiusKm}
+                    onSave={() => void handleSaveWorkArea()}
+                  />
+                ) : (
+                  <ProviderGalleryManager />
+                )}
+              </motion.div>
+            </AnimatePresence>
+          )}
+        </div>
+
+        <ServiceEditorSheet
+          open={editorOpen}
+          onOpenChange={setEditorOpen}
+          mode={editorMode}
+          formKey={editorKey}
+          catalog={catalog}
+          offered={offered}
+          onSubmit={handleSubmitService}
+        />
+
+        <ConfirmDialog
+          open={deleteTarget !== null}
+          onOpenChange={(open) => !open && setDeleteTarget(null)}
+          title="حذف خدمت"
+          description={
+            deleteTarget
+              ? `«${deleteTarget.serviceName}» از نتایج جستجو حذف می‌شود و امکان افزودن دوباره آن وجود ندارد.`
+              : ""
+          }
+          confirmLabel="حذف"
+          variant="destructive"
+          loading={deleting}
+          onConfirm={() => void handleDeleteService()}
+        />
+      </PageContainer>
+    </MotionConfig>
+  );
+}
+
+export default function ProviderServicesPage() {
+  return (
+    <Suspense>
+      <ProviderServicesContent />
+    </Suspense>
   );
 }
