@@ -8,7 +8,7 @@ export default function UsersLayout({
 }) {
   return (
     <AuthGuard>
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col bg-harvest-bg">
         {children}
         <ConsumerDock />
       </div>

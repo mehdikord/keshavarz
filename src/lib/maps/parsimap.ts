@@ -87,6 +87,9 @@ function fallbackLayer(config: ParsimapLayerConfig): ResolvedParsimapLayer {
 
 const resolvedLayers = new Map<ParsimapLayerId, Promise<ResolvedParsimapLayer>>();
 
+/** The style endpoint can hang; past this the fallback tile URL is used. */
+const STYLE_TIMEOUT_MS = 4000;
+
 export function resolveParsimapLayer(
   id: ParsimapLayerId,
 ): Promise<ResolvedParsimapLayer> {
@@ -96,7 +99,7 @@ export function resolveParsimapLayer(
   const config = PARSIMAP_LAYERS[id];
   const styleUrl = `${PARSIMAP_API_ORIGIN}/styles/${config.style}?key=${encodeURIComponent(PARSIMAP_MAP_TOKEN)}`;
 
-  const pending = fetch(styleUrl)
+  const pending = fetch(styleUrl, { signal: AbortSignal.timeout(STYLE_TIMEOUT_MS) })
     .then((response) => {
       if (!response.ok) throw new Error(`Parsimap style ${response.status}`);
       return response.json() as Promise<ParsimapStyle>;

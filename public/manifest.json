@@ -4,7 +4,7 @@
   "description": "پلتفرم خدمات کشاورزی",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#F8FAF5",
+  "background_color": "#0F3324",
   "theme_color": "#2D6A4F",
   "orientation": "portrait",
   "lang": "fa",

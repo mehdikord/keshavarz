@@ -8,7 +8,7 @@ import { PageContainer } from "@/components/layout/page-container";
 import { DashboardHero } from "@/components/providers-panel/dashboard/dashboard-hero";
 import { IncomingRequests } from "@/components/providers-panel/dashboard/incoming-requests";
 import { ReadinessCard } from "@/components/providers-panel/dashboard/readiness-card";
-import { RecentNotifications } from "@/components/providers-panel/dashboard/recent-notifications";
+import { RecentNotifications } from "@/components/shared/recent-notifications";
 import { StatGrid } from "@/components/providers-panel/dashboard/stat-grid";
 import { SubscriptionCard } from "@/components/providers-panel/dashboard/subscription-card";
 import { isApiClientError } from "@/lib/api/envelope";

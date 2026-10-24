@@ -24,6 +24,7 @@
   --color-destructive: var(--destructive);
   --color-success: var(--success);
   --color-earth: var(--earth);
+  --color-harvest-bg: var(--harvest-bg);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -66,6 +67,8 @@
   --destructive: #e76f51;
   --success: #40916c;
   --earth: #8b7355;
+  /* Warm cream canvas for the consumer (service-receiver) panel */
+  --harvest-bg: #fcf7ee;
   --border: #d8e2d8;
   --input: #d8e2d8;
   --ring: #2d6a4f;

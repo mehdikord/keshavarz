@@ -10,6 +10,9 @@ interface OTPInputProps {
   onChange: (value: string) => void;
   length?: number;
   disabled?: boolean;
+  /** Highlights every box in red, e.g. after a wrong code. */
+  invalid?: boolean;
+  autoFocus?: boolean;
   className?: string;
 }
 
@@ -18,6 +21,8 @@ export function OTPInput({
   onChange,
   length = 6,
   disabled = false,
+  invalid = false,
+  autoFocus = false,
   className,
 }: OTPInputProps) {
   const inputRefs = React.useRef<Array<HTMLInputElement | null>>([]);
@@ -31,6 +36,10 @@ export function OTPInput({
     inputRefs.current[index]?.focus();
     inputRefs.current[index]?.select();
   };
+
+  React.useEffect(() => {
+    if (autoFocus) inputRefs.current[0]?.focus();
+  }, [autoFocus]);
 
   const handleChange = (index: number, char: string) => {
     const digit = toLatinDigits(char).replace(/\D/g, "").slice(-1);
@@ -103,6 +112,8 @@ export function OTPInput({
           className={cn(
             "size-12 rounded-xl border border-border bg-surface text-center text-lg font-semibold text-foreground shadow-sm outline-none transition-all",
             "focus:border-primary focus:ring-2 focus:ring-primary/20",
+            digit.trim() && !invalid && "border-primary/40 bg-primary/[0.04]",
+            invalid && "border-destructive bg-destructive/5 text-destructive focus:border-destructive focus:ring-destructive/20",
             disabled && "opacity-50",
           )}
           aria-label={`رقم ${index + 1}`}

@@ -1,12 +1,18 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import { AnimatePresence, MotionConfig } from "framer-motion";
 
+import { AppSplash } from "@/components/shared/app-splash";
 import { useInitializeApp } from "@/hooks/use-initialize-app";
 
 interface AppProviderProps {
   children: React.ReactNode;
 }
+
+/** Safety net in case the intro's completion callback never fires. */
+const SPLASH_MAX_INTRO_MS = 4000;
 
 function isAdminPath(pathname: string) {
   return pathname === "/admins" || pathname.startsWith("/admins/");
@@ -14,18 +20,24 @@ function isAdminPath(pathname: string) {
 
 export function AppProvider({ children }: AppProviderProps) {
   const pathname = usePathname();
-  const ready = useInitializeApp(!isAdminPath(pathname));
+  const isAdmin = isAdminPath(pathname);
+  const ready = useInitializeApp(!isAdmin);
+  // Keep the splash until its intro has played, so a fast bootstrap doesn't flash it.
+  const [introDone, setIntroDone] = useState(false);
 
-  if (!ready) {
-    return (
-      <div className="flex min-h-dvh items-center justify-center bg-[var(--outer-bg)]">
-        <div className="flex flex-col items-center gap-3 animate-fade-in">
-          <div className="size-10 animate-pulse rounded-full bg-primary/20" />
-          <p className="text-sm text-muted-foreground">در حال بارگذاری...</p>
-        </div>
-      </div>
-    );
-  }
+  useEffect(() => {
+    const timer = window.setTimeout(() => setIntroDone(true), SPLASH_MAX_INTRO_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
 
-  return children;
+  const showSplash = !isAdmin && (!ready || !introDone);
+
+  return (
+    <>
+      {ready ? children : null}
+      <MotionConfig reducedMotion="user">
+        <AnimatePresence>{showSplash ? <AppSplash key="splash" onIntroDone={() => setIntroDone(true)} /> : null}</AnimatePresence>
+      </MotionConfig>
+    </>
+  );
 }

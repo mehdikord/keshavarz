@@ -1,70 +1,58 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { MotionConfig, motion } from "framer-motion";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { AnimatePresence, MotionConfig, motion } from "framer-motion";
 import {
-  ArrowDownUp,
-  ArrowRightFromLine,
-  MapPin,
+  ArrowLeft,
+  BadgeCheck,
+  CalendarDays,
+  Clock3,
+  LandPlot,
+  LoaderCircle,
   RefreshCw,
   SearchX,
-  Users,
+  Send,
+  SlidersHorizontal,
+  Wrench,
 } from "lucide-react";
 
+import { ConsumerPageHero } from "@/components/consumer-panel/consumer-hero";
 import {
   ProviderResultCard,
+  type LandArea,
+  type ProviderHighlight,
   type ProviderResultState,
 } from "@/components/consumer-panel/provider-result-card";
 import { SearchLoading } from "@/components/consumer-panel/search-loading";
 import { PageContainer } from "@/components/layout/page-container";
-import { PageHeader } from "@/components/layout/page-header";
-import { EmptyState } from "@/components/shared/empty-state";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { fetchAppLand } from "@/lib/api/app-lands";
 import {
   addAppRequestProviders,
   createAppServiceRequest,
   fetchConsumerRequest,
   type AppConsumerRequestDetail,
 } from "@/lib/api/app-requests";
-import {
-  fetchAppSearchProviders,
-  type AppSearchContext,
-  type AppSearchProvider,
-} from "@/lib/api/app-search";
+import { fetchAppSearchProviders, type AppSearchContext, type AppSearchProvider } from "@/lib/api/app-search";
 import { isApiClientError } from "@/lib/api/envelope";
 import { toast } from "@/lib/toast";
-import { formatPrice, toPersianDigits } from "@/lib/utils/format";
+import { cn } from "@/lib/utils";
+import { formatAreaSqm, toPersianDigits } from "@/lib/utils/format";
+import { formatPersianIsoChip } from "@/lib/utils/jalali";
 import { useAuthStore } from "@/stores/auth-store";
 
-type SearchSortOption =
-  | "price-asc"
-  | "price-desc"
-  | "distance-asc"
-  | "distance-desc";
+type SortKey = "price" | "distance";
 
-const SORT_OPTIONS: Array<{ value: SearchSortOption; label: string }> = [
-  { value: "price-asc", label: "کمترین قیمت" },
-  { value: "price-desc", label: "بیشترین قیمت" },
-  { value: "distance-asc", label: "کمترین فاصله" },
-  { value: "distance-desc", label: "بیشترین فاصله" },
+const SORTS: { key: SortKey; label: string }[] = [
+  { key: "price", label: "ارزان‌ترین" },
+  { key: "distance", label: "نزدیک‌ترین" },
 ];
 
-const LIST_ITEM_SPRING = {
-  type: "spring" as const,
-  stiffness: 360,
-  damping: 30,
-  mass: 0.9,
-};
+/** Server cap on providers per request. */
+const MAX_PROVIDERS_PER_REQUEST = 30;
+
+const LIST_ITEM_SPRING = { type: "spring" as const, stiffness: 360, damping: 30, mass: 0.9 };
 
 function getApiProviderResultState(
   provider: AppSearchProvider,
@@ -72,23 +60,12 @@ function getApiProviderResultState(
   requestDetail: AppConsumerRequestDetail | null,
 ): ProviderResultState {
   if (requestDetail) {
-    if (
-      requestDetail.status === "in_progress" ||
-      requestDetail.status === "completed"
-    ) {
-      return requestDetail.assignedProviderId === provider.providerId
-        ? "accepted"
-        : "removed";
+    if (requestDetail.status === "in_progress" || requestDetail.status === "completed") {
+      return requestDetail.assignedProviderId === provider.providerId ? "accepted" : "removed";
     }
+    if (requestDetail.status === "cancelled") return "removed";
 
-    if (requestDetail.status === "cancelled") {
-      return "removed";
-    }
-
-    const link = requestDetail.providers.find(
-      (item) => item.providerId === provider.providerId,
-    );
-
+    const link = requestDetail.providers.find((item) => item.providerId === provider.providerId);
     if (link) {
       if (link.status === "sent") return "sent";
       if (link.status === "rejected") return "rejected";
@@ -98,38 +75,130 @@ function getApiProviderResultState(
   }
 
   if (sentLocally.has(provider.providerId)) return "sent";
-
   return "idle";
+}
+
+function SearchSummary({ context }: { context: AppSearchContext }) {
+  const dates = [...context.dates].sort();
+  return (
+    <div className="mt-5 rounded-[22px] bg-white/55 p-4 ring-1 ring-white/80 backdrop-blur-md">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="flex items-center gap-1.5 text-[11px] font-bold text-[#a0561a]">
+            <Wrench className="size-3.5" />
+            {context.categoryName}
+          </p>
+          <p className="mt-0.5 truncate text-[17px] font-black">{context.serviceName}</p>
+          <p className="mt-1 flex items-center gap-1 truncate text-[12px] text-[#6b4a26]">
+            <LandPlot className="size-3.5 shrink-0" />
+            {context.landTitle}
+          </p>
+        </div>
+        <Link
+          href={`/users/search?landId=${encodeURIComponent(context.landId)}`}
+          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white/80 px-3 py-1.5 text-[11px] font-black text-[#a0561a] ring-1 ring-white"
+        >
+          <SlidersHorizontal className="size-3.5" />
+          تغییر
+        </Link>
+      </div>
+      {dates.length > 0 ? (
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          <CalendarDays className="size-3.5 text-[#a0561a]" />
+          {dates.slice(0, 3).map((date) => (
+            <span key={date} className="rounded-full bg-white/80 px-2.5 py-0.5 text-[11px] font-bold text-[#6b4a26]">
+              {formatPersianIsoChip(date)}
+            </span>
+          ))}
+          {dates.length > 3 ? (
+            <span className="text-[11px] font-bold text-[#8a6a48]">+{toPersianDigits(dates.length - 3)}</span>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function RequestBanner({ detail }: { detail: AppConsumerRequestDetail }) {
+  const href = `/users/requests/${detail.requestId}`;
+
+  if (detail.status === "in_progress" || detail.status === "completed") {
+    return (
+      <Link
+        href={href}
+        className="flex items-center gap-3 rounded-[22px] bg-[linear-gradient(150deg,#e1f0dc_0%,#ffffff_85%)] p-4 ring-1 ring-[#bfe0b4]"
+      >
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-[#4f9a55] text-white">
+          <BadgeCheck className="size-6" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[14px] font-black text-[#1f4d26]">خدمات‌دهنده پیدا شد!</span>
+          <span className="block truncate text-[11.5px] text-[#3f6b43]">
+            {detail.assignedProviderName ?? "خدمات‌دهنده"} کار را پذیرفت. جزئیات و تماس را ببینید.
+          </span>
+        </span>
+        <ArrowLeft className="size-5 shrink-0 text-[#2f6a35]" />
+      </Link>
+    );
+  }
+
+  if (detail.status === "cancelled") {
+    return (
+      <Link href={href} className="flex items-center gap-3 rounded-[22px] bg-white/70 p-4 ring-1 ring-[#efe0c8]">
+        <span className="text-[12.5px] font-bold text-[#8a6a48]">این درخواست لغو شده است.</span>
+        <ArrowLeft className="ms-auto size-4 text-[#a08463]" />
+      </Link>
+    );
+  }
+
+  const waiting = detail.providers.filter((item) => item.status === "sent").length;
+  return (
+    <Link href={href} className="flex items-center gap-3 rounded-[22px] bg-[linear-gradient(150deg,#fff1df_0%,#ffffff_85%)] p-4 ring-1 ring-[#f3d3a8]">
+      <span className="relative flex size-11 shrink-0 items-center justify-center rounded-2xl bg-[#e8892c] text-white">
+        <Clock3 className="size-5" />
+        <span className="absolute -left-0.5 -top-0.5 size-3 animate-ping rounded-full bg-[#e8892c]/60" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[14px] font-black text-[#5c3410]">
+          درخواست برای {toPersianDigits(waiting)} خدمات‌دهنده ارسال شد
+        </span>
+        <span className="block text-[11.5px] text-[#8a6a48]">
+          اولین کسی که قبول کند کار را انجام می‌دهد. پیگیری درخواست
+        </span>
+      </span>
+      <ArrowLeft className="size-5 shrink-0 text-[#b9531f]" />
+    </Link>
+  );
 }
 
 export default function SearchResultsPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const searchId = searchParams.get("searchId") ?? "";
-  const initialRequestId = searchParams.get("requestId");
   const user = useAuthStore((state) => state.user);
 
-  const [searchContext, setSearchContext] = useState<AppSearchContext | null>(
-    null,
-  );
+  const [searchContext, setSearchContext] = useState<AppSearchContext | null>(null);
   const [providers, setProviders] = useState<AppSearchProvider[]>([]);
-  const [requestId, setRequestId] = useState<string | null>(initialRequestId);
-  const [requestDetail, setRequestDetail] =
-    useState<AppConsumerRequestDetail | null>(null);
+  const [requestId, setRequestId] = useState<string | null>(() => searchParams.get("requestId"));
+  const [requestDetail, setRequestDetail] = useState<AppConsumerRequestDetail | null>(null);
+  const [detailVersion, setDetailVersion] = useState(0);
   const [sentLocally, setSentLocally] = useState<Set<string>>(() => new Set());
-  const [sort, setSort] = useState<SearchSortOption>("price-asc");
+  // A provider profile can send the farmer back here with ?select=<providerId>.
+  const [selected, setSelected] = useState<Set<string>>(() => {
+    const preselect = searchParams.get("select");
+    return new Set(preselect ? [preselect] : []);
+  });
+  const [sort, setSort] = useState<SortKey>("price");
   const [loading, setLoading] = useState(() => Boolean(searchId));
+  const [sending, setSending] = useState(false);
+  const [landArea, setLandArea] = useState<LandArea | null>(null);
 
   const loadProviders = useCallback(
     (signal: AbortSignal) => {
       if (!searchId) return;
 
-      void fetchAppSearchProviders({
-        searchId,
-        sort: "priceAsc",
-        limit: 50,
-        signal,
-      })
+      void fetchAppSearchProviders({ searchId, sort: "priceAsc", limit: 50, signal })
         .then((result) => {
           if (signal.aborted) return;
           setSearchContext(result.search);
@@ -139,10 +208,7 @@ export default function SearchResultsPage() {
           if (signal.aborted) return;
           setSearchContext(null);
           setProviders([]);
-          const message = isApiClientError(cause)
-            ? cause.message
-            : "بارگذاری نتایج جستجو ناموفق بود";
-          toast.error(message);
+          toast.error(isApiClientError(cause) ? cause.message : "بارگذاری نتایج جستجو ناموفق بود");
         })
         .finally(() => {
           if (!signal.aborted) setLoading(false);
@@ -153,7 +219,6 @@ export default function SearchResultsPage() {
 
   useEffect(() => {
     if (!searchId) return;
-
     const controller = new AbortController();
     loadProviders(controller.signal);
     return () => controller.abort();
@@ -161,309 +226,301 @@ export default function SearchResultsPage() {
 
   const handleRetrySearch = useCallback(() => {
     setLoading(true);
-    const controller = new AbortController();
-    loadProviders(controller.signal);
+    loadProviders(new AbortController().signal);
   }, [loadProviders]);
 
   useEffect(() => {
     if (!requestId) return;
-
     const controller = new AbortController();
-
     void fetchConsumerRequest(requestId, controller.signal)
       .then((detail) => {
-        if (controller.signal.aborted) return;
-        setRequestDetail(detail);
+        if (!controller.signal.aborted) setRequestDetail(detail);
       })
       .catch(() => {
-        if (controller.signal.aborted) return;
-        setRequestDetail(null);
+        if (!controller.signal.aborted) setRequestDetail(null);
       });
-
     return () => controller.abort();
-  }, [requestId]);
+  }, [requestId, detailVersion]);
+
+  const landId = searchContext?.landId;
+  useEffect(() => {
+    if (!landId) return;
+    const controller = new AbortController();
+    void fetchAppLand(landId, controller.signal)
+      .then((land) => {
+        if (controller.signal.aborted) return;
+        const squareMeters = Number(land.areaSquareMeters);
+        const area = formatAreaSqm(squareMeters);
+        setLandArea({ squareMeters, label: `${area.primary} ${area.primaryUnit}` });
+      })
+      .catch(() => undefined); // The estimate is optional.
+    return () => controller.abort();
+  }, [landId]);
 
   const activeRequestDetail = requestId ? requestDetail : null;
 
   const visibleResults = useMemo(() => {
-    const descending = sort === "price-desc" || sort === "distance-desc";
-    const valueOf =
-      sort === "price-asc" || sort === "price-desc"
-        ? (provider: AppSearchProvider) => provider.priceToman
-        : (provider: AppSearchProvider) => provider.distanceKm;
-
+    const valueOf = sort === "price" ? (p: AppSearchProvider) => p.priceToman : (p: AppSearchProvider) => p.distanceKm;
     return providers
-      .map((provider) => ({
-        provider,
-        state: getApiProviderResultState(
-          provider,
-          sentLocally,
-          activeRequestDetail,
-        ),
-      }))
+      .map((provider) => ({ provider, state: getApiProviderResultState(provider, sentLocally, activeRequestDetail) }))
       .filter((item) => item.state !== "removed")
       .sort((a, b) => {
-        const aPriority = a.state === "sent" ? 0 : 1;
-        const bPriority = b.state === "sent" ? 0 : 1;
-        if (aPriority !== bPriority) return aPriority - bPriority;
-        const diff = valueOf(a.provider) - valueOf(b.provider);
-        return descending ? -diff : diff;
+        const rank = (state: ProviderResultState) => (state === "accepted" ? 0 : state === "sent" ? 1 : 2);
+        if (rank(a.state) !== rank(b.state)) return rank(a.state) - rank(b.state);
+        return valueOf(a.provider) - valueOf(b.provider);
       });
   }, [providers, sort, activeRequestDetail, sentLocally]);
 
-  const handleSend = async (providerId: string) => {
-    if (!searchId) return;
+  const highlightsFor = useMemo(() => {
+    const map = new Map<string, ProviderHighlight[]>();
+    if (visibleResults.length < 2) return map;
+    const minDistance = Math.min(...visibleResults.map((item) => item.provider.distanceKm));
+    const minPrice = Math.min(...visibleResults.map((item) => item.provider.priceToman));
+    for (const { provider } of visibleResults) {
+      const tags: ProviderHighlight[] = [];
+      if (provider.distanceKm === minDistance) tags.push("nearest");
+      if (provider.priceToman === minPrice) tags.push("cheapest");
+      if (tags.length) map.set(provider.providerId, tags);
+    }
+    return map;
+  }, [visibleResults]);
 
+  const selectableIds = visibleResults.filter((item) => item.state === "idle").map((item) => item.provider.providerId);
+  const selectedIds = selectableIds.filter((id) => selected.has(id));
+  const allSelected = selectableIds.length > 0 && selectedIds.length === Math.min(selectableIds.length, MAX_PROVIDERS_PER_REQUEST);
+
+  const toggleSelect = (providerId: string) => {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(providerId)) {
+        next.delete(providerId);
+      } else if (next.size >= MAX_PROVIDERS_PER_REQUEST) {
+        toast.info(`حداکثر ${toPersianDigits(MAX_PROVIDERS_PER_REQUEST)} خدمات‌دهنده در هر درخواست`);
+        return current;
+      } else {
+        next.add(providerId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelected(allSelected ? new Set() : new Set(selectableIds.slice(0, MAX_PROVIDERS_PER_REQUEST)));
+  };
+
+  const handleSend = async () => {
+    if (!searchId || selectedIds.length === 0) return;
+
+    setSending(true);
     try {
       if (!requestId) {
-        const created = await createAppServiceRequest({
-          searchId,
-          providerIds: [providerId],
-        });
+        const created = await createAppServiceRequest({ searchId, providerIds: selectedIds });
         setRequestId(created.requestId);
-      } else {
-        await addAppRequestProviders({
-          requestId,
-          providerIds: [providerId],
+        // Keep the request in the URL so a refresh or back-navigation restores it.
+        router.replace(`${pathname}?${new URLSearchParams({ searchId, requestId: created.requestId }).toString()}`, {
+          scroll: false,
         });
+      } else {
+        await addAppRequestProviders({ requestId, providerIds: selectedIds });
+        setDetailVersion((version) => version + 1);
       }
 
-      setSentLocally((current) => new Set(current).add(providerId));
-      toast.success("درخواست ارسال شد", "منتظر تأیید خدماتدهنده باشید");
-    } catch (cause: unknown) {
-      toast.error(
-        isApiClientError(cause) ? cause.message : "ارسال درخواست ناموفق بود",
+      setSentLocally((current) => new Set([...current, ...selectedIds]));
+      setSelected(new Set());
+      toast.success(
+        "درخواست ارسال شد",
+        `برای ${toPersianDigits(selectedIds.length)} خدمات‌دهنده. با اولین پذیرش به شما اطلاع می‌دهیم.`,
       );
+    } catch (cause: unknown) {
+      toast.error(isApiClientError(cause) ? cause.message : "ارسال درخواست ناموفق بود");
+    } finally {
+      setSending(false);
     }
   };
 
   if (!user) return null;
 
-  if (!searchId) {
-    return (
-      <PageContainer withDock>
-        <PageHeader title="نتایج جستجو" backHref="/users/search" />
-        <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            جستجو یافت نشد. دوباره تلاش کنید.
-          </CardContent>
-        </Card>
-      </PageContainer>
-    );
-  }
+  const backHref = searchContext ? `/users/search?landId=${encodeURIComponent(searchContext.landId)}` : "/users/search";
+  const resultsFrom = `${pathname}?${new URLSearchParams({ searchId, ...(requestId ? { requestId } : {}) }).toString()}`;
 
-  if (loading) {
-    return (
-      <PageContainer withDock>
-        <PageHeader
-          title="جستجوی خدمات"
-          description="در حال پیدا کردن بهترین گزینهها برای شما"
-          backHref="/users/search"
-        />
-        <SearchLoading />
-      </PageContainer>
-    );
-  }
-
-  if (!searchContext && !requestId) {
-    return (
-      <PageContainer withDock>
-        <PageHeader title="نتایج جستجو" backHref="/users/search" />
-        <EmptyState
-          icon={SearchX}
-          title="خدماتدهندهای در محدوده یافت نشد"
-          description="ممکن است خدمت دیگری انتخاب کنید یا بعداً دوباره جستجو کنید"
-          action={{ label: "جستجوی مجدد", href: "/users/search" }}
-        />
-      </PageContainer>
-    );
-  }
-
-  if (!searchContext && requestId) {
-    // Search expired but we have a request - show request info and allow retry
-    return (
-      <PageContainer withDock>
-        <PageHeader
-          title="نتایج جستجو"
-          description="محدودیت جستجو منقضی شده - درخواست شما همچنان فعال است"
-          backHref="/users/search"
-        />
-        <Card className="mb-4 border-amber-200 bg-amber-50">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <span className="flex size-10 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
-                <RefreshCw className="size-5" />
-              </span>
-              <div className="flex-1">
-                <p className="font-semibold text-amber-800">جستجو منقضی شده است</p>
-                <p className="mt-0.5 text-sm text-amber-700">
-                  مدت زمان جستجو تمام شده، اما درخواست شما همچنان فعال است.
-                  برای مشاهده خدمات‌دهندگان دیگر، جستجو را تازه کنید.
-                </p>
-              </div>
-              <Button onClick={handleRetrySearch} className="h-10 rounded-xl">
-                <RefreshCw className="size-4" />
-                تازه کردن جستجو
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-        {requestDetail && (
-          <div className="space-y-3">
-            <Card className="border-border/70">
-              <CardContent className="space-y-3 p-4">
-                <p className="text-sm font-semibold">خدمات‌دهندگان درخواست</p>
-                {requestDetail.providers
-                  .filter((p) => p.status !== "removed")
-                  .map((item) => (
-                    <div
-                      key={item.providerId}
-                      className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2.5"
-                    >
-                      <span className="text-sm">{item.name}</span>
-                      <span className="text-sm text-primary font-medium">
-                        {formatPrice(item.priceToman)}
-                      </span>
-                    </div>
-                  ))}
-              </CardContent>
-            </Card>
-          </div>
-        )}
-      </PageContainer>
-    );
-  }
-
-  if (!searchContext) {
-    // Should not reach here given earlier guards, but TS needs it
-    return (
-      <PageContainer withDock>
-        <PageHeader title="نتایج جستجو" backHref="/users/search" />
-        <EmptyState
-          icon={SearchX}
-          title="خدماتدهندهای در محدوده یافت نشد"
-          description="ممکن است خدمت دیگری انتخاب کنید یا بعداً دوباره جستجو کنید"
-          action={{ label: "جستجوی مجدد", href: "/users/search" }}
-        />
-      </PageContainer>
-    );
-  }
+  const emptyCard = (
+    <div className="flex flex-col items-center rounded-[28px] bg-white px-6 py-9 text-center shadow-[0_18px_40px_-24px_rgba(160,86,26,0.55)] ring-1 ring-[#efe0c8]">
+      <span className="flex size-16 items-center justify-center rounded-[22px] bg-[#fdebd3] text-[#b9531f]">
+        <SearchX className="size-8" strokeWidth={1.75} />
+      </span>
+      <h2 className="mt-4 text-[16px] font-black text-[#3b2410]">خدمات‌دهنده‌ای در این محدوده پیدا نشد</h2>
+      <ul className="mt-3 space-y-1 text-[12px] leading-6 text-[#8a6a48]">
+        <li>• روزهای بیشتری برای انجام کار انتخاب کنید</li>
+        <li>• خدمت مشابه دیگری را امتحان کنید</li>
+        <li>• کمی بعد دوباره جستجو کنید</li>
+      </ul>
+      <Link
+        href={backHref}
+        className="mt-5 inline-flex h-12 items-center gap-2 rounded-2xl bg-[#b9531f] px-6 text-[14px] font-black text-white"
+      >
+        جستجوی دوباره
+        <ArrowLeft className="size-4" />
+      </Link>
+    </div>
+  );
 
   return (
-    <PageContainer withDock>
-      <PageHeader
-        title="نتایج جستجو"
-        description={`${searchContext.serviceName} · ${searchContext.landTitle}`}
-        backHref="/users/search"
-      />
+    <MotionConfig reducedMotion="user">
+      <PageContainer withDock className="px-0 pt-0">
+        <ConsumerPageHero
+          title="نتایج جستجو"
+          subtitle={loading ? "در حال یافتن بهترین گزینه‌ها برای زمین شما" : undefined}
+          backHref={backHref}
+        >
+          {searchContext ? <SearchSummary context={searchContext} /> : null}
+        </ConsumerPageHero>
 
-      <Card className="mb-4 overflow-hidden border-primary/15 bg-gradient-to-l from-primary/[0.06] to-transparent animate-slide-up">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <span className="flex size-10 items-center justify-center rounded-xl bg-primary/12 text-primary">
-                <Users className="size-5" />
-              </span>
-              <div>
-                <p className="text-lg font-black leading-5">
-                  {toPersianDigits(visibleResults.length)} نتیجه
+        <div className="relative z-10 -mt-4 space-y-3 px-4 pt-1">
+          {!searchId ? (
+            emptyCard
+          ) : loading ? (
+            <SearchLoading />
+          ) : !searchContext && requestId ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 rounded-[22px] bg-[#fdebd3] p-4 ring-1 ring-[#f3d3a8]">
+                <RefreshCw className="size-5 shrink-0 text-[#b9531f]" />
+                <p className="min-w-0 flex-1 text-[12px] leading-5 text-[#6b4210]">
+                  مهلت این جستجو تمام شده، اما درخواست شما همچنان فعال است.
                 </p>
-                <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  خدماتدهندگان در محدوده زمین شما
-                </p>
+                <button
+                  type="button"
+                  onClick={handleRetrySearch}
+                  className="shrink-0 rounded-full bg-[#b9531f] px-3.5 py-2 text-[11.5px] font-black text-white"
+                >
+                  تازه کردن
+                </button>
               </div>
+              {requestDetail ? <RequestBanner detail={requestDetail} /> : null}
             </div>
+          ) : !searchContext ? (
+            emptyCard
+          ) : (
+            <>
+              {activeRequestDetail ? <RequestBanner detail={activeRequestDetail} /> : null}
 
-            <Select
-              value={sort}
-              onValueChange={(value) => {
-                setSort(value as SearchSortOption);
-              }}
-            >
-              <SelectTrigger
-                className="h-11 w-[180px] rounded-xl border-border/80 bg-surface shadow-sm"
-                aria-label="مرتبسازی نتایج"
-              >
-                <ArrowDownUp className="size-4 text-muted-foreground" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="rounded-xl text-right" dir="rtl">
-                {SORT_OPTIONS.map((option) => (
-                  <SelectItem
-                    key={option.value}
-                    value={option.value}
-                    className="justify-start rounded-lg text-right"
+              {visibleResults.length === 0 ? (
+                emptyCard
+              ) : (
+                <>
+                  <div className="flex items-center justify-between gap-2 px-1 pt-1">
+                    <p className="text-[14px] font-black text-[#3b2410]">
+                      {toPersianDigits(visibleResults.length)} خدمات‌دهنده پیدا شد
+                    </p>
+                    <div className="flex gap-1" role="group" aria-label="مرتب‌سازی">
+                      {SORTS.map((item) => (
+                        <button
+                          key={item.key}
+                          type="button"
+                          aria-pressed={sort === item.key}
+                          onClick={() => setSort(item.key)}
+                          className={cn(
+                            "h-8 rounded-full px-3 text-[11.5px] font-bold transition-colors",
+                            sort === item.key
+                              ? "bg-[#3b2410] text-[#fff3dc]"
+                              : "bg-white text-[#6b4a26] ring-1 ring-[#efe0c8]",
+                          )}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {selectableIds.length > 1 ? (
+                    <div className="flex items-center justify-between rounded-2xl bg-white/70 px-3.5 py-2.5 ring-1 ring-[#efe0c8]">
+                      <p className="text-[11.5px] leading-5 text-[#8a6a48]">
+                        برای پاسخ سریع‌تر، چند خدمات‌دهنده را انتخاب کنید.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={toggleSelectAll}
+                        className="shrink-0 text-[12px] font-black text-[#b9531f]"
+                      >
+                        {allSelected ? "لغو انتخاب" : "انتخاب همه"}
+                      </button>
+                    </div>
+                  ) : null}
+
+                  <ul className="space-y-3">
+                    {visibleResults.map(({ provider, state }) => {
+                      const link = activeRequestDetail?.providers.find((item) => item.providerId === provider.providerId);
+                      return (
+                        <motion.li key={provider.providerId} layout transition={LIST_ITEM_SPRING}>
+                          <ProviderResultCard
+                            displayName={provider.name ?? "خدمات‌دهنده"}
+                            image={provider.image}
+                            distanceKm={provider.distanceKm}
+                            price={provider.priceToman}
+                            pricingUnit={provider.pricingUnit}
+                            state={state}
+                            profileHref={`/users/providers/${encodeURIComponent(provider.providerId)}?from=${encodeURIComponent(resultsFrom)}`}
+                            selected={selected.has(provider.providerId)}
+                            onToggleSelect={() => toggleSelect(provider.providerId)}
+                            highlights={highlightsFor.get(provider.providerId)}
+                            landArea={landArea}
+                            declinedBefore={provider.previousStatus === "rejected"}
+                            phone={state === "accepted" ? link?.phone : null}
+                          />
+                        </motion.li>
+                      );
+                    })}
+                  </ul>
+                </>
+              )}
+
+              <AnimatePresence>
+                {selectedIds.length > 0 ? (
+                  <motion.div
+                    key="send-bar"
+                    initial={{ opacity: 0, y: 24 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 24 }}
+                    transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                    // Sticky offsets count from the container's padding edge (pb-32), so this sits above the dock.
+                    className="sticky bottom-[calc(env(safe-area-inset-bottom,0px)-2.5rem)] z-20 pt-2"
                   >
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleSend()}
+                      disabled={sending}
+                      className="flex w-full items-center gap-3 rounded-[22px] bg-[#b9531f] py-3 pe-3 ps-5 text-right text-white shadow-[0_18px_36px_-14px_rgba(185,83,31,0.95)] transition active:scale-[0.98] disabled:opacity-80"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[14px] font-black">
+                          {sending
+                            ? "در حال ارسال…"
+                            : `ارسال درخواست به ${toPersianDigits(selectedIds.length)} خدمات‌دهنده`}
+                        </span>
+                        <span className="block truncate text-[11px] text-white/75">
+                          اولین کسی که قبول کند، کار را انجام می‌دهد
+                        </span>
+                      </span>
+                      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white text-[#b9531f]">
+                        {sending ? <LoaderCircle className="size-5 animate-spin" /> : <Send className="size-5" />}
+                      </span>
+                    </button>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
 
-          {searchContext.dates.length > 0 ? (
-            <div className="mt-3 flex items-center gap-1.5 text-[11px] font-medium text-primary">
-              <MapPin className="size-3.5" />
-              محدوده جستجو بر اساس «{searchContext.landTitle}» تنظیم شد
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      {visibleResults.length === 0 ? (
-        <EmptyState
-          icon={SearchX}
-          title="خدماتدهندهای در محدوده یافت نشد"
-          description="ممکن است خدمت دیگری انتخاب کنید یا بعداً دوباره جستجو کنید"
-          action={{ label: "جستجوی مجدد", href: "/users/search" }}
-        />
-      ) : (
-        <MotionConfig reducedMotion="user">
-          <div className="flex flex-col gap-2.5">
-            {visibleResults.map(({ provider, state }) => {
-              const resultsFrom = `/users/search/results?${new URLSearchParams({
-                searchId,
-                ...(requestId ? { requestId } : {}),
-              }).toString()}`;
-              const profileHref = `/users/providers/${encodeURIComponent(provider.providerId)}?from=${encodeURIComponent(resultsFrom)}`;
-
-              return (
-                <motion.div key={provider.providerId} layout transition={LIST_ITEM_SPRING}>
-                  <ProviderResultCard
-                    providerId={provider.providerId}
-                    displayName={provider.name ?? "خدمات‌دهنده"}
-                    image={provider.image}
-                    distanceKm={provider.distanceKm}
-                    price={provider.priceToman}
-                    pricingUnit={provider.pricingUnit}
-                    state={state}
-                    profileHref={profileHref}
-                    onSend={() => void handleSend(provider.providerId)}
-                  />
-                </motion.div>
-              );
-            })}
-          </div>
-        </MotionConfig>
-      )}
-
-      {requestDetail?.status === "in_progress" && requestId ? (
-        <Button
-          className="mt-4 h-11 w-full rounded-xl"
-          onClick={() => router.push(`/users/requests/${requestId}`)}
-        >
-          <ArrowRightFromLine className="size-4" />
-          مشاهده درخواست تأییدشده
-        </Button>
-      ) : (
-        <Button
-          asChild
-          variant="outline"
-          className="mt-4 h-11 w-full rounded-xl"
-        >
-          <Link href="/users/requests">رفتن به درخواستها</Link>
-        </Button>
-      )}
-    </PageContainer>
+              {!activeRequestDetail && selectedIds.length === 0 && visibleResults.length > 0 ? (
+                <Link
+                  href="/users/requests"
+                  className="flex h-11 items-center justify-center gap-1.5 rounded-2xl text-[12.5px] font-bold text-[#a0561a]"
+                >
+                  مشاهده همه درخواست‌های من
+                  <ArrowLeft className="size-4" />
+                </Link>
+              ) : null}
+            </>
+          )}
+        </div>
+      </PageContainer>
+    </MotionConfig>
   );
 }

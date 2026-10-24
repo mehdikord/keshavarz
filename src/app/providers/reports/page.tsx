@@ -18,7 +18,7 @@ import {
 
 import { PageContainer } from "@/components/layout/page-container";
 import { ProviderPageHero } from "@/components/providers-panel/provider-page-hero";
-import { RevenueChart } from "@/components/providers-panel/reports/revenue-chart";
+import { MonthlyBarChart } from "@/components/shared/monthly-bar-chart";
 import {
   ServiceBreakdown,
   type ServiceRevenueRow,
@@ -321,7 +321,7 @@ export default function ProviderReportsPage() {
                 <>
                   {monthly && monthly.months.length > 0 ? (
                     <Reveal delay={0.06}>
-                      <RevenueChart months={monthly.months} />
+                      <MonthlyBarChart months={monthly.months} title="درآمد ماه‌به‌ماه" countLabel="کار انجام‌شده" />
                     </Reveal>
                   ) : null}
 

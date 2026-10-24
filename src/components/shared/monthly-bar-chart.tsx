@@ -2,11 +2,40 @@
 
 import { useState } from "react";
 
-import type { AppProviderMonthlyRevenue } from "@/lib/api/app-reports";
 import { cn } from "@/lib/utils";
 import { toPersianDigits } from "@/lib/utils/format";
 
-type MonthRow = AppProviderMonthlyRevenue["months"][number];
+export interface MonthRow {
+  year: number;
+  month: number;
+  totalToman: number;
+  count: number;
+}
+
+type ChartTone = "forest" | "harvest";
+
+const TONES: Record<ChartTone, { card: string; active: string; idle: string; activeLabel: string }> = {
+  forest: {
+    card: "bg-surface shadow-[0_14px_30px_-22px_rgba(45,106,79,0.5)] ring-border/60",
+    active: "bg-primary",
+    idle: "bg-[#b7e4c7] group-hover:bg-[#95d5b2]",
+    activeLabel: "text-primary",
+  },
+  harvest: {
+    card: "bg-white shadow-[0_14px_30px_-22px_rgba(160,86,26,0.45)] ring-[#efe0c8]",
+    active: "bg-[#b9531f]",
+    idle: "bg-[#f6d3a6] group-hover:bg-[#efbd80]",
+    activeLabel: "text-[#b9531f]",
+  },
+};
+
+interface MonthlyBarChartProps {
+  months: MonthRow[];
+  title: string;
+  /** e.g. "کار انجام‌شده" — shown after the selected month's count. */
+  countLabel: string;
+  tone?: ChartTone;
+}
 
 const COMPACT = new Intl.NumberFormat("fa-IR", { notation: "compact", maximumFractionDigits: 1 });
 const FULL = new Intl.NumberFormat("fa-IR");
@@ -29,7 +58,8 @@ function niceMax(value: number) {
   return step * magnitude;
 }
 
-export function RevenueChart({ months }: { months: MonthRow[] }) {
+export function MonthlyBarChart({ months, title, countLabel, tone = "forest" }: MonthlyBarChartProps) {
+  const theme = TONES[tone];
   const [selected, setSelected] = useState(months.length - 1);
   const max = niceMax(Math.max(...months.map((row) => row.totalToman), 0));
   const active = months[selected] ?? months.at(-1);
@@ -40,12 +70,12 @@ export function RevenueChart({ months }: { months: MonthRow[] }) {
   return (
     <section
       aria-labelledby="revenue-chart-title"
-      className="rounded-[26px] bg-surface p-4 shadow-[0_14px_30px_-22px_rgba(45,106,79,0.5)] ring-1 ring-border/60"
+      className={cn("rounded-[26px] p-4 ring-1", theme.card)}
     >
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 id="revenue-chart-title" className="text-[14px] font-black text-foreground">
-            درآمد ماه‌به‌ماه
+            {title}
           </h2>
           <p className="mt-0.5 text-[11px] text-muted-foreground">روی هر ستون بزنید تا جزئیاتش را ببینید</p>
         </div>
@@ -55,7 +85,7 @@ export function RevenueChart({ months }: { months: MonthRow[] }) {
             {FULL.format(active.totalToman)}
             <span className="ms-1 text-[10.5px] font-bold text-muted-foreground">تومان</span>
           </p>
-          <p className="text-[10.5px] text-muted-foreground">{toPersianDigits(active.count)} کار انجام‌شده</p>
+          <p className="text-[10.5px] text-muted-foreground">{toPersianDigits(active.count)} {countLabel}</p>
         </div>
       </div>
 
@@ -67,14 +97,14 @@ export function RevenueChart({ months }: { months: MonthRow[] }) {
             className="absolute inset-x-0 flex items-center gap-2"
             style={{ top: `${(index / (gridValues.length - 1)) * 100}%` }}
           >
-            <span className="w-8 shrink-0 -translate-y-1/2 text-right text-[9.5px] tabular-nums text-muted-foreground">
+            <span className="w-12 shrink-0 -translate-y-1/2 whitespace-nowrap text-right text-[9.5px] tabular-nums text-muted-foreground">
               {value === 0 ? "۰" : COMPACT.format(value)}
             </span>
             <span className="h-px flex-1 -translate-y-1/2 bg-border/70" />
           </div>
         ))}
 
-        <div className="absolute inset-y-0 left-0 right-10 flex items-end gap-[3px]">
+        <div className="absolute inset-y-0 left-0 right-14 flex items-end gap-[3px]">
           {months.map((row, index) => {
             const isSelected = index === selected;
             const height = (row.totalToman / max) * 100;
@@ -90,7 +120,7 @@ export function RevenueChart({ months }: { months: MonthRow[] }) {
                 <span
                   className={cn(
                     "w-full max-w-[22px] rounded-t-[4px] transition-all duration-300",
-                    isSelected ? "bg-primary" : "bg-[#b7e4c7] group-hover:bg-[#95d5b2]",
+                    isSelected ? theme.active : theme.idle,
                   )}
                   style={{ height: row.totalToman > 0 ? `max(${height}%, 4px)` : "2px" }}
                 />
@@ -100,7 +130,7 @@ export function RevenueChart({ months }: { months: MonthRow[] }) {
         </div>
       </div>
 
-      <div className="mr-10 mt-2 flex gap-[3px]" aria-hidden>
+      <div className="mr-14 mt-2 flex gap-[3px]" aria-hidden>
         {months.map((row, index) => {
           const showLabel = (months.length - 1 - index) % 2 === 0 || index === selected;
           return (
@@ -108,7 +138,7 @@ export function RevenueChart({ months }: { months: MonthRow[] }) {
               key={`${row.year}-${row.month}-label`}
               className={cn(
                 "flex-1 overflow-visible whitespace-nowrap text-center text-[9.5px]",
-                index === selected ? "font-black text-primary" : "text-muted-foreground",
+                index === selected ? cn("font-black", theme.activeLabel) : "text-muted-foreground",
                 !showLabel && "invisible",
               )}
             >

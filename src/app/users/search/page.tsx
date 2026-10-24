@@ -1,157 +1,136 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
-import {
-  CalendarDays,
-  Check,
-  ChevronDown,
-  MapPin,
-  Search,
-  Sparkles,
-  Sprout,
-  Tag,
-  Wrench,
-  X,
-} from "lucide-react";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { MotionConfig, motion } from "framer-motion";
+import { ArrowLeft, LandPlot, LoaderCircle, Plus, Search, ShieldCheck } from "lucide-react";
 
+import { ConsumerPageHero } from "@/components/consumer-panel/consumer-hero";
+import { DatePickerStep } from "@/components/consumer-panel/search/date-picker-step";
+import { LandPicker } from "@/components/consumer-panel/search/land-picker";
+import { SearchStep } from "@/components/consumer-panel/search/search-step";
+import { ServicePicker, type CatalogTree } from "@/components/consumer-panel/search/service-picker";
 import { PageContainer } from "@/components/layout/page-container";
-import { PageHeader } from "@/components/layout/page-header";
-import { LoadingSpinner } from "@/components/shared/loading-spinner";
-import { PersianCalendar } from "@/components/shared/persian-calendar";
-import { SearchableSelect } from "@/components/shared/searchable-select";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { fetchAppCatalogTree } from "@/lib/api/app-catalog";
 import { fetchAppLands, mapAppLandToUi } from "@/lib/api/app-lands";
 import { createAppServiceSearch } from "@/lib/api/app-search";
 import { isApiClientError } from "@/lib/api/envelope";
-import { searchFormSchema } from "@/lib/validators/search";
-import { formatPersianIsoChip } from "@/lib/utils/jalali";
 import { toast } from "@/lib/toast";
+import { cn } from "@/lib/utils";
+import { formatAreaSqm, toPersianDigits } from "@/lib/utils/format";
+import { formatPersianIsoChip } from "@/lib/utils/jalali";
+import { searchFormSchema } from "@/lib/validators/search";
 import { useAuthStore } from "@/stores/auth-store";
 import type { Land } from "@/types";
 
-export default function ConsumerSearchPage() {
+type StepKey = "land" | "service" | "dates" | "note";
+
+/** Matches the server's limit on the note forwarded to providers. */
+const MAX_NOTE_LENGTH = 1500;
+
+const FIELD_STEP: Record<string, StepKey> = {
+  landId: "land",
+  categoryId: "service",
+  serviceId: "service",
+  scheduledDates: "dates",
+};
+
+function ConsumerSearchContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const user = useAuthStore((state) => state.user);
+
   const [lands, setLands] = useState<Land[]>([]);
-  const [catalog, setCatalog] = useState<
-    Awaited<ReturnType<typeof fetchAppCatalogTree>>
-  >([]);
+  const [catalog, setCatalog] = useState<CatalogTree>([]);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
 
-  const [landId, setLandId] = useState("");
+  // Land cards link here with ?landId= to preselect the land.
+  const [landId, setLandId] = useState(() => searchParams.get("landId") ?? "");
   const [categoryId, setCategoryId] = useState("");
   const [serviceId, setServiceId] = useState("");
   const [scheduledDates, setScheduledDates] = useState<string[]>([]);
+  const [note, setNote] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [openStep, setOpenStep] = useState<StepKey | null>("land");
 
   useEffect(() => {
     if (!user) return;
 
     const controller = new AbortController();
 
-    void Promise.all([
-      fetchAppLands({ limit: 50, signal: controller.signal }),
-      fetchAppCatalogTree(controller.signal),
-    ])
+    void Promise.all([fetchAppLands({ limit: 50, signal: controller.signal }), fetchAppCatalogTree(controller.signal)])
       .then(([landsResult, catalogTree]) => {
         if (controller.signal.aborted) return;
-        setLands(
-          landsResult.items.map((land) => mapAppLandToUi(land, user.id)),
-        );
+        const nextLands = landsResult.items.map((land) => mapAppLandToUi(land, user.id));
+        setLands(nextLands);
         setCatalog(catalogTree);
+
+        // Keep a valid preselection, or auto-pick when there is only one land.
+        setLandId((current) => {
+          if (nextLands.some((land) => land.id === current)) return current;
+          return nextLands.length === 1 ? (nextLands[0]?.id ?? "") : "";
+        });
+        const hasLand = nextLands.length === 1 || nextLands.some((land) => land.id === searchParams.get("landId"));
+        setOpenStep(hasLand ? "service" : "land");
       })
       .catch((cause: unknown) => {
         if (controller.signal.aborted) return;
-        toast.error(
-          isApiClientError(cause)
-            ? cause.message
-            : "بارگذاری اطلاعات جستجو ناموفق بود",
-        );
+        toast.error(isApiClientError(cause) ? cause.message : "بارگذاری اطلاعات جستجو ناموفق بود");
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
 
     return () => controller.abort();
-  }, [user]);
+  }, [user, searchParams]);
 
-  const selectedCategory = catalog.find(
-    (category) => category.categoryId === categoryId,
-  );
   const selectedLand = lands.find((land) => land.id === landId);
-  const selectedService = selectedCategory?.services.find(
-    (service) => service.serviceId === serviceId,
-  );
+  const selectedService = catalog
+    .find((category) => category.categoryId === categoryId)
+    ?.services.find((service) => service.serviceId === serviceId);
+  const completed = [Boolean(selectedLand), Boolean(selectedService), scheduledDates.length > 0].filter(Boolean).length;
 
-  const clearError = useCallback((field: string) => {
+  const clearError = (...fields: string[]) => {
     setErrors((current) => {
-      if (!current[field]) return current;
-
+      if (!fields.some((field) => current[field])) return current;
       const next = { ...current };
-      delete next[field];
+      for (const field of fields) delete next[field];
       return next;
     });
-  }, []);
+  };
 
-  const handleDatesChange = useCallback(
-    (dates: string[]) => {
-      setScheduledDates(dates);
-      if (dates.length > 0) clearError("scheduledDates");
-    },
-    [clearError],
-  );
+  const toggleStep = (step: StepKey) => setOpenStep((current) => (current === step ? null : step));
 
   const handleSearch = async () => {
     if (!user) return;
 
-    const parsed = searchFormSchema.safeParse({
-      landId,
-      categoryId,
-      serviceId,
-      scheduledDates,
-    });
-
+    const parsed = searchFormSchema.safeParse({ landId, categoryId, serviceId, scheduledDates });
     if (!parsed.success) {
       const fieldErrors: Record<string, string> = {};
       for (const issue of parsed.error.issues) {
         const key = issue.path[0];
-        if (typeof key === "string") {
-          fieldErrors[key] = issue.message;
-        }
+        if (typeof key === "string" && !fieldErrors[key]) fieldErrors[key] = issue.message;
       }
       setErrors(fieldErrors);
-      if (fieldErrors.scheduledDates) {
-        setIsCalendarOpen(true);
-      }
+      const firstStep = (["landId", "serviceId", "categoryId", "scheduledDates"] as const).find((key) => fieldErrors[key]);
+      if (firstStep) setOpenStep(FIELD_STEP[firstStep] ?? null);
       return;
     }
 
     setErrors({});
     setSearching(true);
-
     try {
       const search = await createAppServiceSearch({
         categoryId: parsed.data.categoryId,
+        consumerNote: note.trim() || null,
         dates: parsed.data.scheduledDates,
         landId: parsed.data.landId,
         serviceId: parsed.data.serviceId,
       });
-
       router.push(`/users/search/results?searchId=${search.searchId}`);
     } catch (cause: unknown) {
       toast.error(
@@ -160,329 +139,217 @@ export default function ConsumerSearchPage() {
           ? "خدمات‌دهنده‌ای یافت نشد. خدمت یا زمین دیگری امتحان کنید."
           : undefined,
       );
-    } finally {
       setSearching(false);
     }
   };
 
   if (!user) return null;
 
-  if (loading) {
-    return (
-      <PageContainer withDock>
-        <PageHeader title="جستجوی خدمات" backHref="/users/home" />
-        <LoadingSpinner className="py-16" />
-      </PageContainer>
-    );
-  }
-
-  if (lands.length === 0) {
-    return (
-      <PageContainer withDock>
-        <PageHeader title="جستجوی خدمات" backHref="/users/home" />
-        <Card className="border-accent/25 bg-accent/5">
-          <CardContent className="space-y-4 p-6 text-center">
-            <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-accent/15 text-accent">
-              <Sprout className="size-7" />
-            </div>
-            <div>
-              <p className="font-semibold">ابتدا زمین اضافه کنید</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                برای جستجوی خدمات باید حداقل یک زمین ثبت شده داشته باشید.
-              </p>
-            </div>
-            <Button asChild className="rounded-xl">
-              <Link href="/users/lands/new">افزودن زمین</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </PageContainer>
-    );
-  }
+  const landArea = selectedLand ? formatAreaSqm(selectedLand.areaSqm) : null;
+  const sortedDates = [...scheduledDates].sort();
+  const datesSummary =
+    sortedDates.length === 0
+      ? null
+      : sortedDates.length <= 2
+        ? sortedDates.map(formatPersianIsoChip).join("، ")
+        : `${formatPersianIsoChip(sortedDates[0] ?? "")} و ${toPersianDigits(sortedDates.length - 1)} روز دیگر`;
 
   return (
-    <PageContainer withDock>
-      <PageHeader
-        title="جستجوی خدمات"
-        description="سرویس مناسب زمینت را سریع و مطمئن پیدا کن"
-        backHref="/users/home"
-      />
-
-      <section className="relative mb-4 overflow-hidden rounded-[28px] bg-[linear-gradient(135deg,#1f513d_0%,#2d6a4f_55%,#40916c_100%)] px-5 py-5 text-white shadow-[0_18px_38px_rgba(45,106,79,0.22)] animate-slide-up">
-        <div className="pointer-events-none absolute -left-12 -top-12 size-36 rounded-full border border-white/10 bg-white/5" />
-        <div className="pointer-events-none absolute -bottom-16 right-12 size-40 rounded-full border border-white/10 bg-white/5" />
-        <div className="relative">
-          <div className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[11px] font-medium text-white/90 backdrop-blur-sm">
-            <Sparkles className="size-3.5 text-[#ffd39f]" />
-            پیشنهاد هوشمند خدمات کشاورزی
-          </div>
-
-          <div className="max-w-72">
-            <h2 className="text-xl font-black leading-8">
-              خدمات مورد نیاز زمینت، فقط چند انتخاب فاصله دارد
-            </h2>
-            <p className="mt-2 text-xs leading-6 text-white/70">
-              جزئیات کار را مشخص کن تا نزدیک‌ترین خدمات‌دهندگان آماده را
-              برایت پیدا کنیم.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <Card className="card-elevated mb-4 overflow-hidden rounded-[28px] border-primary/10 bg-surface shadow-[0_14px_34px_rgba(45,106,79,0.09)]">
-        <CardContent className="space-y-4">
-          <div className="rounded-2xl border border-border/70 bg-gradient-to-l from-primary/[0.035] to-transparent p-3.5 transition-colors focus-within:border-primary/30">
-            <div className="mb-3 flex items-center gap-2.5">
-              <span className="flex size-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <MapPin className="size-4" />
-              </span>
-              <div>
-                <Label className="text-sm font-bold">کدام زمین؟</Label>
-                <p className="mt-0.5 text-[10px] text-muted-foreground">
-                  محل انجام کار و محدوده جستجو
-                </p>
+    <MotionConfig reducedMotion="user">
+      <PageContainer withDock className="px-0 pt-0">
+        <ConsumerPageHero
+          title="جستجوی خدمات"
+          subtitle="در سه قدم، خدمات‌دهندگان نزدیک زمینتان را پیدا کنید."
+          backHref="/users/home"
+        >
+          {!loading && lands.length > 0 ? (
+            <div className="mt-5 rounded-2xl bg-white/45 p-3 ring-1 ring-white/70 backdrop-blur-md">
+              <div className="flex items-center justify-between text-[11.5px] font-bold text-[#6b4a26]">
+                <span>{completed === 3 ? "همه چیز آماده است" : "مراحل جستجو"}</span>
+                <span className="tabular-nums">
+                  {toPersianDigits(completed)} از {toPersianDigits(3)}
+                </span>
               </div>
-            </div>
-            <Select
-              dir="rtl"
-              value={landId}
-              onValueChange={(value) => {
-                setLandId(value);
-                clearError("landId");
-              }}
-            >
-              <SelectTrigger
-                className="h-12 w-full rounded-xl border-border/80 bg-surface px-3.5 shadow-sm data-[placeholder]:text-muted-foreground/80"
-                aria-invalid={Boolean(errors.landId)}
-              >
-                <SelectValue placeholder="یکی از زمین‌ها را انتخاب کنید" />
-              </SelectTrigger>
-              <SelectContent className="rounded-xl text-right" dir="rtl">
-                {lands.map((land) => (
-                  <SelectItem
-                    key={land.id}
-                    value={land.id}
-                    className="justify-start rounded-lg text-right"
-                  >
-                    {land.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {errors.landId ? (
-              <p className="mt-2 text-xs font-medium text-destructive">
-                {errors.landId}
-              </p>
-            ) : null}
-            {selectedLand ? (
-              <div className="mt-2.5 flex items-center gap-1.5 text-[11px] font-medium text-primary">
-                <Check className="size-3.5" />
-                محدوده جستجو بر اساس «{selectedLand.title}» تنظیم شد
-              </div>
-            ) : null}
-          </div>
-
-          <div className="rounded-2xl border border-border/70 bg-gradient-to-l from-accent/[0.055] to-transparent p-3.5 transition-colors focus-within:border-accent/40">
-            <div className="mb-3 flex items-center gap-2.5">
-              <span className="flex size-8 items-center justify-center rounded-xl bg-accent/15 text-[#d97832]">
-                <Wrench className="size-4" />
-              </span>
-              <div>
-                <Label className="text-sm font-bold">چه خدمتی نیاز دارید؟</Label>
-                <p className="mt-0.5 text-[10px] text-muted-foreground">
-                  ابتدا گروه و سپس نوع دقیق خدمت را انتخاب کنید
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <div className="relative">
-                <Tag className="pointer-events-none absolute right-3.5 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Select
-                  dir="rtl"
-                  value={categoryId}
-                  onValueChange={(value) => {
-                    setCategoryId(value);
-                    setServiceId("");
-                    clearError("categoryId");
-                    clearError("serviceId");
-                  }}
-                >
-                  <SelectTrigger
-                    className="h-12 w-full rounded-xl border-border/80 bg-surface pr-10 shadow-sm data-[placeholder]:text-muted-foreground/80"
-                    aria-invalid={Boolean(errors.categoryId)}
-                  >
-                    <SelectValue placeholder="انتخاب دسته‌بندی خدمت" />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl text-right" dir="rtl">
-                    {catalog.map((category) => (
-                      <SelectItem
-                        key={category.categoryId}
-                        value={category.categoryId}
-                        className="justify-start rounded-lg text-right"
-                      >
-                        {category.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="relative">
-                <Wrench className="pointer-events-none absolute right-3.5 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground" />
-                <div className="pr-0 [&_button]:pr-10">
-                  <SearchableSelect
-                    value={serviceId}
-                    onValueChange={(value) => {
-                      setServiceId(value);
-                      clearError("serviceId");
-                    }}
-                    disabled={!selectedCategory}
-                    aria-invalid={Boolean(errors.serviceId)}
-                    placeholder={
-                      selectedCategory
-                        ? "انتخاب خدمت دقیق"
-                        : "ابتدا دسته‌بندی را انتخاب کنید"
-                    }
-                    searchPlaceholder="جستجوی خدمت..."
-                    emptyText="خدمتی در این دسته نیست"
-                    noResultsText="خدمتی با این عبارت پیدا نشد"
-                    options={
-                      selectedCategory?.services.map((service) => ({
-                        value: service.serviceId,
-                        label: service.name,
-                        keywords: service.description ?? undefined,
-                      })) ?? []
-                    }
+              <div className="mt-2 grid grid-cols-3 gap-1.5">
+                {[0, 1, 2].map((index) => (
+                  <span
+                    key={index}
+                    className={cn(
+                      "h-1.5 rounded-full transition-colors duration-500",
+                      index < completed ? "bg-[#b9531f]" : "bg-white/70",
+                    )}
                   />
-                </div>
-              </div>
-            </div>
-
-            {errors.categoryId || errors.serviceId ? (
-              <p className="mt-2 text-xs font-medium text-destructive">
-                {errors.categoryId ?? errors.serviceId}
-              </p>
-            ) : null}
-            {selectedService ? (
-              <div className="mt-2.5 flex items-center gap-1.5 text-[11px] font-medium text-[#c66424]">
-                <Check className="size-3.5" />
-                خدمت «{selectedService.name}» انتخاب شد
-              </div>
-            ) : null}
-          </div>
-
-          <div className="rounded-2xl border border-border/70 bg-gradient-to-l from-[#f2c14e]/[0.08] to-transparent p-3.5">
-            <button
-              type="button"
-              onClick={() => setIsCalendarOpen((open) => !open)}
-              className="flex w-full items-center gap-3 rounded-xl text-right outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-              aria-expanded={isCalendarOpen}
-              aria-controls="work-date-calendar"
-            >
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#f2c14e]/20 text-[#a56b00]">
-                <CalendarDays className="size-5" />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-bold">
-                  {scheduledDates.length > 0
-                    ? `${scheduledDates.length.toLocaleString("fa-IR")} تاریخ انتخاب شده`
-                    : "انتخاب تاریخ انجام کار"}
-                </span>
-                <span className="mt-0.5 block text-[10px] leading-5 text-muted-foreground">
-                  {scheduledDates.length > 0
-                    ? "برای مشاهده یا تغییر تاریخ‌ها بزنید"
-                    : "می‌توانید یک یا چند روز مناسب انتخاب کنید"}
-                </span>
-              </span>
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface text-muted-foreground shadow-sm">
-                <ChevronDown
-                  className={`size-4 transition-transform duration-200 ${
-                    isCalendarOpen ? "rotate-180" : ""
-                  }`}
-                />
-              </span>
-            </button>
-
-            {scheduledDates.length > 0 && !isCalendarOpen ? (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {scheduledDates.map((date) => (
-                  <Badge
-                    key={date}
-                    variant="secondary"
-                    className="gap-1.5 rounded-full bg-primary/[0.07] px-3 py-1 text-[10px] font-medium text-primary"
-                  >
-                    {formatPersianIsoChip(date)}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setScheduledDates((current) =>
-                          current.filter((item) => item !== date),
-                        )
-                      }
-                      className="rounded-full p-0.5 transition-colors hover:bg-primary/10"
-                      aria-label="حذف تاریخ"
-                    >
-                      <X className="size-3" />
-                    </button>
-                  </Badge>
                 ))}
               </div>
-            ) : null}
-
-            {isCalendarOpen ? (
-              <div
-                id="work-date-calendar"
-                className="mt-4 border-t border-border/60 pt-4 animate-fade-in"
-              >
-                <PersianCalendar
-                  selectedDates={scheduledDates}
-                  onChange={handleDatesChange}
-                />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="mt-4 h-10 w-full rounded-xl"
-                  onClick={() => setIsCalendarOpen(false)}
-                >
-                  <Check className="size-4" />
-                  تأیید تاریخ‌ها
-                </Button>
-              </div>
-            ) : null}
-
-            {errors.scheduledDates ? (
-              <p className="mt-2 text-xs font-medium text-destructive">
-                {errors.scheduledDates}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="rounded-2xl border border-dashed border-primary/20 bg-primary/[0.035] px-3.5 py-3">
-            <div className="flex items-center justify-between gap-3 text-[11px]">
-              <span className="text-muted-foreground">خلاصه درخواست</span>
-              <span className="max-w-52 truncate font-semibold text-foreground">
-                {selectedService?.name ?? "خدمت انتخاب نشده"}
-                {selectedLand ? ` برای ${selectedLand.title}` : ""}
-              </span>
             </div>
-          </div>
+          ) : null}
+        </ConsumerPageHero>
 
-          <Button
-            type="button"
-            className="h-13 w-full rounded-2xl bg-[linear-gradient(90deg,#e76f51_0%,#f4a261_100%)] text-sm font-bold text-white shadow-[0_10px_24px_rgba(231,111,81,0.24)] transition-all hover:-translate-y-0.5 hover:opacity-95 hover:shadow-[0_14px_28px_rgba(231,111,81,0.28)]"
-            onClick={() => void handleSearch()}
-            disabled={searching}
-          >
-            <Search className="size-5" />
-            {searching ? "در حال جستجو..." : "مشاهده خدمات‌دهندگان مناسب"}
-          </Button>
-          <p className="text-center text-[10px] leading-5 text-muted-foreground">
-            نتایج بر اساس موقعیت زمین، نوع خدمت و دسترسی خدمات‌دهندگان نمایش
-            داده می‌شود.
-          </p>
-        </CardContent>
-      </Card>
-    </PageContainer>
+        <div className="relative z-10 -mt-4 space-y-3 px-4 pt-1">
+          {loading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-44 rounded-[26px] bg-white/70" />
+              <Skeleton className="h-20 rounded-[26px] bg-white/70" />
+              <Skeleton className="h-20 rounded-[26px] bg-white/70" />
+            </div>
+          ) : lands.length === 0 ? (
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex flex-col items-center rounded-[28px] bg-white px-6 py-9 text-center shadow-[0_18px_40px_-24px_rgba(160,86,26,0.55)] ring-1 ring-[#efe0c8]"
+            >
+              <span className="flex size-18 items-center justify-center rounded-[24px] bg-gradient-to-br from-[#ffe2ad] to-[#f0a94f] p-4 text-[#7a4513]">
+                <LandPlot className="size-9" strokeWidth={1.5} />
+              </span>
+              <h2 className="mt-4 text-[16px] font-black text-[#3b2410]">ابتدا زمین خود را ثبت کنید</h2>
+              <p className="mt-1.5 max-w-72 text-[12px] leading-6 text-[#8a6a48]">
+                جستجو بر اساس موقعیت زمین انجام می‌شود تا نزدیک‌ترین خدمات‌دهندگان را پیدا کنیم.
+              </p>
+              <Link
+                href="/users/lands/new"
+                className="mt-5 inline-flex h-12 items-center gap-2 rounded-2xl bg-[#b9531f] px-6 text-[14px] font-black text-white"
+              >
+                <Plus className="size-5" strokeWidth={2.5} />
+                ثبت زمین
+              </Link>
+            </motion.div>
+          ) : (
+            <>
+              <SearchStep
+                index={1}
+                title="کدام زمین؟"
+                hint="محل انجام کار را انتخاب کنید"
+                summary={selectedLand && landArea ? `${selectedLand.title} · ${landArea.primary} ${landArea.primaryUnit}` : null}
+                done={Boolean(selectedLand)}
+                open={openStep === "land"}
+                error={errors.landId}
+                onToggle={() => toggleStep("land")}
+              >
+                <LandPicker
+                  lands={lands}
+                  value={landId}
+                  onChange={(id) => {
+                    setLandId(id);
+                    clearError("landId");
+                    setOpenStep(!selectedService ? "service" : scheduledDates.length === 0 ? "dates" : null);
+                  }}
+                />
+              </SearchStep>
+
+              <SearchStep
+                index={2}
+                title="چه خدمتی لازم دارید؟"
+                hint="خدمت را جستجو یا از فهرست انتخاب کنید"
+                summary={selectedService?.name ?? null}
+                done={Boolean(selectedService)}
+                open={openStep === "service"}
+                error={errors.serviceId ?? errors.categoryId}
+                onToggle={() => toggleStep("service")}
+              >
+                <ServicePicker
+                  catalog={catalog}
+                  value={serviceId}
+                  onChange={(nextService, nextCategory) => {
+                    setServiceId(nextService);
+                    setCategoryId(nextCategory);
+                    clearError("serviceId", "categoryId");
+                    setOpenStep(scheduledDates.length > 0 ? null : "dates");
+                  }}
+                />
+              </SearchStep>
+
+              <SearchStep
+                index={3}
+                title="چه زمانی؟"
+                hint="یک یا چند روز مناسب انتخاب کنید"
+                summary={datesSummary}
+                done={scheduledDates.length > 0}
+                open={openStep === "dates"}
+                error={errors.scheduledDates}
+                onToggle={() => toggleStep("dates")}
+              >
+                <DatePickerStep
+                  value={scheduledDates}
+                  onChange={(dates) => {
+                    setScheduledDates(dates);
+                    if (dates.length > 0) clearError("scheduledDates");
+                  }}
+                />
+              </SearchStep>
+
+              <SearchStep
+                index={4}
+                title="توضیح برای خدمات‌دهنده"
+                hint="نوع محصول، شرایط زمین یا مسیر دسترسی"
+                summary={note.trim() ? note.trim() : null}
+                done={Boolean(note.trim())}
+                open={openStep === "note"}
+                optional
+                onToggle={() => toggleStep("note")}
+              >
+                <Textarea
+                  value={note}
+                  onChange={(event) => setNote(event.target.value)}
+                  maxLength={MAX_NOTE_LENGTH}
+                  placeholder="مثلاً: زمین گندم آبی است و ورودی از جاده خاکی ضلع شمالی است."
+                  className="min-h-28 rounded-2xl border-0 bg-[#fcf7ee] text-[13px] leading-6 ring-1 ring-[#efe0c8] focus-visible:ring-2 focus-visible:ring-[#e3b97f]"
+                />
+                <p className="mt-1.5 text-[10.5px] text-[#a08463]">
+                  این توضیح همراه درخواست برای خدمات‌دهندگان ارسال می‌شود.
+                </p>
+              </SearchStep>
+
+              <p className="flex items-center justify-center gap-1.5 pt-1 text-center text-[10.5px] leading-5 text-[#a08463]">
+                <ShieldCheck className="size-3.5 shrink-0 text-[#4f9a55]" />
+                شماره تماس شما فقط پس از قبول درخواست به خدمات‌دهنده نمایش داده می‌شود.
+              </p>
+
+              {/* Sticky offsets count from the container's padding edge (pb-32), so this lands just above the dock. */}
+              <div className="sticky bottom-[calc(env(safe-area-inset-bottom,0px)-2.5rem)] z-20 pt-2">
+                <button
+                  type="button"
+                  onClick={() => void handleSearch()}
+                  disabled={searching}
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-[22px] py-3 pe-3 ps-5 text-right text-white transition active:scale-[0.98] disabled:opacity-80",
+                    completed === 3
+                      ? "bg-[#b9531f] shadow-[0_18px_36px_-14px_rgba(185,83,31,0.95)]"
+                      : "bg-[#5c4120] shadow-[0_18px_36px_-16px_rgba(59,36,16,0.7)]",
+                  )}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[14px] font-black">
+                      {searching ? "در حال یافتن خدمات‌دهندگان…" : "یافتن خدمات‌دهندگان"}
+                    </span>
+                    <span className="block truncate text-[11px] text-white/75">
+                      {selectedService && selectedLand
+                        ? `${selectedService.name} برای ${selectedLand.title}`
+                        : `${toPersianDigits(3 - completed)} مرحله باقی مانده`}
+                    </span>
+                  </span>
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/95 text-[#b9531f]">
+                    {searching ? (
+                      <LoaderCircle className="size-5 animate-spin" />
+                    ) : completed === 3 ? (
+                      <ArrowLeft className="size-5" strokeWidth={2.25} />
+                    ) : (
+                      <Search className="size-5" />
+                    )}
+                  </span>
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </PageContainer>
+    </MotionConfig>
+  );
+}
+
+export default function ConsumerSearchPage() {
+  return (
+    <Suspense>
+      <ConsumerSearchContent />
+    </Suspense>
   );
 }

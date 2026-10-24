@@ -2,12 +2,10 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { motion } from "framer-motion";
-import { MapPinned, Pencil, Trash2 } from "lucide-react";
+import { Expand, MapPin, Pencil, Search, Trash2 } from "lucide-react";
 
 import { ParsimapMap } from "@/components/shared/parsimap-map";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { SatelliteThumb } from "@/components/shared/satellite-thumb";
 import {
   Dialog,
   DialogContent,
@@ -15,108 +13,118 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
 import { formatAreaSqm } from "@/lib/utils/format";
 import type { Land } from "@/types";
 
+const ADDED = new Intl.DateTimeFormat("fa-IR-u-ca-persian", { year: "numeric", month: "long", day: "numeric" });
+
 interface LandCardProps {
   land: Land;
-  index?: number;
-  onDelete: (landId: string) => void;
+  onDelete: (land: Land) => void;
 }
 
-export function LandCard({ land, index = 0, onDelete }: LandCardProps) {
+function FieldFallback() {
+  return (
+    <div className="absolute inset-0 bg-[linear-gradient(150deg,#e9dcc0_0%,#d9c08f_55%,#c7a66b_100%)]">
+      <svg aria-hidden viewBox="0 0 200 120" preserveAspectRatio="none" className="size-full" fill="none">
+        {Array.from({ length: 9 }, (_, row) => (
+          <path
+            key={row}
+            d={`M-10 ${row * 16} C 60 ${row * 16 - 10}, 130 ${row * 16 + 14}, 210 ${row * 16}`}
+            className="stroke-[#7a5320]"
+            strokeOpacity="0.18"
+            strokeWidth="3"
+          />
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+export function LandCard({ land, onDelete }: LandCardProps) {
   const [mapOpen, setMapOpen] = useState(false);
   const area = formatAreaSqm(land.areaSqm);
 
   return (
     <>
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{
-          duration: 0.2,
-          delay: Math.min(index * 0.03, 0.18),
-          ease: "easeOut",
-        }}
-      >
-        <Card
-          className={cn(
-            "overflow-hidden rounded-xl border-border/70 bg-surface",
-            "shadow-[0_2px_10px_rgba(45,106,79,0.05)] transition-colors duration-200",
-            "hover:border-primary/25",
-          )}
+      <article className="overflow-hidden rounded-[26px] bg-white shadow-[0_18px_36px_-24px_rgba(160,86,26,0.55)] ring-1 ring-[#efe0c8]">
+        <button
+          type="button"
+          onClick={() => setMapOpen(true)}
+          aria-label={`نمایش ${land.title} روی نقشه`}
+          className="group relative block h-40 w-full text-right"
         >
-          <CardContent className="flex items-start gap-3 p-3.5">
-            <span
-              className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/8 text-primary"
-              aria-hidden="true"
-            >
-              <MapPinned className="size-4" strokeWidth={1.85} />
+          <SatelliteThumb
+            lat={land.location.lat}
+            lng={land.location.lng}
+            className="absolute inset-0 transition-transform duration-700 group-hover:scale-105"
+            fallback={<FieldFallback />}
+          />
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.25)_0%,transparent_35%,transparent_55%,rgba(30,18,6,0.65)_100%)]" />
+
+          <span className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-full">
+            <span className="parsimap-pin block scale-75" />
+          </span>
+
+          <span className="absolute right-3 top-3 rounded-full bg-white/90 px-2.5 py-1 text-[12px] font-black text-[#3b2410] shadow-sm backdrop-blur">
+            {area.primary} {area.primaryUnit}
+          </span>
+          <span className="absolute left-3 top-3 flex size-8 items-center justify-center rounded-full bg-black/35 text-white backdrop-blur-sm transition group-hover:bg-black/50">
+            <Expand className="size-4" />
+          </span>
+
+          <span className="absolute inset-x-4 bottom-3 text-white">
+            <span className="block truncate text-[17px] font-black drop-shadow">{land.title}</span>
+            <span className="mt-0.5 flex items-center gap-1 text-[11px] font-medium text-white/80">
+              <MapPin className="size-3" />
+              <span dir="ltr" className="tabular-nums">
+                {land.location.lat.toFixed(4)}, {land.location.lng.toFixed(4)}
+              </span>
             </span>
+          </span>
+        </button>
 
-            <div className="min-w-0 flex-1">
-              <div className="flex items-start justify-between gap-2">
-                <h2 className="truncate text-sm font-bold leading-6 text-foreground">
-                  {land.title}
-                </h2>
-                <span className="shrink-0 rounded-lg bg-muted/70 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-foreground">
-                  {area.primary} {area.primaryUnit}
-                </span>
-              </div>
+        <div className="p-4">
+          {land.description ? (
+            <p className="line-clamp-2 text-[12px] leading-6 text-[#6b4a26]">{land.description}</p>
+          ) : (
+            <p className="text-[11.5px] text-[#a08463]">ثبت‌شده در {ADDED.format(new Date(land.createdAt))}</p>
+          )}
 
-              {land.description ? (
-                <p className="mt-0.5 line-clamp-1 text-xs leading-5 text-muted-foreground">
-                  {land.description}
-                </p>
-              ) : null}
-
-              <div className="mt-2.5 flex items-center gap-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 rounded-lg px-2.5 text-xs text-primary hover:bg-primary/8 hover:text-primary"
-                  onClick={() => setMapOpen(true)}
-                >
-                  <MapPinned className="size-3.5" aria-hidden="true" />
-                  نمایش روی نقشه
-                </Button>
-                <Button
-                  asChild
-                  variant="ghost"
-                  size="icon"
-                  className="size-8 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
-                >
-                  <Link
-                    href={`/users/lands/${land.id}/edit`}
-                    aria-label={`ویرایش ${land.title}`}
-                  >
-                    <Pencil className="size-3.5" aria-hidden="true" />
-                  </Link>
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-8 rounded-lg text-muted-foreground hover:bg-destructive/8 hover:text-destructive"
-                  onClick={() => onDelete(land.id)}
-                  aria-label={`حذف ${land.title}`}
-                >
-                  <Trash2 className="size-3.5" aria-hidden="true" />
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
+          <div className="mt-3.5 flex items-center gap-2">
+            <Link
+              href={`/users/search?landId=${encodeURIComponent(land.id)}`}
+              className="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-2xl bg-[#b9531f] text-[13px] font-black text-white shadow-[0_12px_24px_-14px_rgba(185,83,31,0.9)] transition active:scale-[0.98]"
+            >
+              <Search className="size-4" />
+              درخواست خدمت
+            </Link>
+            <Link
+              href={`/users/lands/${land.id}/edit`}
+              aria-label={`ویرایش ${land.title}`}
+              className="flex size-11 items-center justify-center rounded-2xl bg-[#fdebd3] text-[#a0561a] transition-colors hover:bg-[#fbdfba]"
+            >
+              <Pencil className="size-4" />
+            </Link>
+            <button
+              type="button"
+              onClick={() => onDelete(land)}
+              aria-label={`حذف ${land.title}`}
+              className="flex size-11 items-center justify-center rounded-2xl bg-[#fde2dc]/70 text-[#b23a1f] transition-colors hover:bg-[#fde2dc]"
+            >
+              <Trash2 className="size-4" />
+            </button>
+          </div>
+        </div>
+      </article>
 
       <Dialog open={mapOpen} onOpenChange={setMapOpen}>
-        <DialogContent className="gap-3 rounded-2xl p-4 sm:max-w-lg">
+        <DialogContent className="gap-3 rounded-[26px] p-4 sm:max-w-lg">
           <DialogHeader className="gap-1 text-right">
-            <DialogTitle className="text-base">{land.title}</DialogTitle>
+            <DialogTitle className="text-base font-black">{land.title}</DialogTitle>
             <DialogDescription>
-              موقعیت این زمین روی نقشه مشخص شده است.
+              {area.primary} {area.primaryUnit}
+              {area.secondary ? ` (${area.secondary})` : ""}
             </DialogDescription>
           </DialogHeader>
           {mapOpen ? (
@@ -124,7 +132,7 @@ export function LandCard({ land, index = 0, onDelete }: LandCardProps) {
               center={land.location}
               value={land.location}
               interactive={false}
-              className="h-64 rounded-xl border border-border/70 sm:h-72"
+              className="h-72 rounded-2xl border border-border/70"
             />
           ) : null}
         </DialogContent>
