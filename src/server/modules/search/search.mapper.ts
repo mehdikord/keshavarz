@@ -1,45 +1,67 @@
-export function mapSearchContext(context: {
-  categoryName: string;
-  categorySlug: string;
-  consumerNote: string | null;
-  dates: string[];
-  expiresAt: Date;
-  landPublicId: string;
-  landTitle: string;
-  searchId: string;
-  serviceName: string;
-  serviceSlug: string;
+/**
+ * - available: eligible right now and not yet sent → selectable
+ * - unavailable: found earlier, no longer eligible (subscription ended, moved…)
+ * - sent / rejected / accepted / removed: the provider's link on this request
+ */
+export type CandidateState =
+  | "available"
+  | "unavailable"
+  | "sent"
+  | "rejected"
+  | "accepted"
+  | "removed";
+
+export function mapCandidate(input: {
+  distanceKm: number;
+  image: string | null;
+  name: string;
+  otherRequestStatus: "rejected" | "sent" | null;
+  phone: string | null;
+  priceToman: bigint;
+  pricingUnit: string;
+  providerPublicId: string;
+  state: CandidateState;
 }) {
   return {
-    categoryId: context.categorySlug,
-    categoryName: context.categoryName,
-    consumerNote: context.consumerNote,
-    dates: context.dates,
-    expiresAt: context.expiresAt.toISOString(),
-    landId: context.landPublicId,
-    landTitle: context.landTitle,
-    searchId: context.searchId,
-    serviceId: context.serviceSlug,
-    serviceName: context.serviceName,
+    declinedBefore: input.otherRequestStatus === "rejected",
+    distanceKm: Number(input.distanceKm.toFixed(2)),
+    image: input.image,
+    name: input.name,
+    phone: input.phone,
+    priceToman: Number(input.priceToman),
+    pricingUnit: input.pricingUnit,
+    providerId: input.providerPublicId,
+    sentInOtherRequest: input.otherRequestStatus === "sent",
+    state: input.state,
   };
 }
 
-export function mapSearchProvider(provider: {
-  distanceKm: number;
-  previousStatus: "rejected" | "sent" | null;
-  priceToman: bigint | number;
-  pricingUnit: string;
-  providerImage: string | null;
-  providerName: string | null;
-  providerPublicId: string;
+export function mapCandidateRequestContext(request: {
+  assignedProviderNameSnapshot: string | null;
+  consumerNote: string | null;
+  createdAt: Date;
+  dates: string[];
+  land: { publicId: string };
+  landAreaSquareMetersSnapshot: { toString(): string };
+  landTitleSnapshot: string;
+  publicId: string;
+  serviceCategoryNameSnapshot: string;
+  serviceNameSnapshot: string;
+  status: string;
+  version: number;
 }) {
   return {
-    distanceKm: Number(provider.distanceKm.toFixed(2)),
-    image: provider.providerImage ?? null,
-    name: provider.providerName,
-    previousStatus: provider.previousStatus,
-    priceToman: Number(provider.priceToman),
-    pricingUnit: provider.pricingUnit,
-    providerId: provider.providerPublicId,
+    assignedProviderName: request.assignedProviderNameSnapshot,
+    categoryName: request.serviceCategoryNameSnapshot,
+    consumerNote: request.consumerNote,
+    createdAt: request.createdAt.toISOString(),
+    dates: request.dates,
+    landAreaSquareMeters: request.landAreaSquareMetersSnapshot.toString(),
+    landId: request.land.publicId,
+    landTitle: request.landTitleSnapshot,
+    requestId: request.publicId,
+    serviceName: request.serviceNameSnapshot,
+    status: request.status,
+    version: request.version,
   };
 }

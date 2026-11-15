@@ -24,7 +24,7 @@ import { toPersianDigits } from "@/lib/utils/format";
 import { useAuthStore } from "@/stores/auth-store";
 
 const TABS: {
-  key: AppRequestStatus;
+  key: Exclude<AppRequestStatus, "awaiting_send">;
   label: string;
   icon: typeof Clock3;
   emptyTitle: string;
@@ -35,7 +35,7 @@ const TABS: {
     label: "در انتظار",
     icon: Clock3,
     emptyTitle: "درخواست در انتظاری ندارید",
-    emptyDescription: "پس از جستجو و ارسال درخواست، اینجا وضعیت آن را می‌بینید.",
+    emptyDescription: "هر جستجویی که خدمات‌دهنده پیدا کند اینجا ذخیره می‌شود تا درخواست را ارسال یا پیگیری کنید.",
   },
   {
     key: "in_progress",
@@ -61,11 +61,20 @@ const TABS: {
 ];
 
 const STATUSES = TABS.map((tab) => tab.key);
-type Grouped = Record<AppRequestStatus, AppConsumerRequestSummary[]>;
+type TabKey = (typeof TABS)[number]["key"];
+type Grouped = Record<TabKey, AppConsumerRequestSummary[]>;
 const EMPTY: Grouped = { pending_provider: [], in_progress: [], completed: [], cancelled: [] };
 
-function parseTab(value: string | null): AppRequestStatus {
-  return STATUSES.includes(value as AppRequestStatus) ? (value as AppRequestStatus) : "pending_provider";
+/** The "waiting" tab covers both found-but-unsent and sent-and-waiting requests. */
+const TAB_QUERY: Record<TabKey, AppRequestStatus | "open"> = {
+  pending_provider: "open",
+  in_progress: "in_progress",
+  completed: "completed",
+  cancelled: "cancelled",
+};
+
+function parseTab(value: string | null): TabKey {
+  return STATUSES.includes(value as TabKey) ? (value as TabKey) : "pending_provider";
 }
 
 function ConsumerRequestsContent() {
@@ -83,7 +92,7 @@ function ConsumerRequestsContent() {
 
   const loadAll = useCallback(async (signal?: AbortSignal) => {
     const results = await Promise.all(
-      STATUSES.map((status) => fetchConsumerRequests({ status, limit: 50, signal })),
+      STATUSES.map((status) => fetchConsumerRequests({ status: TAB_QUERY[status], limit: 50, signal })),
     );
     return STATUSES.reduce<Grouped>((acc, status, index) => ({ ...acc, [status]: results[index]?.items ?? [] }), EMPTY);
   }, []);
@@ -116,7 +125,7 @@ function ConsumerRequestsContent() {
     }
   };
 
-  const selectTab = (next: AppRequestStatus) => {
+  const selectTab = (next: TabKey) => {
     const params = new URLSearchParams(searchParams.toString());
     if (next === "pending_provider") params.delete("tab");
     else params.set("tab", next);
@@ -163,7 +172,7 @@ function ConsumerRequestsContent() {
         >
           <dl className="mt-5 grid grid-cols-3 gap-2">
             {[
-              { icon: Clock3, label: "منتظر پاسخ", value: grouped.pending_provider.length },
+              { icon: Clock3, label: "در انتظار", value: grouped.pending_provider.length },
               { icon: Tractor, label: "در حال انجام", value: grouped.in_progress.length },
               { icon: BadgeCheck, label: "انجام‌شده", value: grouped.completed.length },
             ].map((stat) => {
@@ -272,15 +281,25 @@ function ConsumerRequestsContent() {
                             tab === "pending_provider" ? (
                               <div className="grid grid-cols-[1fr_auto] gap-2">
                                 <Link
-                                  href={
-                                    request.searchId
-                                      ? `/users/search/results?searchId=${request.searchId}&requestId=${request.requestId}`
-                                      : "/users/search"
-                                  }
-                                  className="flex h-10 items-center justify-center gap-1.5 rounded-2xl bg-[#fff1df] text-[12.5px] font-black text-[#a0561a] ring-1 ring-[#f3d3a8]"
+                                  href={`/users/search/results?requestId=${encodeURIComponent(request.requestId)}`}
+                                  className={cn(
+                                    "flex h-10 items-center justify-center gap-1.5 rounded-2xl text-[12.5px] font-black",
+                                    request.status === "awaiting_send"
+                                      ? "bg-[#b9531f] text-white"
+                                      : "bg-[#fff1df] text-[#a0561a] ring-1 ring-[#f3d3a8]",
+                                  )}
                                 >
-                                  <UserPlus className="size-4" />
-                                  ارسال به خدمات‌دهندگان بیشتر
+                                  {request.status === "awaiting_send" ? (
+                                    <>
+                                      <Send className="size-4" />
+                                      انتخاب و ارسال ({toPersianDigits(request.providersFound)} نفر پیدا شد)
+                                    </>
+                                  ) : (
+                                    <>
+                                      <UserPlus className="size-4" />
+                                      ارسال به خدمات‌دهندگان بیشتر
+                                    </>
+                                  )}
                                 </Link>
                                 <button
                                   type="button"

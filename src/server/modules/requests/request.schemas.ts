@@ -9,13 +9,6 @@ export const RequestParamsSchema = z
   })
   .strict();
 
-export const CreateServiceRequestSchema = z
-  .object({
-    providerIds: z.array(PublicIdSchema).min(0).max(30),
-    searchId: PublicIdSchema,
-  })
-  .strict();
-
 export const AddRequestProvidersSchema = z
   .object({
     providerIds: z.array(PublicIdSchema).min(1).max(30),
@@ -25,8 +18,16 @@ export const AddRequestProvidersSchema = z
 export const ConsumerRequestsQuerySchema = createCursorPaginationSchema([
   "createdAt",
 ] as const).extend({
+  /** `open` = awaiting_send + pending_provider (the consumer's "waiting" tab). */
   status: z
-    .enum(["pending_provider", "in_progress", "completed", "cancelled"])
+    .enum([
+      "open",
+      "awaiting_send",
+      "pending_provider",
+      "in_progress",
+      "completed",
+      "cancelled",
+    ])
     .optional(),
 });
 
@@ -83,7 +84,13 @@ export const AdminServiceRequestsQuerySchema = createCursorPaginationSchema([
   consumerUserId: PublicIdSchema.optional(),
   q: PublicIdSchema.optional(),
   status: z
-    .enum(["pending_provider", "in_progress", "completed", "cancelled"])
+    .enum([
+      "awaiting_send",
+      "pending_provider",
+      "in_progress",
+      "completed",
+      "cancelled",
+    ])
     .optional(),
 });
 

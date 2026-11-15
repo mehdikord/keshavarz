@@ -1,4 +1,5 @@
 export type RequestStatus =
+  | "awaiting_send"
   | "pending_provider"
   | "in_progress"
   | "completed"

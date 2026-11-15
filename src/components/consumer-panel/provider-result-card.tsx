@@ -6,6 +6,7 @@ import {
   Check,
   ChevronLeft,
   Clock3,
+  CloudOff,
   Navigation,
   Phone,
   Plus,
@@ -18,7 +19,7 @@ import { pricingUnitLabel } from "@/lib/api/app-provider";
 import { cn } from "@/lib/utils";
 import { formatDistance } from "@/lib/utils/format";
 
-export type ProviderResultState = "idle" | "sent" | "rejected" | "accepted" | "removed";
+export type ProviderResultState = "idle" | "sent" | "rejected" | "accepted" | "removed" | "unavailable";
 
 export type ProviderHighlight = "nearest" | "cheapest";
 
@@ -62,6 +63,8 @@ interface ProviderResultCardProps {
   landArea?: LandArea | null;
   /** True when this provider declined one of the farmer's earlier requests. */
   declinedBefore?: boolean;
+  /** True when this provider is already waiting on another open request of the farmer. */
+  sentElsewhere?: boolean;
   /** Revealed once the provider accepts. */
   phone?: string | null;
 }
@@ -79,6 +82,7 @@ export function ProviderResultCard({
   highlights = [],
   landArea = null,
   declinedBefore = false,
+  sentElsewhere = false,
   phone,
 }: ProviderResultCardProps) {
   if (state === "removed") return null;
@@ -90,6 +94,7 @@ export function ProviderResultCard({
     <article
       className={cn(
         "relative overflow-hidden rounded-[26px] bg-white transition-all duration-300",
+        state === "unavailable" && "opacity-60 saturate-50",
         selected
           ? "shadow-[0_22px_40px_-22px_rgba(185,83,31,0.75)] ring-[2.5px] ring-[#b9531f]"
           : state === "accepted"
@@ -186,6 +191,8 @@ export function ProviderResultCard({
 
         {declinedBefore && state === "idle" ? (
           <p className="mt-2 text-[11px] text-[#a08463]">این خدمات‌دهنده قبلاً یکی از درخواست‌های شما را نپذیرفته است.</p>
+        ) : sentElsewhere && state === "idle" ? (
+          <p className="mt-2 text-[11px] text-[#a08463]">در درخواست دیگری برای همین زمین و خدمت، منتظر پاسخ این خدمات‌دهنده هستید.</p>
         ) : null}
       </div>
 
@@ -209,6 +216,11 @@ export function ProviderResultCard({
             <p role="status" className="flex h-11 items-center justify-center gap-2 rounded-2xl bg-[#fdebd3] text-[13px] font-black text-[#9a4f12]">
               <Clock3 className="size-4" />
               درخواست ارسال شد · منتظر پاسخ
+            </p>
+          ) : state === "unavailable" ? (
+            <p role="status" className="flex h-11 items-center justify-center gap-2 rounded-2xl bg-[#f6ece0] text-[12.5px] font-black text-[#8a6a48]">
+              <CloudOff className="size-4" />
+              فعلاً در دسترس نیست
             </p>
           ) : state === "rejected" ? (
             <p role="status" className="flex h-11 items-center justify-center gap-2 rounded-2xl bg-[#fde2dc] text-[13px] font-black text-[#b23a1f]">

@@ -1,7 +1,6 @@
 import * as z from "zod";
 
 import { PublicIdSchema } from "@/server/contracts";
-import { createCursorPaginationSchema } from "@/server/http";
 import { CatalogSlugSchema } from "@/server/modules/catalog/catalog.schemas";
 
 const DateOnlySchema = z
@@ -10,6 +9,8 @@ const DateOnlySchema = z
 
 export const CreateServiceSearchSchema = z
   .object({
+    /** Create a new request even if an open one exists for this land + service. */
+    allowDuplicate: z.boolean().optional(),
     categoryId: CatalogSlugSchema.optional(),
     consumerNote: z.string().trim().max(1500).nullable().optional(),
     dates: z
@@ -30,19 +31,6 @@ export const CreateServiceSearchSchema = z
       });
     }
   });
-
-export const SearchParamsSchema = z
-  .object({
-    searchId: PublicIdSchema,
-  })
-  .strict();
-
-export const SearchProvidersQuerySchema = createCursorPaginationSchema([
-  "distanceAsc",
-  "distanceDesc",
-  "priceAsc",
-  "priceDesc",
-] as const);
 
 export const IdempotencyHeaderSchema = z
   .string()

@@ -86,13 +86,15 @@ async function createSearch(
   context: BrowserContext,
   tokens: SeededTokens,
   consumerLandId: string,
-): Promise<{ searchId: string }> {
+): Promise<{ requestId: string }> {
   const { data, status } = await mutation(
     context,
     tokens,
     "post",
     "/api/app/v1/service-searches",
     {
+      // Every test searches the same land + service; skip the duplicate warning.
+      allowDuplicate: true,
       consumerNote: "آزمون جریان حیاتی",
       dates: [tomorrow()],
       landId: consumerLandId,
@@ -101,7 +103,41 @@ async function createSearch(
     idempotencyKey("e2e-search"),
   );
   expect(status).toBe(201);
-  return data as { searchId: string };
+  const result = data as { outcome: string; requestId: string; status: string };
+  expect(result.outcome).toBe("created");
+  expect(result.status).toBe("awaiting_send");
+  return { requestId: result.requestId };
+}
+
+async function listCandidates(
+  context: BrowserContext,
+  requestId: string,
+): Promise<Array<{ providerId: string; state: string }>> {
+  const { data } = await getData(
+    context,
+    `/api/app/v1/service-requests/${requestId}/providers`,
+  );
+  return (data as { candidates: Array<{ providerId: string; state: string }> })
+    .candidates;
+}
+
+async function sendTo(
+  context: BrowserContext,
+  tokens: SeededTokens,
+  requestId: string,
+  providerIds: string[],
+  key: string,
+) {
+  const { data, status } = await mutation(
+    context,
+    tokens,
+    "post",
+    `/api/app/v1/service-requests/${requestId}/providers`,
+    { providerIds },
+    idempotencyKey(key),
+  );
+  expect(status).toBe(200);
+  return data as { sent: Array<{ providerId: string }>; status: string };
 }
 
 test.describe.serial("critical business flows (E2E)", () => {
@@ -187,31 +223,21 @@ test.describe.serial("critical business flows (E2E)", () => {
     consumerLandId = lands.find((land) => land.title === "زمین آزمایش E2E")!.id;
     expect(consumerLandId).toBeTruthy();
 
-    const search = await createSearch(consumerContext, consumerTokens, consumerLandId);
+    const { requestId } = await createSearch(consumerContext, consumerTokens, consumerLandId);
 
-    const { data: providersData } = await getData(
-      consumerContext,
-      `/api/app/v1/service-searches/${search.searchId}/providers?limit=10`,
-    );
-    const providers = (
-      providersData as { items: Array<{ providerId: string }> }
-    ).items;
+    const providers = await listCandidates(consumerContext, requestId);
     expect(providers).toHaveLength(3);
+    expect(providers.every((provider) => provider.state === "available")).toBe(true);
 
-    const { data, status } = await mutation(
+    const sent = await sendTo(
       consumerContext,
       consumerTokens,
-      "post",
-      "/api/app/v1/service-requests",
-      {
-        providerIds: providers.map((provider) => provider.providerId),
-        searchId: search.searchId,
-      },
-      idempotencyKey("e2e-request"),
+      requestId,
+      providers.map((provider) => provider.providerId),
+      "e2e-request",
     );
-    expect(status).toBe(201);
-    const requestId = (data as { requestId: string }).requestId;
-    expect(requestId).toBeTruthy();
+    expect(sent.sent).toHaveLength(3);
+    expect(sent.status).toBe("pending_provider");
   });
 
   test("provider accepts the request and the consumer completes it", async () => {
@@ -255,24 +281,11 @@ test.describe.serial("critical business flows (E2E)", () => {
   });
 
   test("a provider can reject a pending request", async () => {
-    const search = await createSearch(consumerContext, consumerTokens, consumerLandId);
+    const { requestId } = await createSearch(consumerContext, consumerTokens, consumerLandId);
 
-    const { data: providersData } = await getData(
-      consumerContext,
-      `/api/app/v1/service-searches/${search.searchId}/providers?limit=10`,
-    );
-    const providers = (providersData as { items: Array<{ providerId: string }> }).items;
+    const providers = await listCandidates(consumerContext, requestId);
     const targetProvider = providers[1]!;
-
-    const { data: created } = await mutation(
-      consumerContext,
-      consumerTokens,
-      "post",
-      "/api/app/v1/service-requests",
-      { providerIds: [targetProvider.providerId], searchId: search.searchId },
-      idempotencyKey("e2e-reject"),
-    );
-    const requestId = (created as { requestId: string }).requestId;
+    await sendTo(consumerContext, consumerTokens, requestId, [targetProvider.providerId], "e2e-reject");
 
     const providerTwo = providerContexts[1]!;
     const { data: inboxData } = await getData(
@@ -294,24 +307,11 @@ test.describe.serial("critical business flows (E2E)", () => {
   });
 
   test("consumer can cancel a pending request", async () => {
-    const search = await createSearch(consumerContext, consumerTokens, consumerLandId);
+    const { requestId } = await createSearch(consumerContext, consumerTokens, consumerLandId);
 
-    const { data: providersData } = await getData(
-      consumerContext,
-      `/api/app/v1/service-searches/${search.searchId}/providers?limit=10`,
-    );
-    const providers = (providersData as { items: Array<{ providerId: string }> }).items;
+    const providers = await listCandidates(consumerContext, requestId);
     const targetProvider = providers[2]!;
-
-    const { data: created } = await mutation(
-      consumerContext,
-      consumerTokens,
-      "post",
-      "/api/app/v1/service-requests",
-      { providerIds: [targetProvider.providerId], searchId: search.searchId },
-      idempotencyKey("e2e-cancel"),
-    );
-    const requestId = (created as { requestId: string }).requestId;
+    await sendTo(consumerContext, consumerTokens, requestId, [targetProvider.providerId], "e2e-cancel");
 
     const cancelled = await mutation(
       consumerContext,

@@ -6,6 +6,7 @@ export const REPORTS_TIMEZONE = "Asia/Tehran" as const;
 
 const FunnelSchema = z
   .object({
+    awaiting_send: z.number().int(),
     cancelled: z.number().int(),
     completed: z.number().int(),
     in_progress: z.number().int(),

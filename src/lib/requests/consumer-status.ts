@@ -9,6 +9,8 @@ export interface ConsumerRequestState {
 
 export function consumerRequestState(status: string): ConsumerRequestState {
   switch (status) {
+    case "awaiting_send":
+      return { label: "آماده ارسال · هنوز برای کسی ارسال نشده", tone: "waiting", step: 1 };
     case "in_progress":
       return { label: "در حال انجام", tone: "active", step: 2 };
     case "completed":

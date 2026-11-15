@@ -20,8 +20,7 @@ interface ConsumerRequestCardProps {
 
 export function ConsumerRequestCard({ request, href, footer }: ConsumerRequestCardProps) {
   const state = consumerRequestState(request.status);
-  const target =
-    href ?? `/users/requests/${request.requestId}${request.searchId ? `?searchId=${request.searchId}` : ""}`;
+  const target = href ?? `/users/requests/${request.requestId}`;
   const muted = state.tone === "cancelled";
   const Icon = state.tone === "done" ? BadgeCheck : state.tone === "cancelled" ? XCircle : Tractor;
 

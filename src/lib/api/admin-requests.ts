@@ -4,6 +4,7 @@ import { adminApi } from "@/lib/api/admin-client";
 import type { AdminCursorMeta, AdminListLimit } from "@/lib/admin/search-params";
 
 export const REQUEST_STATUSES = [
+  "awaiting_send",
   "pending_provider",
   "in_progress",
   "completed",

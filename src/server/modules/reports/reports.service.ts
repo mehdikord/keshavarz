@@ -273,6 +273,7 @@ export async function getAdminReportsOverview(query: {
     activeUsers,
     from: from.toISOString(),
     funnel: {
+      awaiting_send: funnelRaw.awaiting_send ?? 0,
       cancelled: funnelRaw.cancelled ?? 0,
       completed: funnelRaw.completed ?? 0,
       in_progress: funnelRaw.in_progress ?? 0,

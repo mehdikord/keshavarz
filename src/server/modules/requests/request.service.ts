@@ -7,7 +7,6 @@ import {
   mapPrismaError,
 } from "@/server/errors";
 import { getAppIdempotencyService } from "@/server/idempotency/default-idempotency";
-import { createPublicId } from "@/server/identifiers/ulid";
 import { startSpan } from "@/server/observability";
 import { enqueueDomainNotification } from "@/server/modules/notifications/notification.service";
 import { buildRequestNotification } from "@/server/modules/notifications/notification.templates";
@@ -29,10 +28,8 @@ import {
   addProvidersToRequest,
   cancelServiceRequest,
   completeServiceRequest,
-  createServiceRequestWithProviders,
   findAdminRequestByPublicId,
   findExistingProviderLinks,
-  findLandSnapshot,
   findProviderLinkById,
   findProviderLinkForRequest,
   findProviderProfileIdByUserId,
@@ -53,11 +50,16 @@ import {
   lockProviderLinkById,
   lockServiceRequestByPublicId,
   markProviderLinkViewed,
+  markRequestPendingProvider,
   rejectProviderLink,
   removeProviderLinkByAdmin,
+  type ConsumerRequestStatus,
 } from "@/server/modules/requests/request.repository";
-import { findEligibleProviderMatch } from "@/server/modules/search/search.repository";
-import { revalidateSearchProviderMatch } from "@/server/modules/search/search.service";
+import {
+  OPEN_REQUEST_STATUSES,
+  queryEligibleProviders,
+  storeCandidates,
+} from "@/server/modules/search/search.repository";
 
 function assertExpectedVersion(
   current: number,
@@ -100,268 +102,170 @@ async function notifyUser(input: {
   });
 }
 
-export async function createServiceRequestFromSearch(
-  userId: bigint,
-  input: { providerIds: string[]; searchId: string },
-  idempotencyKey: string,
-) {
-  const span = startSpan({ name: "app.service-request.create" });
+export type SendSkipReason = "already_sent" | "not_eligible";
 
-  try {
-    const uniqueProviderIds = [...new Set(input.providerIds)];
-    const idempotency = getAppIdempotencyService();
-
-    const result = await idempotency.execute(
-    {
-      actorId: userId.toString(),
-      key: idempotencyKey,
-      operationId: "app.service-request.create",
-      realm: "app",
-    },
-    { providerIds: uniqueProviderIds, searchId: input.searchId },
-    async () => {
-      let context: Awaited<ReturnType<typeof revalidateSearchProviderMatch>>["context"];
-      const matches: Array<
-        Awaited<ReturnType<typeof revalidateSearchProviderMatch>>
-      > = [];
-
-      if (uniqueProviderIds.length > 0) {
-        for (const providerPublicId of uniqueProviderIds) {
-          const validated = await revalidateSearchProviderMatch({
-            providerPublicId,
-            searchId: input.searchId,
-            userId,
-          });
-          matches.push(validated);
-        }
-        context = matches[0]!.context;
-      } else {
-        const now = systemClock.now();
-        const { getServiceSearchContext, verifySearchCriteriaSignature } =
-          await import("@/server/modules/search/search.context");
-        const ctx = await getServiceSearchContext(input.searchId, now);
-        if (!ctx || ctx.userId !== userId) {
-          throw new ApiError(
-            404,
-            API_ERROR_CODES.notFound,
-            "جستجو یافت نشد.",
-          );
-        }
-        if (!verifySearchCriteriaSignature(ctx)) {
-          throw new ApiError(
-            409,
-            API_ERROR_CODES.conflict,
-            "context جستجو معتبر نیست.",
-          );
-        }
-        context = ctx;
-      }
-
-      const [user, land] = await Promise.all([
-        findUserSnapshot(userId),
-        findLandSnapshot(context.landId, userId),
-      ]);
-      if (!user || !land) {
-        throw new ApiError(
-          409,
-          API_ERROR_CODES.conflict,
-          "کاربر یا زمین برای ایجاد درخواست معتبر نیست.",
-        );
-      }
-
-      const providerPayload = matches.map((item) => ({
-        distanceKm: item.match.distanceKm,
-        providerName: item.match.providerName ?? "خدمات‌دهنده",
-        providerProfileId: item.match.providerProfileId,
-        providerServiceId: item.match.providerServiceId,
-        priceToman: item.match.priceToman,
-      }));
-
-      let lastError: unknown;
-      for (let attempt = 1; attempt <= 3; attempt += 1) {
-        try {
-          const created = await runInTransaction(async (transaction) => {
-            const request = await createServiceRequestWithProviders(
-              transaction,
-              {
-                consumerName: user.name,
-                consumerNote: context.consumerNote,
-                consumerUserId: userId,
-                dates: context.dates,
-                land,
-                providers: providerPayload,
-                publicId: createPublicId(),
-                searchPublicId: input.searchId,
-                serviceCategoryName: context.categoryName,
-                serviceId: context.serviceId,
-                serviceName: context.serviceName,
-              },
-            );
-
-            for (const item of matches) {
-              const providerUser = await findProviderUserIdByProfileId(
-                item.match.providerProfileId,
-              );
-              if (!providerUser) {
-                continue;
-              }
-              await notifyUser({
-                body: `درخواست جدید برای ${context.serviceName}`,
-                relatedServiceRequestId: request.id,
-                requestPublicId: request.publicId,
-                title: "درخواست جدید",
-                transaction,
-                type: NOTIFICATION_TYPES.requestNew,
-                userId: providerUser.userId,
-                viewer: "provider",
-              });
-            }
-
-            return request;
-          });
-
-          return {
-            createdAt: created.createdAt.toISOString(),
-            requestId: created.publicId,
-            status: created.status,
-            version: created.version,
-          };
-        } catch (error) {
-          lastError = error;
-          if (attempt < 3 && isRetryablePrismaConflict(error)) {
-            continue;
-          }
-          throw (
-            mapPrismaError(error) ??
-            new ApiError(
-              500,
-              API_ERROR_CODES.internalServerError,
-              "ایجاد درخواست ناموفق بود.",
-              { cause: error },
-            )
-          );
-        }
-      }
-
-      throw (
-        mapPrismaError(lastError) ??
-        new ApiError(
-          500,
-          API_ERROR_CODES.internalServerError,
-          "ایجاد درخواست ناموفق بود.",
-          { cause: lastError },
-        )
-      );
-    },
-  );
-
-    span.finish();
-    return result;
-  } catch (error) {
-    span.error(error);
-    throw error;
-  }
-}
-
-export async function addProvidersToExistingRequest(
+/**
+ * Sends an open request (awaiting_send / pending_provider) to more providers.
+ * Every provider is revalidated live; ineligible or already-linked ones are
+ * skipped and reported instead of failing the whole send. The first
+ * successful send moves the request from awaiting_send to pending_provider.
+ */
+export async function sendRequestToProviders(
   userId: bigint,
   requestId: string,
   providerIds: string[],
   idempotencyKey: string,
 ) {
   const uniqueProviderIds = [...new Set(providerIds)];
-  const idempotency = getAppIdempotencyService();
+  const span = startSpan({ name: "app.service-request.send" });
 
-  return idempotency.execute(
-    {
-      actorId: userId.toString(),
-      key: idempotencyKey,
-      operationId: "app.service-request.add-providers",
-      realm: "app",
-    },
-    { providerIds: uniqueProviderIds, requestId },
-    async () => {
-      const request = await findRequestByPublicId(requestId);
-      if (!request || request.consumerUserId !== userId) {
-        throw new ApiError(404, API_ERROR_CODES.notFound, "درخواست یافت نشد.");
-      }
-      if (request.status !== "pending_provider") {
-        throw new ApiError(
-          409,
-          API_ERROR_CODES.conflict,
-          "فقط درخواست در انتظار قابل ارسال به Provider جدید است.",
-        );
-      }
+  try {
+    const result = await getAppIdempotencyService().execute(
+      {
+        actorId: userId.toString(),
+        key: idempotencyKey,
+        operationId: "app.service-request.add-providers",
+        realm: "app",
+      },
+      { providerIds: uniqueProviderIds, requestId },
+      async () => {
+        const request = await findRequestByPublicId(requestId);
+        if (!request || request.consumerUserId !== userId) {
+          throw new ApiError(404, API_ERROR_CODES.notFound, "درخواست یافت نشد.");
+        }
+        assertOpenForSending(request.status);
 
-      const matches: Array<
-        NonNullable<Awaited<ReturnType<typeof findEligibleProviderMatch>>>
-      > = [];
-      for (const providerPublicId of uniqueProviderIds) {
-        const match = await findEligibleProviderMatch({
+        const matches = await queryEligibleProviders({
           consumerUserId: userId,
           landLatitude: Number(request.landLatitudeSnapshot.toString()),
           landLongitude: Number(request.landLongitudeSnapshot.toString()),
-          providerPublicId,
+          providerPublicIds: uniqueProviderIds,
           serviceId: request.serviceId,
         });
-        if (!match) {
-          throw new ApiError(
-            409,
-            API_ERROR_CODES.conflict,
-            "یکی از Providerها واجد شرایط نیست.",
-          );
-        }
-        matches.push(match);
-      }
-
-      const existing = await findExistingProviderLinks(
-        request.id,
-        matches.map((item) => item.providerProfileId),
-      );
-      if (existing.length > 0) {
-        throw new ApiError(
-          409,
-          API_ERROR_CODES.conflict,
-          "یکی از Providerها قبلاً به این درخواست اضافه شده است.",
+        const existing = await findExistingProviderLinks(
+          request.id,
+          matches.map((item) => item.providerProfileId),
         );
-      }
+        const linked = new Set(existing.map((item) => item.providerProfileId.toString()));
+        const matchByPublicId = new Map(matches.map((item) => [item.providerPublicId, item]));
 
-      await runInTransaction(async (transaction) => {
-        await addProvidersToRequest(transaction, {
-          actorUserId: userId,
-          providers: matches.map((item) => ({
-            distanceKm: item.distanceKm,
-            providerName: item.providerName ?? "خدمات‌دهنده",
-            providerProfileId: item.providerProfileId,
-            providerServiceId: item.providerServiceId,
-            priceToman: item.priceToman,
-          })),
-          requestId: request.id,
+        const skipped: Array<{
+          name: string | null;
+          providerId: string;
+          reason: SendSkipReason;
+        }> = [];
+        const sendable: typeof matches = [];
+        for (const providerPublicId of uniqueProviderIds) {
+          const match = matchByPublicId.get(providerPublicId);
+          if (!match) {
+            skipped.push({ name: null, providerId: providerPublicId, reason: "not_eligible" });
+          } else if (linked.has(match.providerProfileId.toString())) {
+            skipped.push({
+              name: match.providerName,
+              providerId: providerPublicId,
+              reason: "already_sent",
+            });
+          } else {
+            sendable.push(match);
+          }
+        }
+
+        if (sendable.length === 0) {
+          return {
+            requestId: request.publicId,
+            sent: [] as Array<{ name: string | null; providerId: string }>,
+            skipped,
+            status: request.status,
+            version: request.version,
+          };
+        }
+
+        const now = systemClock.now();
+        const outcome = await runInTransaction(async (transaction) => {
+          const locked = await lockServiceRequestByPublicId(transaction, requestId);
+          if (!locked || locked.consumerUserId !== userId) {
+            throw new ApiError(404, API_ERROR_CODES.notFound, "درخواست یافت نشد.");
+          }
+          assertOpenForSending(locked.status);
+
+          await addProvidersToRequest(transaction, {
+            actorUserId: userId,
+            providers: sendable.map((item) => ({
+              distanceKm: item.distanceKm,
+              providerName: item.providerName ?? "خدمات‌دهنده",
+              providerProfileId: item.providerProfileId,
+              providerServiceId: item.providerServiceId,
+              priceToman: item.priceToman,
+            })),
+            requestId: locked.id,
+          });
+          await storeCandidates(locked.id, sendable, transaction);
+
+          let status = locked.status;
+          let version = locked.version;
+          if (locked.status === "awaiting_send") {
+            const moved = await markRequestPendingProvider(transaction, {
+              actorUserId: userId,
+              expectedVersion: locked.version,
+              now,
+              requestId: locked.id,
+            });
+            if (!moved) {
+              throw new ApiError(409, API_ERROR_CODES.conflict, "نسخه درخواست قدیمی است.");
+            }
+            status = "pending_provider";
+            version = locked.version + 1;
+          }
+
+          for (const item of sendable) {
+            const providerUser = await findProviderUserIdByProfileId(item.providerProfileId);
+            if (!providerUser) {
+              continue;
+            }
+            await notifyUser({
+              body: `درخواست جدید برای ${request.serviceNameSnapshot}`,
+              relatedServiceRequestId: locked.id,
+              requestPublicId: locked.publicId,
+              title: "درخواست جدید",
+              transaction,
+              type: NOTIFICATION_TYPES.requestNew,
+              userId: providerUser.userId,
+              viewer: "provider",
+            });
+          }
+
+          return { status, version };
         });
 
-        for (const item of matches) {
-          const providerUser = await findProviderUserIdByProfileId(
-            item.providerProfileId,
-          );
-          if (!providerUser) {
-            continue;
-          }
-          await notifyUser({
-            body: `درخواست جدید برای ${request.serviceNameSnapshot}`,
-            relatedServiceRequestId: request.id,
-            requestPublicId: request.publicId,
-            title: "درخواست جدید",
-            transaction,
-            type: NOTIFICATION_TYPES.requestNew,
-            userId: providerUser.userId,
-            viewer: "provider",
-          });
-        }
-      });
+        return {
+          requestId: request.publicId,
+          sent: sendable.map((item) => ({
+            name: item.providerName,
+            providerId: item.providerPublicId,
+          })),
+          skipped,
+          status: outcome.status,
+          version: outcome.version,
+        };
+      },
+    );
 
-      return { added: matches.length, requestId: request.publicId };
-    },
-  );
+    span.finish();
+    return result;
+  } catch (error) {
+    span.error(error);
+    throw mapPrismaError(error) ?? error;
+  }
+}
+
+function assertOpenForSending(status: string): void {
+  if (!(OPEN_REQUEST_STATUSES as readonly string[]).includes(status)) {
+    throw new ApiError(
+      409,
+      API_ERROR_CODES.conflict,
+      "این درخواست دیگر قابل ارسال به خدمات‌دهنده جدید نیست.",
+    );
+  }
 }
 
 export async function listConsumerServiceRequests(
@@ -369,7 +273,7 @@ export async function listConsumerServiceRequests(
   query: {
     cursor?: string;
     limit: number;
-    status?: "pending_provider" | "in_progress" | "completed" | "cancelled";
+    status?: "open" | ConsumerRequestStatus;
   },
 ) {
   let cursorId: bigint | undefined;
@@ -384,7 +288,12 @@ export async function listConsumerServiceRequests(
   const rows = await listConsumerRequests({
     cursorId,
     limit: query.limit,
-    status: query.status,
+    statuses:
+      query.status === "open"
+        ? [...OPEN_REQUEST_STATUSES]
+        : query.status
+          ? [query.status]
+          : undefined,
     userId,
   });
   const hasMore = rows.length > query.limit;
@@ -398,8 +307,9 @@ export async function listConsumerServiceRequests(
         assignedProviderNameSnapshot: row.assignedProviderNameSnapshot,
         createdAt: row.createdAt,
         landTitleSnapshot: row.landTitleSnapshot,
+        providersFound: row._count.serviceRequestCandidates,
+        providersSent: row._count.serviceRequestProviders,
         publicId: row.publicId,
-        searchId: row.searchPublicId ?? null,
         serviceNameSnapshot: row.serviceNameSnapshot,
         status: row.status,
         version: row.version,
@@ -824,6 +734,7 @@ async function cancelRequestCore(input: {
     assertExpectedVersion(locked.version, input.expectedVersion);
 
     if (
+      locked.status !== "awaiting_send" &&
       locked.status !== "pending_provider" &&
       locked.status !== "in_progress"
     ) {
@@ -844,7 +755,7 @@ async function cancelRequestCore(input: {
     }
 
     if (
-      locked.status === "pending_provider" &&
+      (locked.status === "awaiting_send" || locked.status === "pending_provider") &&
       input.cancelledBy !== "consumer" &&
       input.cancelledBy !== "admin"
     ) {
@@ -862,7 +773,7 @@ async function cancelRequestCore(input: {
       actorUserId: input.actorUserId ?? null,
       cancelledBy: input.cancelledBy,
       expectedVersion: input.expectedVersion ?? locked.version,
-      fromStatus: locked.status,
+      fromStatus: locked.status as "awaiting_send" | "pending_provider" | "in_progress",
       now,
       reason: input.reason,
       requestId: locked.id,
@@ -969,7 +880,7 @@ export async function listAdminManagedServiceRequests(query: {
   cursor?: string;
   limit: number;
   q?: string;
-  status?: "pending_provider" | "in_progress" | "completed" | "cancelled";
+  status?: ConsumerRequestStatus;
 }) {
   let cursorId: bigint | undefined;
   if (query.cursor) {

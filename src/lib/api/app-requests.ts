@@ -8,6 +8,7 @@ import {
 } from "@/lib/api/app-idempotency";
 
 export const REQUEST_STATUSES = [
+  "awaiting_send",
   "pending_provider",
   "in_progress",
   "completed",
@@ -30,8 +31,11 @@ export const AppConsumerRequestSummarySchema = z
     assignedProviderName: z.string().nullable(),
     createdAt: z.string(),
     landTitle: z.string(),
+    /** Providers found by the search (stored candidates). */
+    providersFound: z.number().int(),
+    /** Providers the request was sent to (any link status). */
+    providersSent: z.number().int(),
     requestId: z.string(),
-    searchId: z.string().nullable().optional(),
     serviceName: z.string(),
     status: z.string(),
     version: z.number().int(),
@@ -148,45 +152,105 @@ const CursorMetaSchema = z
   })
   .strict();
 
-export async function createAppServiceRequest(input: {
-  providerIds: string[];
-  searchId: string;
-  idempotencyKey?: string;
-}): Promise<{
-  createdAt: string;
-  requestId: string;
-  status: string;
-  version: number;
+export const CANDIDATE_STATES = [
+  "available",
+  "unavailable",
+  "sent",
+  "rejected",
+  "accepted",
+  "removed",
+] as const;
+
+export type AppCandidateState = (typeof CANDIDATE_STATES)[number];
+
+export const AppRequestCandidateSchema = z
+  .object({
+    /** Declined another of this farmer's requests for the same land + service. */
+    declinedBefore: z.boolean(),
+    distanceKm: z.number(),
+    image: z.string().nullable(),
+    name: z.string(),
+    /** Only for the accepted provider once the request is in progress. */
+    phone: z.string().nullable(),
+    priceToman: z.number(),
+    pricingUnit: z.string(),
+    providerId: z.string(),
+    /** Already waiting on another open request for the same land + service. */
+    sentInOtherRequest: z.boolean(),
+    state: z.enum(CANDIDATE_STATES),
+  })
+  .strict();
+
+export type AppRequestCandidate = z.infer<typeof AppRequestCandidateSchema>;
+
+export const AppCandidateRequestContextSchema = z
+  .object({
+    assignedProviderName: z.string().nullable(),
+    categoryName: z.string(),
+    consumerNote: z.string().nullable(),
+    createdAt: z.string(),
+    dates: z.array(z.string()),
+    landAreaSquareMeters: z.string(),
+    landId: z.string(),
+    landTitle: z.string(),
+    requestId: z.string(),
+    serviceName: z.string(),
+    status: z.string(),
+    version: z.number().int(),
+  })
+  .strict();
+
+export type AppCandidateRequestContext = z.infer<
+  typeof AppCandidateRequestContextSchema
+>;
+
+/** Every provider found for the request, merged with a live re-search. */
+export async function fetchRequestCandidates(
+  requestId: string,
+  signal?: AbortSignal,
+): Promise<{
+  candidates: AppRequestCandidate[];
+  request: AppCandidateRequestContext;
 }> {
-  const result = await appApi.post<unknown>(
-    "/service-requests",
-    {
-      providerIds: input.providerIds,
-      searchId: input.searchId,
-    },
-    {
-      extraHeaders: {
-        [APP_IDEMPOTENCY_HEADER]:
-          input.idempotencyKey ?? createAppIdempotencyKey("request"),
-      },
-    },
+  const result = await appApi.get<unknown>(
+    `/service-requests/${requestId}/providers`,
+    { signal },
   );
   return z
     .object({
-      createdAt: z.string(),
-      requestId: z.string(),
-      status: z.string(),
-      version: z.number().int(),
+      candidates: z.array(AppRequestCandidateSchema),
+      request: AppCandidateRequestContextSchema,
     })
     .strict()
     .parse(result.data);
 }
 
-export async function addAppRequestProviders(input: {
+const SendResultProviderSchema = z
+  .object({ name: z.string().nullable(), providerId: z.string() })
+  .strict();
+
+export const AppSendRequestResultSchema = z
+  .object({
+    requestId: z.string(),
+    sent: z.array(SendResultProviderSchema),
+    skipped: z.array(
+      SendResultProviderSchema.extend({
+        reason: z.enum(["already_sent", "not_eligible"]),
+      }).strict(),
+    ),
+    status: z.string(),
+    version: z.number().int(),
+  })
+  .strict();
+
+export type AppSendRequestResult = z.infer<typeof AppSendRequestResultSchema>;
+
+/** Sends to eligible providers; ineligible ones come back in `skipped`. */
+export async function sendAppRequestToProviders(input: {
   providerIds: string[];
   requestId: string;
   idempotencyKey?: string;
-}): Promise<{ added: number; requestId: string }> {
+}): Promise<AppSendRequestResult> {
   const result = await appApi.post<unknown>(
     `/service-requests/${input.requestId}/providers`,
     { providerIds: input.providerIds },
@@ -197,20 +261,15 @@ export async function addAppRequestProviders(input: {
       },
     },
   );
-  return z
-    .object({
-      added: z.number().int(),
-      requestId: z.string(),
-    })
-    .strict()
-    .parse(result.data);
+  return AppSendRequestResultSchema.parse(result.data);
 }
 
 export async function fetchConsumerRequests(input?: {
   cursor?: string | null;
   limit?: AdminListLimit;
   signal?: AbortSignal;
-  status?: AppRequestStatus;
+  /** `open` = awaiting_send + pending_provider. */
+  status?: AppRequestStatus | "open";
 }): Promise<{ items: AppConsumerRequestSummary[]; meta: AdminCursorMeta }> {
   const limit = input?.limit ?? 20;
   const result = await appApi.get<unknown>("/consumer/requests", {

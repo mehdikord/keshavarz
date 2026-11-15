@@ -2,12 +2,18 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { prisma } from "@/server/db/prisma";
 import { createPublicId } from "@/server/identifiers/ulid";
-import { clearServiceSearchStoreForTests } from "@/server/modules/search/search.context";
 import {
   createServiceSearch,
-  listSearchProviders,
-  revalidateSearchProviderMatch,
+  listRequestCandidates,
+  type ServiceSearchResult,
 } from "@/server/modules/search/search.service";
+
+function requestIdOf(result: ServiceSearchResult): string {
+  if (result.outcome !== "created") {
+    throw new Error(`expected a created request, got ${result.outcome}`);
+  }
+  return result.requestId;
+}
 
 const phones = [
   "09995000001",
@@ -138,8 +144,6 @@ async function createSearchableProvider(input: {
 }
 
 async function cleanup() {
-  await clearServiceSearchStoreForTests();
-
   await prisma.serviceRequestProvider.deleteMany({
     where: { request: { consumer: { phone: { in: phones } } } },
   });
@@ -204,7 +208,6 @@ describe.sequential("phase 07 search matching", () => {
   }, 60_000);
 
   beforeEach(async () => {
-    await clearServiceSearchStoreForTests();
     await prisma.serviceRequestProvider.deleteMany({
       where: { request: { consumer: { phone: { in: phones } } } },
     });
@@ -267,17 +270,17 @@ describe.sequential("phase 07 search matching", () => {
       `idem-radius-${createPublicId()}`,
     );
 
-    const result = await listSearchProviders(consumer.id, search.searchId, {
-      limit: 20,
-      sort: "distanceAsc",
-    });
+    expect(search).toMatchObject({ outcome: "created", providersFound: 1 });
+    const result = await listRequestCandidates(consumer.id, requestIdOf(search));
 
-    expect(result.items.map((item) => item.providerId)).toEqual([
+    expect(result.request.status).toBe("awaiting_send");
+    expect(result.candidates.map((item) => item.providerId)).toEqual([
       inside.user.publicId,
     ]);
-    expect(result.items[0]?.distanceKm).toBeLessThanOrEqual(50);
-    expect(JSON.stringify(result.items)).not.toContain("09995");
-    expect(JSON.stringify(result.items)).not.toContain("work_latitude");
+    expect(result.candidates[0]?.state).toBe("available");
+    expect(result.candidates[0]?.distanceKm).toBeLessThanOrEqual(50);
+    expect(JSON.stringify(result.candidates)).not.toContain("09995");
+    expect(JSON.stringify(result.candidates)).not.toContain("work_latitude");
   });
 
   it("hides expired/future subscription, inactive provider/service, and self", async () => {
@@ -367,12 +370,9 @@ describe.sequential("phase 07 search matching", () => {
       `idem-eligibility-${createPublicId()}`,
     );
 
-    const result = await listSearchProviders(consumer.id, search.searchId, {
-      limit: 50,
-      sort: "priceAsc",
-    });
+    const result = await listRequestCandidates(consumer.id, requestIdOf(search));
 
-    expect(result.items.map((item) => item.providerId)).toEqual([
+    expect(result.candidates.map((item) => item.providerId)).toEqual([
       visible.user.publicId,
     ]);
 
@@ -389,64 +389,103 @@ describe.sequential("phase 07 search matching", () => {
     ).rejects.toMatchObject({ status: 404 });
   });
 
-  it("sorts and paginates without duplicates or gaps", async () => {
+  it("stores nothing when no provider matches", async () => {
+    const consumer = await createUser(phones[0]!);
+    const land = await createLand(consumer.id);
+
+    const search = await createServiceSearch(
+      consumer.id,
+      { dates: [futureDate(1)], landId: land.publicId, serviceId: serviceSlug },
+      `idem-empty-${createPublicId()}`,
+    );
+
+    expect(search).toEqual({ outcome: "no_providers", providersFound: 0 });
+    expect(
+      await prisma.serviceRequest.count({ where: { consumerUserId: consumer.id } }),
+    ).toBe(0);
+  });
+
+  it("persists candidates, sorts by price and merges live changes on reopen", async () => {
     const consumer = await createUser(phones[9]!);
     const land = await createLand(consumer.id);
 
-    for (const [index, phone] of [
-      phones[10]!,
-      phones[11]!,
-      phones[12]!,
-      phones[13]!,
-    ].entries()) {
-      await createSearchableProvider({
-        distanceKm: 5 + index,
-        name: `P${index}`,
-        phone,
-        priceToman: 200_000 - index * 10_000,
-      });
+    const providers = [];
+    for (const [index, phone] of [phones[10]!, phones[11]!, phones[12]!].entries()) {
+      providers.push(
+        await createSearchableProvider({
+          distanceKm: 5 + index,
+          name: `P${index}`,
+          phone,
+          priceToman: 200_000 - index * 10_000,
+        }),
+      );
     }
 
     const search = await createServiceSearch(
       consumer.id,
-      {
-        dates: [futureDate(3)],
-        landId: land.publicId,
-        serviceId: serviceSlug,
-      },
-      `idem-paging-${createPublicId()}`,
+      { dates: [futureDate(3)], landId: land.publicId, serviceId: serviceSlug },
+      `idem-reopen-${createPublicId()}`,
     );
-
-    const page1 = await listSearchProviders(consumer.id, search.searchId, {
-      limit: 2,
-      sort: "priceAsc",
+    const requestId = requestIdOf(search);
+    const request = await prisma.serviceRequest.findUniqueOrThrow({
+      where: { publicId: requestId },
     });
-    expect(page1.items).toHaveLength(2);
-    expect(page1.meta.hasMore).toBe(true);
-    expect(page1.items[0]!.priceToman).toBeLessThan(page1.items[1]!.priceToman);
+    expect(
+      await prisma.serviceRequestCandidate.count({ where: { serviceRequestId: request.id } }),
+    ).toBe(3);
 
-    const page2 = await listSearchProviders(consumer.id, search.searchId, {
-      cursor: page1.meta.nextCursor!,
-      limit: 2,
-      sort: "priceAsc",
+    const first = await listRequestCandidates(consumer.id, requestId);
+    const prices = first.candidates.map((item) => item.priceToman);
+    expect(prices).toEqual([...prices].sort((a, b) => a - b));
+
+    // One stored provider loses eligibility, one new provider appears.
+    await prisma.providerSubscription.updateMany({
+      where: { providerProfileId: providers[0]!.profile.id },
+      data: { endsAt: new Date(Date.now() - 60_000), status: "expired" },
     });
-    expect(page2.items).toHaveLength(2);
-    expect(page2.meta.hasMore).toBe(false);
+    const late = await createSearchableProvider({
+      distanceKm: 9,
+      name: "Late",
+      phone: phones[13]!,
+      priceToman: 150_000,
+    });
 
-    const ids = [...page1.items, ...page2.items].map((item) => item.providerId);
-    expect(new Set(ids).size).toBe(4);
+    const reopened = await listRequestCandidates(consumer.id, requestId);
+    const byId = new Map(reopened.candidates.map((item) => [item.providerId, item]));
+    expect(byId.get(providers[0]!.user.publicId)?.state).toBe("unavailable");
+    expect(byId.get(late.user.publicId)?.state).toBe("available");
+    expect(reopened.candidates).toHaveLength(4);
+    expect(
+      await prisma.serviceRequestCandidate.count({ where: { serviceRequestId: request.id } }),
+    ).toBe(4);
+  });
 
-    const allPrices = [...page1.items, ...page2.items].map(
-      (item) => item.priceToman,
+  it("warns about an open request for the same land and service", async () => {
+    const consumer = await createUser(phones[3]!);
+    const land = await createLand(consumer.id);
+    await createSearchableProvider({
+      distanceKm: 3,
+      name: "P",
+      phone: phones[4]!,
+      priceToman: 100_000,
+    });
+    const input = { dates: [futureDate(1)], landId: land.publicId, serviceId: serviceSlug };
+
+    const first = await createServiceSearch(consumer.id, input, `idem-dup-a-${createPublicId()}`);
+    const second = await createServiceSearch(consumer.id, input, `idem-dup-b-${createPublicId()}`);
+    expect(second).toMatchObject({
+      duplicate: { requestId: requestIdOf(first), status: "awaiting_send" },
+      outcome: "duplicate",
+    });
+
+    const forced = await createServiceSearch(
+      consumer.id,
+      { ...input, allowDuplicate: true },
+      `idem-dup-c-${createPublicId()}`,
     );
-    expect(allPrices).toEqual([...allPrices].sort((a, b) => a - b));
-
-    const live = await revalidateSearchProviderMatch({
-      providerPublicId: page1.items[0]!.providerId,
-      searchId: search.searchId,
-      userId: consumer.id,
-    });
-    expect(live.match.providerPublicId).toBe(page1.items[0]!.providerId);
-    expect(Number(live.match.priceToman)).toBe(page1.items[0]!.priceToman);
+    expect(forced.outcome).toBe("created");
+    expect(
+      await prisma.serviceRequest.count({ where: { consumerUserId: consumer.id } }),
+    ).toBe(2);
   });
 });

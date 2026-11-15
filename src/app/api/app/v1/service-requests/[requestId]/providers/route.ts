@@ -14,11 +14,29 @@ import {
   IdempotencyHeaderSchema,
   RequestParamsSchema,
 } from "@/server/modules/requests/request.schemas";
-import { addProvidersToExistingRequest } from "@/server/modules/requests/request.service";
+import { sendRequestToProviders } from "@/server/modules/requests/request.service";
+import { listRequestCandidates } from "@/server/modules/search/search.service";
 import { assertMutationProtection } from "@/server/security";
 
 export const runtime = "nodejs";
 
+function parseRequestId(request: NextRequest) {
+  return parseWithSchema(RequestParamsSchema, {
+    requestId: request.nextUrl.pathname.split("/").at(-2),
+  }).requestId;
+}
+
+/** Every provider found for the request, with its live state. */
+export const GET = withApiHandler(async (request: NextRequest, context) => {
+  const auth = await requireUserSession(request);
+  const result = await listRequestCandidates(
+    auth.internalUserId,
+    parseRequestId(request),
+  );
+  return apiSuccess(result, context.requestId);
+});
+
+/** Send the request to more providers (revalidated live, partial success). */
 export const POST = withApiHandler(async (request: NextRequest, context) => {
   assertMutationProtection(
     request,
@@ -26,19 +44,17 @@ export const POST = withApiHandler(async (request: NextRequest, context) => {
     getAllowedOrigins("app"),
   );
   const auth = await requireUserSession(request);
-  const params = parseWithSchema(RequestParamsSchema, {
-    requestId: request.nextUrl.pathname.split("/").at(-2),
-  });
+  const requestId = parseRequestId(request);
   const input = await parseJsonBody(request, AddRequestProvidersSchema);
   const idempotencyKey = parseWithSchema(
     IdempotencyHeaderSchema,
     request.headers.get(API_HEADERS.idempotencyKey),
   );
-  const result = await addProvidersToExistingRequest(
+  const result = await sendRequestToProviders(
     auth.internalUserId,
-    params.requestId,
+    requestId,
     input.providerIds,
     idempotencyKey,
   );
-  return apiSuccess(result, context.requestId, { status: 201 });
+  return apiSuccess(result, context.requestId);
 });

@@ -3,16 +3,15 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/server/db/prisma";
 import { ApiError } from "@/server/errors";
 import { createPublicId } from "@/server/identifiers/ulid";
-import { clearServiceSearchStoreForTests } from "@/server/modules/search/search.context";
 import { createServiceSearch } from "@/server/modules/search/search.service";
 import {
   acceptProviderServiceRequest,
   cancelConsumerServiceRequest,
   completeConsumerServiceRequest,
-  createServiceRequestFromSearch,
   getConsumerServiceRequest,
   getProviderServiceRequest,
   rejectProviderServiceRequest,
+  sendRequestToProviders,
 } from "@/server/modules/requests/request.service";
 
 const phones = [
@@ -104,7 +103,6 @@ async function createProvider(input: {
 }
 
 async function cleanupUsers() {
-  await clearServiceSearchStoreForTests();
   await prisma.notificationDelivery.deleteMany({
     where: { notification: { user: { phone: { in: phones } } } },
   });
@@ -203,17 +201,104 @@ describe.sequential("phase 08 request lifecycle", () => {
       `idem-search-${createPublicId()}`,
     );
 
-    const created = await createServiceRequestFromSearch(
+    if (search.outcome !== "created") {
+      throw new Error(`expected a created request, got ${search.outcome}`);
+    }
+
+    const created = await sendRequestToProviders(
       consumer.id,
-      {
-        providerIds: [p1.user.publicId, p2.user.publicId],
-        searchId: search.searchId,
-      },
+      search.requestId,
+      [p1.user.publicId, p2.user.publicId],
       `idem-request-${createPublicId()}`,
     );
 
-    return { consumer, created, p1, p2 };
+    return { consumer, created, land, p1, p2, search };
   }
+
+  it("search creates an awaiting_send request; the first send makes it pending", async () => {
+    const consumer = await createUser(phones[0]!, "مصرف‌کننده");
+    const land = await createLand(consumer.id);
+    const p1 = await createProvider({
+      distanceKm: 8,
+      name: "Provider One",
+      phone: phones[1]!,
+      priceToman: 150_000,
+    });
+
+    const search = await createServiceSearch(
+      consumer.id,
+      { dates: [futureDate(2)], landId: land.publicId, serviceId: serviceSlug },
+      `idem-search-${createPublicId()}`,
+    );
+    expect(search.outcome).toBe("created");
+    if (search.outcome !== "created") return;
+    expect(search.status).toBe("awaiting_send");
+
+    const before = await getConsumerServiceRequest(consumer.id, search.requestId);
+    expect(before.status).toBe("awaiting_send");
+    expect(before.providers).toHaveLength(0);
+
+    const sent = await sendRequestToProviders(
+      consumer.id,
+      search.requestId,
+      [p1.user.publicId],
+      `idem-send-${createPublicId()}`,
+    );
+    expect(sent.status).toBe("pending_provider");
+    expect(sent.sent.map((item) => item.providerId)).toEqual([p1.user.publicId]);
+    expect(sent.skipped).toEqual([]);
+
+    const histories = await prisma.serviceRequestStatusHistory.findMany({
+      where: { request: { publicId: search.requestId } },
+      orderBy: { id: "asc" },
+      select: { fromStatus: true, toStatus: true },
+    });
+    expect(histories).toEqual([
+      { fromStatus: null, toStatus: "awaiting_send" },
+      { fromStatus: "awaiting_send", toStatus: "pending_provider" },
+    ]);
+  });
+
+  it("sends to eligible providers and reports skipped ones", async () => {
+    const { consumer, p1, search } = await seedSearchRequest();
+    if (search.outcome !== "created") return;
+    const outsider = await createUser(phones[3]!, "بدون خدمت");
+
+    const result = await sendRequestToProviders(
+      consumer.id,
+      search.requestId,
+      [p1.user.publicId, outsider.publicId],
+      `idem-partial-${createPublicId()}`,
+    );
+
+    expect(result.sent).toEqual([]);
+    expect(result.skipped).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ providerId: p1.user.publicId, reason: "already_sent" }),
+        expect.objectContaining({ providerId: outsider.publicId, reason: "not_eligible" }),
+      ]),
+    );
+  });
+
+  it("lets the consumer cancel a request that was never sent", async () => {
+    const consumer = await createUser(phones[0]!, "مصرف‌کننده");
+    const land = await createLand(consumer.id);
+    await createProvider({
+      distanceKm: 8,
+      name: "Provider One",
+      phone: phones[1]!,
+      priceToman: 150_000,
+    });
+    const search = await createServiceSearch(
+      consumer.id,
+      { dates: [futureDate(2)], landId: land.publicId, serviceId: serviceSlug },
+      `idem-search-${createPublicId()}`,
+    );
+    if (search.outcome !== "created") throw new Error(search.outcome);
+
+    const cancelled = await cancelConsumerServiceRequest(consumer.id, search.requestId, {});
+    expect(cancelled.status).toBe("cancelled");
+  });
 
   it("creates request with snapshots, dates, histories and hides phones while pending", async () => {
     const { consumer, created, p1 } = await seedSearchRequest();

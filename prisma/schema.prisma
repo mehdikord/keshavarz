@@ -306,25 +306,26 @@ model PaymentRefund {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model ProviderProfile {
-  id                      BigInt                   @id @default(autoincrement()) @db.UnsignedBigInt
-  userId                  BigInt                   @unique(map: "uq_provider_profiles_user") @map("user_id") @db.UnsignedBigInt
-  workLatitude            Decimal?                 @map("work_latitude") @db.Decimal(10, 7)
-  workLongitude           Decimal?                 @map("work_longitude") @db.Decimal(10, 7)
-  workRadiusKm            Int                      @default(50) @map("work_radius_km") @db.UnsignedSmallInt
-  bio                     String?                  @db.VarChar(1000)
-  isActive                Int                      @default(1) @map("is_active") @db.UnsignedTinyInt
-  isAvailable             Int                      @default(1) @map("is_available") @db.UnsignedTinyInt
-  approvedAt              DateTime?                @map("approved_at")
-  approvedByAdminId       BigInt?                  @map("approved_by_admin_id") @db.UnsignedBigInt
-  createdAt               DateTime                 @default(now()) @map("created_at")
-  updatedAt               DateTime                 @default(now()) @map("updated_at")
-  user                    User                     @relation(fields: [userId], references: [id], map: "provider_profiles_ibfk_1")
-  approvedByAdmin         Admin?                   @relation(fields: [approvedByAdminId], references: [id], map: "provider_profiles_ibfk_2")
-  galleryImages           ProviderGalleryImage[]
-  providerServices        ProviderService[]
-  providerSubscriptions   ProviderSubscription[]
-  serviceRequestProviders ServiceRequestProvider[]
-  serviceRequests         ServiceRequest[]
+  id                       BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
+  userId                   BigInt                    @unique(map: "uq_provider_profiles_user") @map("user_id") @db.UnsignedBigInt
+  workLatitude             Decimal?                  @map("work_latitude") @db.Decimal(10, 7)
+  workLongitude            Decimal?                  @map("work_longitude") @db.Decimal(10, 7)
+  workRadiusKm             Int                       @default(50) @map("work_radius_km") @db.UnsignedSmallInt
+  bio                      String?                   @db.VarChar(1000)
+  isActive                 Int                       @default(1) @map("is_active") @db.UnsignedTinyInt
+  isAvailable              Int                       @default(1) @map("is_available") @db.UnsignedTinyInt
+  approvedAt               DateTime?                 @map("approved_at")
+  approvedByAdminId        BigInt?                   @map("approved_by_admin_id") @db.UnsignedBigInt
+  createdAt                DateTime                  @default(now()) @map("created_at")
+  updatedAt                DateTime                  @default(now()) @map("updated_at")
+  user                     User                      @relation(fields: [userId], references: [id], map: "provider_profiles_ibfk_1")
+  approvedByAdmin          Admin?                    @relation(fields: [approvedByAdminId], references: [id], map: "provider_profiles_ibfk_2")
+  galleryImages            ProviderGalleryImage[]
+  providerServices         ProviderService[]
+  providerSubscriptions    ProviderSubscription[]
+  serviceRequestProviders  ServiceRequestProvider[]
+  serviceRequestCandidates ServiceRequestCandidate[]
+  serviceRequests          ServiceRequest[]
 
   @@index([approvedByAdminId], map: "approved_by_admin_id")
   @@index([workLatitude, workLongitude], map: "idx_provider_profiles_geo")
@@ -383,6 +384,7 @@ model ProviderService {
   providerProfile               ProviderProfile               @relation(fields: [providerProfileId], references: [id], onDelete: Cascade, map: "provider_services_ibfk_1")
   service                       Service                       @relation(fields: [serviceId], references: [id], map: "provider_services_ibfk_2")
   serviceRequestProviders       ServiceRequestProvider[]
+  serviceRequestCandidates      ServiceRequestCandidate[]
 
   @@unique([providerProfileId, serviceId], map: "uq_provider_services_provider_service")
   @@index([providerProfileId, isActive], map: "idx_provider_services_provider_active")
@@ -545,7 +547,7 @@ model ServiceRequest {
   serviceId                     BigInt                        @map("service_id") @db.UnsignedBigInt
   assignedProviderProfileId     BigInt?                       @map("assigned_provider_profile_id") @db.UnsignedBigInt
   searchPublicId                String?                       @map("search_public_id") @db.Char(26)
-  status                        ServiceRequestStatus          @default(pending_provider)
+  status                        ServiceRequestStatus          @default(awaiting_send)
   agreedPriceToman              BigInt?                       @map("agreed_price_toman") @db.UnsignedBigInt
   consumerNote                  String?                       @map("consumer_note") @db.VarChar(1500)
   consumerNameSnapshot          String                        @map("consumer_name_snapshot") @db.VarChar(120)
@@ -569,6 +571,7 @@ model ServiceRequest {
   notifications                 Notification[]
   serviceRequestDates           ServiceRequestDate[]
   serviceRequestProviders       ServiceRequestProvider[]
+  serviceRequestCandidates      ServiceRequestCandidate[]
   serviceRequestStatusHistories ServiceRequestStatusHistory[]
   consumer                      User                          @relation("ServiceRequestConsumer", fields: [consumerUserId], references: [id], map: "service_requests_ibfk_1")
   land                          Land                          @relation(fields: [landId], references: [id], map: "service_requests_ibfk_2")
@@ -584,7 +587,31 @@ model ServiceRequest {
   @@index([landId, status, createdAt], map: "idx_service_requests_land_status")
   @@index([assignedProviderProfileId, status, createdAt], map: "idx_service_requests_provider_status")
   @@index([serviceId, status, createdAt], map: "idx_service_requests_service_status")
+  @@index([consumerUserId, landId, serviceId, status], map: "idx_service_requests_consumer_open")
   @@map("service_requests")
+}
+
+/// خدمات‌دهندگانی که در لحظه جستجو (یا در بازبینی‌های بعدی درخواست) برای این
+/// درخواست پیدا شده‌اند. قیمت/فاصله snapshot لحظه یافتن است؛ ارسال واقعی همیشه
+/// با اعتبارسنجی زنده انجام می‌شود.
+model ServiceRequestCandidate {
+  id                        BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  serviceRequestId          BigInt                     @map("service_request_id") @db.UnsignedBigInt
+  providerProfileId         BigInt                     @map("provider_profile_id") @db.UnsignedBigInt
+  providerServiceId         BigInt                     @map("provider_service_id") @db.UnsignedBigInt
+  providerNameSnapshot      String                     @map("provider_name_snapshot") @db.VarChar(120)
+  servicePriceSnapshotToman BigInt                     @map("service_price_snapshot_toman") @db.UnsignedBigInt
+  pricingUnitSnapshot       ProviderServicePricingUnit @map("pricing_unit_snapshot")
+  distanceKm                Decimal                    @map("distance_km") @db.Decimal(8, 2)
+  foundAt                   DateTime                   @default(now()) @map("found_at")
+  request                   ServiceRequest             @relation(fields: [serviceRequestId], references: [id], onDelete: Cascade, map: "service_request_candidates_ibfk_1")
+  providerProfile           ProviderProfile            @relation(fields: [providerProfileId], references: [id], onDelete: Cascade, map: "service_request_candidates_ibfk_2")
+  providerService           ProviderService            @relation(fields: [providerServiceId], references: [id], onDelete: Cascade, map: "service_request_candidates_ibfk_3")
+
+  @@unique([serviceRequestId, providerProfileId], map: "uq_service_request_candidate")
+  @@index([providerProfileId], map: "idx_service_request_candidates_provider")
+  @@index([providerServiceId], map: "idx_service_request_candidates_provider_service")
+  @@map("service_request_candidates")
 }
 
 model Service {
@@ -825,33 +852,6 @@ model User {
   @@map("users")
 }
 
-/// Context موقت جستجوی خدمات (TTL دار) که معیارهای جستجوی مصرف‌کننده را برای
-/// بازیابی نتایج در درخواست‌های بعدی به صورت پایدار نگه می‌دارد.
-model ServiceSearchContext {
-  id                BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
-  publicId          String   @unique(map: "uq_service_search_contexts_public_id") @map("public_id") @db.Char(26)
-  userId            BigInt   @map("user_id") @db.UnsignedBigInt
-  landId            BigInt   @map("land_id") @db.UnsignedBigInt
-  landPublicId      String   @map("land_public_id") @db.Char(26)
-  landLatitude      Decimal  @map("land_latitude") @db.Decimal(10, 7)
-  landLongitude     Decimal  @map("land_longitude") @db.Decimal(10, 7)
-  landTitle         String   @map("land_title") @db.VarChar(150)
-  serviceId         BigInt   @map("service_id") @db.UnsignedBigInt
-  serviceSlug       String   @map("service_slug") @db.VarChar(170)
-  serviceName       String   @map("service_name") @db.VarChar(150)
-  categorySlug      String   @map("category_slug") @db.VarChar(170)
-  categoryName      String   @map("category_name") @db.VarChar(150)
-  dates             Json     @map("dates")
-  consumerNote      String?  @map("consumer_note") @db.VarChar(1500)
-  criteriaSignature String   @map("criteria_signature") @db.VarChar(64)
-  createdAt         DateTime @default(now()) @map("created_at")
-  expiresAt         DateTime @map("expires_at")
-
-  @@index([userId], map: "idx_service_search_contexts_user")
-  @@index([expiresAt], map: "idx_service_search_contexts_expires")
-  @@map("service_search_contexts")
-}
-
 enum NotificationDeliveryChannel {
   in_app
   sms
@@ -877,6 +877,7 @@ enum ServiceRequestProviderHistoryFromStatus {
 }
 
 enum ServiceRequestStatusHistoryFromStatus {
+  awaiting_send
   pending_provider
   in_progress
   completed
@@ -912,6 +913,7 @@ enum ServiceRequestProviderHistoryToStatus {
 }
 
 enum ServiceRequestStatusHistoryToStatus {
+  awaiting_send
   pending_provider
   in_progress
   completed
@@ -1031,6 +1033,7 @@ enum UserSessionPlatform {
 }
 
 enum ServiceRequestStatus {
+  awaiting_send
   pending_provider
   in_progress
   completed

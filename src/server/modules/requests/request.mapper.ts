@@ -29,8 +29,9 @@ export function mapConsumerRequestSummary(request: {
   assignedProviderNameSnapshot: string | null;
   createdAt: Date;
   landTitleSnapshot: string;
+  providersFound: number;
+  providersSent: number;
   publicId: string;
-  searchId: string | null;
   serviceNameSnapshot: string;
   status: string;
   version: number;
@@ -40,8 +41,9 @@ export function mapConsumerRequestSummary(request: {
     assignedProviderName: request.assignedProviderNameSnapshot,
     createdAt: request.createdAt.toISOString(),
     landTitle: request.landTitleSnapshot,
+    providersFound: request.providersFound,
+    providersSent: request.providersSent,
     requestId: request.publicId,
-    searchId: request.searchId ?? null,
     serviceName: request.serviceNameSnapshot,
     status: request.status,
     version: request.version,
@@ -233,8 +235,16 @@ export function mapAdminRequestSummary(request: {
   version: number;
 }) {
   return {
-    ...mapConsumerRequestSummary(request),
+    agreedPriceToman: money(request.agreedPriceToman),
+    assignedProviderName: request.assignedProviderNameSnapshot,
     consumerUserId: request.consumerPublicId,
+    createdAt: request.createdAt.toISOString(),
+    landTitle: request.landTitleSnapshot,
+    requestId: request.publicId,
+    searchId: request.searchId ?? null,
+    serviceName: request.serviceNameSnapshot,
+    status: request.status,
+    version: request.version,
   };
 }
 

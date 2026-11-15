@@ -1,6 +1,13 @@
 import type { TransactionClient } from "@/server/db/transaction";
 import { prisma } from "@/server/db/prisma";
 
+export type ConsumerRequestStatus =
+  | "awaiting_send"
+  | "pending_provider"
+  | "in_progress"
+  | "completed"
+  | "cancelled";
+
 export async function findUserSnapshot(userId: bigint) {
   return prisma.user.findFirst({
     where: { deletedAt: null, id: userId, isActive: 1 },
@@ -34,7 +41,7 @@ export async function findProviderProfileIdByUserId(userId: bigint) {
   });
 }
 
-export async function createServiceRequestWithProviders(
+export async function createSearchRequest(
   transaction: TransactionClient,
   input: {
     consumerName: string;
@@ -48,15 +55,7 @@ export async function createServiceRequestWithProviders(
       longitude: { toString(): string } | string;
       title: string;
     };
-    providers: Array<{
-      distanceKm: number;
-      providerName: string;
-      providerProfileId: bigint;
-      providerServiceId: bigint;
-      priceToman: bigint;
-    }>;
     publicId: string;
-    searchPublicId?: string | null;
     serviceCategoryName: string;
     serviceId: bigint;
     serviceName: string;
@@ -73,11 +72,10 @@ export async function createServiceRequestWithProviders(
       landLongitudeSnapshot: input.land.longitude.toString(),
       landTitleSnapshot: input.land.title,
       publicId: input.publicId,
-      searchPublicId: input.searchPublicId ?? null,
       serviceCategoryNameSnapshot: input.serviceCategoryName,
       serviceId: input.serviceId,
       serviceNameSnapshot: input.serviceName,
-      status: "pending_provider",
+      status: "awaiting_send",
     },
     select: {
       id: true,
@@ -102,36 +100,48 @@ export async function createServiceRequestWithProviders(
       actorUserId: input.consumerUserId,
       fromStatus: null,
       serviceRequestId: request.id,
-      toStatus: "pending_provider",
+      toStatus: "awaiting_send",
     },
   });
 
-  for (const provider of input.providers) {
-    const link = await transaction.serviceRequestProvider.create({
-      data: {
-        distanceKm: provider.distanceKm.toFixed(2),
-        providerNameSnapshot: provider.providerName,
-        providerProfileId: provider.providerProfileId,
-        providerServiceId: provider.providerServiceId,
-        servicePriceSnapshotToman: provider.priceToman,
-        serviceRequestId: request.id,
-        status: "sent",
-      },
-      select: { id: true },
-    });
-
-    await transaction.serviceRequestProviderHistory.create({
-      data: {
-        actorType: "consumer",
-        actorUserId: input.consumerUserId,
-        fromStatus: null,
-        serviceRequestProviderId: link.id,
-        toStatus: "sent",
-      },
-    });
-  }
-
   return request;
+}
+
+/** First send: awaiting_send → pending_provider (no-op when already pending). */
+export async function markRequestPendingProvider(
+  transaction: TransactionClient,
+  input: {
+    actorUserId: bigint;
+    expectedVersion: number;
+    now: Date;
+    requestId: bigint;
+  },
+): Promise<boolean> {
+  const updated = await transaction.serviceRequest.updateMany({
+    where: {
+      id: input.requestId,
+      status: "awaiting_send",
+      version: input.expectedVersion,
+    },
+    data: {
+      status: "pending_provider",
+      updatedAt: input.now,
+      version: { increment: 1 },
+    },
+  });
+  if (updated.count !== 1) {
+    return false;
+  }
+  await transaction.serviceRequestStatusHistory.create({
+    data: {
+      actorType: "consumer",
+      actorUserId: input.actorUserId,
+      fromStatus: "awaiting_send",
+      serviceRequestId: input.requestId,
+      toStatus: "pending_provider",
+    },
+  });
+  return true;
 }
 
 export async function findRequestByPublicId(publicId: string) {
@@ -168,13 +178,13 @@ export async function findRequestByPublicId(publicId: string) {
 export async function listConsumerRequests(input: {
   cursorId?: bigint;
   limit: number;
-  status?: "pending_provider" | "in_progress" | "completed" | "cancelled";
+  statuses?: ConsumerRequestStatus[];
   userId: bigint;
 }) {
   return prisma.serviceRequest.findMany({
     where: {
       consumerUserId: input.userId,
-      ...(input.status ? { status: input.status } : {}),
+      ...(input.statuses?.length ? { status: { in: input.statuses } } : {}),
       ...(input.cursorId ? { id: { lt: input.cursorId } } : {}),
     },
     orderBy: { id: "desc" },
@@ -186,10 +196,12 @@ export async function listConsumerRequests(input: {
       id: true,
       landTitleSnapshot: true,
       publicId: true,
-      searchPublicId: true,
       serviceNameSnapshot: true,
       status: true,
       version: true,
+      _count: {
+        select: { serviceRequestCandidates: true, serviceRequestProviders: true },
+      },
     },
   });
 }
@@ -538,7 +550,7 @@ export async function cancelServiceRequest(
     actorUserId?: bigint | null;
     cancelledBy: "consumer" | "provider" | "admin";
     expectedVersion?: number;
-    fromStatus: "pending_provider" | "in_progress";
+    fromStatus: "awaiting_send" | "pending_provider" | "in_progress";
     now: Date;
     reason: string | null;
     requestId: bigint;
@@ -690,7 +702,7 @@ export async function listAdminServiceRequests(input: {
   cursorId?: bigint;
   limit: number;
   publicId?: string;
-  status?: "pending_provider" | "in_progress" | "completed" | "cancelled";
+  status?: ConsumerRequestStatus;
 }) {
   return prisma.serviceRequest.findMany({
     where: {

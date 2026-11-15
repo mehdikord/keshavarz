@@ -19,7 +19,6 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/app/v1/provider/services",
   "POST /api/app/v1/provider/subscriptions/purchase",
   "POST /api/app/v1/service-searches",
-  "POST /api/app/v1/service-requests",
   "POST /api/admins/v1/catalog/categories",
   "POST /api/admins/v1/catalog/services",
   "POST /api/admins/v1/subscription-plans",

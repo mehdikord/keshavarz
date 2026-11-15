@@ -40,6 +40,7 @@ import { isApiClientError } from "@/lib/api/envelope";
 import { formatPrice } from "@/lib/utils/format";
 
 const STATUS_FILTER_LABELS: Record<AdminRequestStatus, string> = {
+  awaiting_send: "آماده ارسال",
   pending_provider: "در انتظار تأیید",
   in_progress: "در حال انجام",
   completed: "پایان‌یافته",

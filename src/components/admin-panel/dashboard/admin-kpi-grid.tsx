@@ -23,7 +23,9 @@ interface AdminKpiGridProps {
 
 export function AdminKpiGrid({ data }: AdminKpiGridProps) {
   const openRequests =
-    data.requestsByStatus.pending_provider + data.requestsByStatus.in_progress;
+    data.requestsByStatus.awaiting_send +
+    data.requestsByStatus.pending_provider +
+    data.requestsByStatus.in_progress;
 
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

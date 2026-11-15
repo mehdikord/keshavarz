@@ -3,6 +3,7 @@ import * as z from "zod";
 import { adminApi } from "@/lib/api/admin-client";
 
 export const REQUEST_STATUS_LABELS = {
+  awaiting_send: "آماده ارسال (بدون ارسال)",
   pending_provider: "در انتظار Provider",
   in_progress: "در حال انجام",
   completed: "اتمام",
@@ -20,6 +21,7 @@ export const AdminDashboardKpisSchema = z
     notificationDeliveryFailuresCount: z.number().int().nonnegative(),
     paymentFailuresCount: z.number().int().nonnegative(),
     requestsByStatus: z.object({
+      awaiting_send: z.number().int().nonnegative(),
       cancelled: z.number().int().nonnegative(),
       completed: z.number().int().nonnegative(),
       in_progress: z.number().int().nonnegative(),

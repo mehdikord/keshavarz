@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import { MotionConfig, motion } from "framer-motion";
 import {
   Ban,
@@ -15,6 +15,7 @@ import {
   MessageSquareQuote,
   Phone,
   RotateCw,
+  Send,
   Ruler,
   SearchX,
   UserPlus,
@@ -91,8 +92,6 @@ function Section({ icon: Icon, title, children }: { icon: typeof MapPin; title: 
 
 function ConsumerRequestDetailContent() {
   const params = useParams<{ id: string }>();
-  const searchParams = useSearchParams();
-  const searchId = searchParams.get("searchId");
   const user = useAuthStore((state) => state.user);
 
   const [request, setRequest] = useState<AppConsumerRequestDetail | null>(null);
@@ -193,7 +192,9 @@ function ConsumerRequestDetailContent() {
   }
 
   const state = consumerRequestState(request.status);
-  const backTab = request.status === "pending_provider" ? "" : `?tab=${request.status}`;
+  const isOpen = request.status === "awaiting_send" || request.status === "pending_provider";
+  const backTab = isOpen ? "" : `?tab=${request.status}`;
+  const candidatesHref = `/users/search/results?requestId=${encodeURIComponent(request.requestId)}`;
   const area = request.land.areaSquareMeters ? formatAreaSqm(Number(request.land.areaSquareMeters)) : null;
   const linkedProviders = request.providers.filter((item) => item.status !== "removed");
   const waitingCount = linkedProviders.filter((item) => item.status === "sent").length;
@@ -239,6 +240,36 @@ function ConsumerRequestDetailContent() {
         </ConsumerPageHero>
 
         <div className="relative z-10 -mt-4 space-y-4 px-4 pt-1">
+          {request.status === "awaiting_send" ? (
+            <Reveal>
+              <section className="rounded-[24px] bg-[linear-gradient(150deg,#fff6e6_0%,#ffffff_85%)] p-4 ring-1 ring-[#f3d3a8]">
+                <p className="text-[14px] font-black text-[#5c3410]">هنوز برای هیچ خدمات‌دهنده‌ای ارسال نکرده‌اید</p>
+                <p className="mt-0.5 text-[11.5px] leading-5 text-[#8a6a48]">
+                  نتیجه جستجو ذخیره شده است. خدمات‌دهندگان را انتخاب کنید تا درخواست برایشان ارسال شود.
+                </p>
+                <div className="mt-3.5 grid grid-cols-[1fr_auto] gap-2">
+                  <Link
+                    href={candidatesHref}
+                    className="flex h-11 items-center justify-center gap-1.5 rounded-2xl bg-[#b9531f] text-[13px] font-black text-white"
+                  >
+                    <Send className="size-4" />
+                    انتخاب و ارسال درخواست
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCancelKey((key) => key + 1);
+                      setCancelOpen(true);
+                    }}
+                    className="h-11 rounded-2xl bg-white px-4 text-[12.5px] font-bold text-[#b23a1f] ring-1 ring-[#f3c4b8]"
+                  >
+                    حذف
+                  </button>
+                </div>
+              </section>
+            </Reveal>
+          ) : null}
+
           {request.status === "pending_provider" ? (
             <Reveal>
               <section className="rounded-[24px] bg-[linear-gradient(150deg,#fff1df_0%,#ffffff_85%)] p-4 ring-1 ring-[#f3d3a8]">
@@ -256,11 +287,11 @@ function ConsumerRequestDetailContent() {
                 </div>
                 <div className="mt-3.5 grid grid-cols-[1fr_auto] gap-2">
                   <Link
-                    href={searchId ? `/users/search/results?searchId=${searchId}&requestId=${request.requestId}` : "/users/search"}
+                    href={candidatesHref}
                     className="flex h-11 items-center justify-center gap-1.5 rounded-2xl bg-[#b9531f] text-[13px] font-black text-white"
                   >
                     <UserPlus className="size-4" />
-                    {searchId ? "ارسال به خدمات‌دهندگان بیشتر" : "جستجوی دوباره"}
+                    ارسال به خدمات‌دهندگان بیشتر
                   </Link>
                   <button
                     type="button"

@@ -1,35 +1,48 @@
 import { systemClock } from "@/server/clock/clock";
+import { runInTransaction } from "@/server/db/transaction";
 import { API_ERROR_CODES, ApiError } from "@/server/errors";
 import { getAppIdempotencyService } from "@/server/idempotency/default-idempotency";
 import { createPublicId } from "@/server/identifiers/ulid";
-import {
-  buildSearchCriteriaSignature,
-  getServiceSearchContext,
-  saveServiceSearchContext,
-  verifySearchCriteriaSignature,
-  type ServiceSearchContext,
-} from "@/server/modules/search/search.context";
-import {
-  mapSearchContext,
-  mapSearchProvider,
-} from "@/server/modules/search/search.mapper";
-import {
-  findActiveCatalogServiceForSearch,
-  findActiveOwnedLand,
-  findEligibleProviderMatch,
-  listProviderLinkStatusesForSearch,
-  searchEligibleProviders,
-  type SearchSort,
-} from "@/server/modules/search/search.repository";
 import { startSpan } from "@/server/observability";
 import { getAppRateLimiter } from "@/server/rate-limit/default-rate-limiter";
+import {
+  createSearchRequest,
+  findUserSnapshot,
+  listRequestDates,
+  listRequestProviderLinks,
+} from "@/server/modules/requests/request.repository";
+import {
+  mapCandidate,
+  mapCandidateRequestContext,
+  type CandidateState,
+} from "@/server/modules/search/search.mapper";
+import {
+  OPEN_REQUEST_STATUSES,
+  findActiveCatalogServiceForSearch,
+  findActiveOwnedLand,
+  findOpenRequestForCriteria,
+  findRequestForCandidates,
+  listOtherRequestLinkStatuses,
+  listStoredCandidates,
+  queryEligibleProviders,
+  storeCandidates,
+  type EligibleProviderRow,
+} from "@/server/modules/search/search.repository";
 
-function todayUtcDateString(now: Date): string {
-  return now.toISOString().slice(0, 10);
+const LOCAL_DATE = new Intl.DateTimeFormat("en-CA", {
+  day: "2-digit",
+  month: "2-digit",
+  timeZone: "Asia/Tehran",
+  year: "numeric",
+});
+
+/** "Today" for the farmer, not for UTC — Iran is UTC+03:30. */
+function todayInIran(now: Date): string {
+  return LOCAL_DATE.format(now);
 }
 
 function assertDatesNotPast(dates: string[], now: Date): void {
-  const today = todayUtcDateString(now);
+  const today = todayInIran(now);
   for (const date of dates) {
     if (date < today) {
       throw new ApiError(
@@ -42,83 +55,34 @@ function assertDatesNotPast(dates: string[], now: Date): void {
   }
 }
 
-function decimalToNumber(value: { toString(): string } | string | number): number {
-  if (typeof value === "number") {
-    return value;
-  }
-  return Number(typeof value === "string" ? value : value.toString());
+function isOpenStatus(status: string): boolean {
+  return (OPEN_REQUEST_STATUSES as readonly string[]).includes(status);
 }
 
-function encodeProviderCursor(input: {
-  providerProfileId: bigint;
-  sortValue: number;
-}): string {
-  return Buffer.from(
-    JSON.stringify({
-      id: input.providerProfileId.toString(),
-      v: input.sortValue,
-    }),
-    "utf8",
-  ).toString("base64url");
-}
-
-function decodeProviderCursor(cursor: string): {
-  providerProfileId: bigint;
-  sortValue: number;
-} {
-  try {
-    const parsed = JSON.parse(
-      Buffer.from(cursor, "base64url").toString("utf8"),
-    ) as { id?: string; v?: number };
-    if (
-      typeof parsed.id !== "string" ||
-      typeof parsed.v !== "number" ||
-      !Number.isFinite(parsed.v)
-    ) {
-      throw new Error("invalid");
+export type ServiceSearchResult =
+  | {
+      outcome: "created";
+      providersFound: number;
+      requestId: string;
+      status: string;
+      version: number;
     }
-    return {
-      providerProfileId: BigInt(parsed.id),
-      sortValue: parsed.v,
-    };
-  } catch {
-    throw new ApiError(
-      400,
-      API_ERROR_CODES.validationFailed,
-      "cursor معتبر نیست.",
-    );
-  }
-}
+  | {
+      duplicate: { createdAt: string; requestId: string; status: string };
+      outcome: "duplicate";
+      providersFound: number;
+    }
+  | { outcome: "no_providers"; providersFound: 0 };
 
-function sortValueForRow(
-  sort: SearchSort,
-  row: { distanceKm: number; priceToman: bigint },
-): number {
-  return sort.startsWith("price") ? Number(row.priceToman) : row.distanceKm;
-}
-
-async function requireOwnedValidContext(
-  searchId: string,
-  userId: bigint,
-  now: Date,
-): Promise<ServiceSearchContext> {
-  const context = await getServiceSearchContext(searchId, now);
-  if (!context || context.userId !== userId) {
-    throw new ApiError(404, API_ERROR_CODES.notFound, "جستجو یافت نشد.");
-  }
-  if (!verifySearchCriteriaSignature(context)) {
-    throw new ApiError(
-      409,
-      API_ERROR_CODES.conflict,
-      "context جستجو معتبر نیست.",
-    );
-  }
-  return context;
-}
-
+/**
+ * Runs the search. When at least one provider matches, the search itself is
+ * persisted as a request in `awaiting_send` together with every matched
+ * provider; with no match nothing is stored.
+ */
 export async function createServiceSearch(
   userId: bigint,
   input: {
+    allowDuplicate?: boolean;
     categoryId?: string;
     consumerNote?: string | null;
     dates: string[];
@@ -126,7 +90,7 @@ export async function createServiceSearch(
     serviceId: string;
   },
   idempotencyKey: string,
-) {
+): Promise<ServiceSearchResult> {
   const span = startSpan({ name: "app.service-search.create" });
 
   try {
@@ -135,196 +99,231 @@ export async function createServiceSearch(
       windowMilliseconds: 60_000,
     });
 
-  const now = systemClock.now();
-  assertDatesNotPast(input.dates, now);
+    const now = systemClock.now();
+    assertDatesNotPast(input.dates, now);
 
-  const idempotency = getAppIdempotencyService();
-  const result = await idempotency.execute(
-    {
-      actorId: userId.toString(),
-      key: idempotencyKey,
-      operationId: "app.service-search.create",
-      realm: "app",
-    },
-    input,
-    async () => {
-      const land = await findActiveOwnedLand({
-        landPublicId: input.landId,
-        userId,
-      });
-      if (!land) {
-        throw new ApiError(404, API_ERROR_CODES.notFound, "زمین یافت نشد.");
-      }
+    const result = await getAppIdempotencyService().execute(
+      {
+        actorId: userId.toString(),
+        key: idempotencyKey,
+        operationId: "app.service-search.create",
+        realm: "app",
+      },
+      input,
+      async (): Promise<ServiceSearchResult> => {
+        const [land, service, user] = await Promise.all([
+          findActiveOwnedLand({ landPublicId: input.landId, userId }),
+          findActiveCatalogServiceForSearch(input.serviceId),
+          findUserSnapshot(userId),
+        ]);
+        if (!land) {
+          throw new ApiError(404, API_ERROR_CODES.notFound, "زمین یافت نشد.");
+        }
+        if (!service) {
+          throw new ApiError(404, API_ERROR_CODES.notFound, "خدمت یافت نشد.");
+        }
+        if (!user) {
+          throw new ApiError(404, API_ERROR_CODES.notFound, "کاربر یافت نشد.");
+        }
+        if (input.categoryId && input.categoryId !== service.category.slug) {
+          throw new ApiError(
+            400,
+            API_ERROR_CODES.validationFailed,
+            "دسته و خدمت هم‌خوانی ندارند.",
+            { fields: { categoryId: ["با خدمت انتخاب‌شده هم‌خوان نیست."] } },
+          );
+        }
 
-      const service = await findActiveCatalogServiceForSearch(input.serviceId);
-      if (!service) {
-        throw new ApiError(404, API_ERROR_CODES.notFound, "خدمت یافت نشد.");
-      }
-
-      if (input.categoryId && input.categoryId !== service.category.slug) {
-        throw new ApiError(
-          400,
-          API_ERROR_CODES.validationFailed,
-          "دسته و خدمت هم‌خوانی ندارند.",
-          { fields: { categoryId: ["با خدمت انتخاب‌شده هم‌خوان نیست."] } },
-        );
-      }
-
-      const dates = [...new Set(input.dates)].sort();
-      const consumerNote = input.consumerNote?.trim()
-        ? input.consumerNote.trim()
-        : null;
-      const searchId = createPublicId();
-      const criteriaSignature = buildSearchCriteriaSignature({
-        categorySlug: service.category.slug,
-        consumerNote,
-        dates,
-        landPublicId: land.publicId,
-        serviceSlug: service.slug,
-        userId: userId.toString(),
-      });
-
-      const context = await saveServiceSearchContext(
-        {
-          categoryName: service.category.name,
-          categorySlug: service.category.slug,
-          consumerNote,
-          criteriaSignature,
-          dates,
-          landId: land.id,
-          landLatitude: land.latitude.toString(),
-          landLongitude: land.longitude.toString(),
-          landPublicId: land.publicId,
-          landTitle: land.title,
-          searchId,
+        const providers = await queryEligibleProviders({
+          consumerUserId: userId,
+          landLatitude: Number(land.latitude.toString()),
+          landLongitude: Number(land.longitude.toString()),
           serviceId: service.id,
-          serviceName: service.name,
-          serviceSlug: service.slug,
-          userId,
-        },
-        now,
-      );
+        });
 
-      return mapSearchContext(context);
-    },
-  );
+        if (providers.length === 0) {
+          return { outcome: "no_providers", providersFound: 0 };
+        }
 
-  span.finish();
-  return result;
+        if (!input.allowDuplicate) {
+          const open = await findOpenRequestForCriteria({
+            consumerUserId: userId,
+            landId: land.id,
+            serviceId: service.id,
+          });
+          if (open) {
+            return {
+              duplicate: {
+                createdAt: open.createdAt.toISOString(),
+                requestId: open.publicId,
+                status: open.status,
+              },
+              outcome: "duplicate",
+              providersFound: providers.length,
+            };
+          }
+        }
+
+        const dates = [...new Set(input.dates)].sort();
+        const consumerNote = input.consumerNote?.trim()
+          ? input.consumerNote.trim()
+          : null;
+
+        const created = await runInTransaction(async (transaction) => {
+          const request = await createSearchRequest(transaction, {
+            consumerName: user.name,
+            consumerNote,
+            consumerUserId: userId,
+            dates,
+            land,
+            publicId: createPublicId(),
+            serviceCategoryName: service.category.name,
+            serviceId: service.id,
+            serviceName: service.name,
+          });
+          await storeCandidates(request.id, providers, transaction);
+          return request;
+        });
+
+        return {
+          outcome: "created",
+          providersFound: providers.length,
+          requestId: created.publicId,
+          status: created.status,
+          version: created.version,
+        };
+      },
+    );
+
+    span.finish();
+    return result;
   } catch (error) {
     span.error(error);
     throw error;
   }
 }
 
-export async function listSearchProviders(
-  userId: bigint,
-  searchId: string,
-  query: {
-    cursor?: string;
-    limit: number;
-    sort: SearchSort;
-  },
-) {
-  const now = systemClock.now();
-  const context = await requireOwnedValidContext(searchId, userId, now);
-
-  const cursor = query.cursor
-    ? decodeProviderCursor(query.cursor)
-    : undefined;
-
-  const rows = await searchEligibleProviders({
-    consumerUserId: userId,
-    cursor,
-    landLatitude: decimalToNumber(context.landLatitude),
-    landLongitude: decimalToNumber(context.landLongitude),
-    limit: query.limit,
-    serviceId: context.serviceId,
-    sort: query.sort,
-  });
-
-  const hasMore = rows.length > query.limit;
-  const page = hasMore ? rows.slice(0, query.limit) : rows;
-  const statuses = await listProviderLinkStatusesForSearch({
-    consumerUserId: userId,
-    landId: context.landId,
-    providerProfileIds: page.map((row) => row.providerProfileId),
-    serviceId: context.serviceId,
-  });
-
-  const last = page.at(-1);
-
-  return {
-    items: page.map((row) =>
-      mapSearchProvider({
-        distanceKm: row.distanceKm,
-        previousStatus:
-          statuses.get(row.providerProfileId.toString()) ?? null,
-        priceToman: row.priceToman,
-        pricingUnit: row.pricingUnit,
-        providerImage: row.providerImage,
-        providerName: row.providerName,
-        providerPublicId: row.providerPublicId,
-      }),
-    ),
-    meta: {
-      hasMore,
-      limit: query.limit,
-      nextCursor:
-        hasMore && last
-          ? encodeProviderCursor({
-              providerProfileId: last.providerProfileId,
-              sortValue: sortValueForRow(query.sort, last),
-            })
-          : null,
-      sort: query.sort,
-    },
-    search: mapSearchContext(context),
-  };
-}
-
 /**
- * Live revalidation used when converting a search hit into a Request.
- * Never trust a previously listed result without calling this.
+ * Every provider ever found for the request (stored at search time), merged
+ * with a live re-run of the search while the request is still open: newly
+ * eligible providers are stored and shown, and stored ones that no longer
+ * qualify come back as `unavailable`.
  */
-export async function revalidateSearchProviderMatch(input: {
-  providerPublicId: string;
-  searchId: string;
-  userId: bigint;
-}) {
-  const now = systemClock.now();
-  const context = await requireOwnedValidContext(
-    input.searchId,
-    input.userId,
-    now,
-  );
-
-  const match = await findEligibleProviderMatch({
-    consumerUserId: input.userId,
-    landLatitude: decimalToNumber(context.landLatitude),
-    landLongitude: decimalToNumber(context.landLongitude),
-    providerPublicId: input.providerPublicId,
-    serviceId: context.serviceId,
-  });
-
-  if (!match) {
-    throw new ApiError(
-      409,
-      API_ERROR_CODES.conflict,
-      "Provider دیگر واجد شرایط این جستجو نیست.",
-    );
+export async function listRequestCandidates(userId: bigint, requestId: string) {
+  const request = await findRequestForCandidates(requestId);
+  if (!request || request.consumerUserId !== userId) {
+    throw new ApiError(404, API_ERROR_CODES.notFound, "درخواست یافت نشد.");
   }
 
+  const open = isOpenStatus(request.status);
+  const [stored, links, dates, live] = await Promise.all([
+    listStoredCandidates(request.id),
+    listRequestProviderLinks(request.id),
+    listRequestDates(request.id),
+    open
+      ? queryEligibleProviders({
+          consumerUserId: userId,
+          landLatitude: Number(request.landLatitudeSnapshot.toString()),
+          landLongitude: Number(request.landLongitudeSnapshot.toString()),
+          serviceId: request.serviceId,
+        })
+      : Promise.resolve([] as EligibleProviderRow[]),
+  ]);
+
+  const storedIds = new Set(stored.map((item) => item.providerProfileId.toString()));
+  const newlyFound = live.filter((row) => !storedIds.has(row.providerProfileId.toString()));
+  if (newlyFound.length > 0) {
+    await storeCandidates(request.id, newlyFound);
+  }
+
+  const liveById = new Map(live.map((row) => [row.providerProfileId.toString(), row]));
+  const linkById = new Map(links.map((link) => [link.providerProfileId.toString(), link]));
+
+  type Entry = {
+    distanceKm: number;
+    image: string | null;
+    name: string;
+    priceToman: bigint;
+    pricingUnit: string;
+    providerProfileId: bigint;
+    providerPublicId: string;
+  };
+  const entries = new Map<string, Entry>();
+  for (const item of stored) {
+    entries.set(item.providerProfileId.toString(), {
+      distanceKm: Number(item.distanceKm.toString()),
+      image: item.providerProfile.user.image ?? null,
+      name: item.providerNameSnapshot,
+      priceToman: item.servicePriceSnapshotToman,
+      pricingUnit: item.pricingUnitSnapshot,
+      providerProfileId: item.providerProfileId,
+      providerPublicId: item.providerProfile.user.publicId,
+    });
+  }
+  for (const row of live) {
+    // Live values are what a send would snapshot, so they win.
+    entries.set(row.providerProfileId.toString(), {
+      distanceKm: row.distanceKm,
+      image: row.providerImage,
+      name: row.providerName ?? "خدمات‌دهنده",
+      priceToman: row.priceToman,
+      pricingUnit: row.pricingUnit,
+      providerProfileId: row.providerProfileId,
+      providerPublicId: row.providerPublicId,
+    });
+  }
+  // Once sent, the provider is bound to the price/distance snapshotted on the
+  // link (that is what acceptance uses); links also cover providers sent
+  // before candidates were stored.
+  for (const link of links) {
+    const key = link.providerProfileId.toString();
+    const existing = entries.get(key);
+    entries.set(key, {
+      distanceKm: Number(link.distanceKm.toString()),
+      image: existing?.image ?? null,
+      name: link.providerNameSnapshot,
+      priceToman: link.servicePriceSnapshotToman,
+      pricingUnit: existing?.pricingUnit ?? "fixed",
+      providerProfileId: link.providerProfileId,
+      providerPublicId: link.providerProfile.user.publicId,
+    });
+  }
+
+  const other = open
+    ? await listOtherRequestLinkStatuses({
+        consumerUserId: userId,
+        excludeRequestId: request.id,
+        landId: request.landId,
+        providerProfileIds: [...entries.values()].map((entry) => entry.providerProfileId),
+        serviceId: request.serviceId,
+      })
+    : new Map<string, "rejected" | "sent">();
+
+  const revealPhone = request.status === "in_progress" || request.status === "completed";
+
+  const candidates = [...entries.entries()].map(([key, entry]) => {
+    const link = linkById.get(key);
+    const state: CandidateState = link
+      ? (link.status as CandidateState)
+      : open && liveById.has(key)
+        ? "available"
+        : "unavailable";
+    const isAssigned = request.assignedProviderProfileId === entry.providerProfileId;
+    return mapCandidate({
+      ...entry,
+      otherRequestStatus: other.get(key) ?? null,
+      phone:
+        revealPhone && isAssigned && link?.status === "accepted"
+          ? (link.providerProfile.user.phone ?? null)
+          : null,
+      state,
+    });
+  });
+
+  candidates.sort((a, b) => a.priceToman - b.priceToman || a.distanceKm - b.distanceKm);
+
   return {
-    context,
-    match: {
-      distanceKm: Number(match.distanceKm.toFixed(2)),
-      priceToman: match.priceToman,
-      pricingUnit: match.pricingUnit,
-      providerName: match.providerName,
-      providerProfileId: match.providerProfileId,
-      providerPublicId: match.providerPublicId,
-      providerServiceId: match.providerServiceId,
-    },
+    candidates,
+    request: mapCandidateRequestContext({ ...request, dates }),
   };
 }

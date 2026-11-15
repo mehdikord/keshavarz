@@ -57,6 +57,7 @@ export default function ProviderSubscriptionPage() {
   const [history, setHistory] = useState<AppSubscriptionHistoryItem[]>([]);
   const [payments, setPayments] = useState<AppPaymentSummary[]>([]);
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
+  const [expandedCode, setExpandedCode] = useState<string | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [purchasing, startPurchase] = useTransition();
 
@@ -242,7 +243,13 @@ export default function ProviderSubscriptionPage() {
                           key={plan.planId}
                           plan={plan}
                           selected={plan.code === selectedCode}
-                          onSelect={() => setSelectedCode(plan.code)}
+                          expanded={plan.code === expandedCode}
+                          onSelect={() => {
+                            setSelectedCode(plan.code);
+                            setExpandedCode((current) =>
+                              current === plan.code ? null : plan.code,
+                            );
+                          }}
                         />
                       ))}
                     </div>

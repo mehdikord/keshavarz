@@ -19,6 +19,8 @@ interface ConfirmDialogProps {
   cancelLabel?: string;
   variant?: "default" | "destructive";
   onConfirm: () => void;
+  /** Secondary action on the cancel button; it just closes when omitted. */
+  onCancel?: () => void;
   loading?: boolean;
 }
 
@@ -31,6 +33,7 @@ export function ConfirmDialog({
   cancelLabel = "انصراف",
   variant = "default",
   onConfirm,
+  onCancel,
   loading = false,
 }: ConfirmDialogProps) {
   return (
@@ -43,7 +46,7 @@ export function ConfirmDialog({
         <DialogFooter className="gap-2 sm:justify-start">
           <Button
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            onClick={onCancel ?? (() => onOpenChange(false))}
             disabled={loading}
           >
             {cancelLabel}

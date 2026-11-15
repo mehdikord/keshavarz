@@ -1,68 +1,62 @@
 import * as z from "zod";
 
-import type { AdminCursorMeta, AdminListLimit } from "@/lib/admin/search-params";
 import { appApi } from "@/lib/api/app-client";
 import {
   APP_IDEMPOTENCY_HEADER,
   createAppIdempotencyKey,
 } from "@/lib/api/app-idempotency";
 
-export const AppSearchContextSchema = z
-  .object({
-    categoryId: z.string(),
-    categoryName: z.string(),
-    consumerNote: z.string().nullable(),
-    dates: z.array(z.string()),
-    expiresAt: z.string(),
-    landId: z.string(),
-    landTitle: z.string(),
-    searchId: z.string(),
-    serviceId: z.string(),
-    serviceName: z.string(),
-  })
-  .strict();
+/**
+ * A search either creates a request (≥1 provider found), finds nothing (no
+ * request is stored), or stops at an existing open request for the same land
+ * and service so the farmer can decide (`allowDuplicate: true` to proceed).
+ */
+export const AppServiceSearchResultSchema = z.discriminatedUnion("outcome", [
+  z
+    .object({
+      outcome: z.literal("created"),
+      providersFound: z.number().int(),
+      requestId: z.string(),
+      status: z.string(),
+      version: z.number().int(),
+    })
+    .strict(),
+  z
+    .object({
+      duplicate: z
+        .object({
+          createdAt: z.string(),
+          requestId: z.string(),
+          status: z.string(),
+        })
+        .strict(),
+      outcome: z.literal("duplicate"),
+      providersFound: z.number().int(),
+    })
+    .strict(),
+  z
+    .object({
+      outcome: z.literal("no_providers"),
+      providersFound: z.literal(0),
+    })
+    .strict(),
+]);
 
-export type AppSearchContext = z.infer<typeof AppSearchContextSchema>;
-
-export const AppSearchProviderSchema = z
-  .object({
-    distanceKm: z.number(),
-    image: z.string().nullable().optional(),
-    name: z.string().nullable(),
-    previousStatus: z.enum(["rejected", "sent"]).nullable(),
-    priceToman: z.number(),
-    pricingUnit: z.string(),
-    providerId: z.string(),
-  })
-  .strict();
-
-export type AppSearchProvider = z.infer<typeof AppSearchProviderSchema>;
-
-export type AppSearchSort =
-  | "distanceAsc"
-  | "distanceDesc"
-  | "priceAsc"
-  | "priceDesc";
-
-const CursorMetaSchema = z
-  .object({
-    hasMore: z.boolean(),
-    limit: z.number().int(),
-    nextCursor: z.string().nullable(),
-  })
-  .strip();
+export type AppServiceSearchResult = z.infer<typeof AppServiceSearchResultSchema>;
 
 export async function createAppServiceSearch(input: {
+  allowDuplicate?: boolean;
   categoryId?: string;
   consumerNote?: string | null;
   dates: string[];
   landId: string;
   serviceId: string;
   idempotencyKey?: string;
-}): Promise<AppSearchContext> {
+}): Promise<AppServiceSearchResult> {
   const result = await appApi.post<unknown>(
     "/service-searches",
     {
+      allowDuplicate: input.allowDuplicate,
       categoryId: input.categoryId,
       consumerNote: input.consumerNote,
       dates: input.dates,
@@ -76,58 +70,5 @@ export async function createAppServiceSearch(input: {
       },
     },
   );
-  return AppSearchContextSchema.parse(result.data);
-}
-
-export async function fetchAppSearchProviders(input: {
-  cursor?: string | null;
-  limit?: AdminListLimit;
-  searchId: string;
-  signal?: AbortSignal;
-  sort?: AppSearchSort;
-}): Promise<{
-  items: AppSearchProvider[];
-  meta: AdminCursorMeta;
-  search: AppSearchContext;
-}> {
-  const limit = input.limit ?? 20;
-  const result = await appApi.get<unknown>(
-    `/service-searches/${input.searchId}/providers`,
-    {
-      query: {
-        cursor: input.cursor ?? undefined,
-        limit,
-        sort: input.sort ?? "distanceAsc",
-      },
-      signal: input.signal,
-    },
-  );
-  const data = z
-    .object({
-      providers: z.array(AppSearchProviderSchema),
-      search: AppSearchContextSchema,
-    })
-    .parse(result.data);
-  return {
-    items: data.providers,
-    meta: CursorMetaSchema.parse(
-      result.meta ?? { hasMore: false, limit, nextCursor: null },
-    ),
-    search: data.search,
-  };
-}
-
-export function uiSortToApiSort(
-  sort: "price-asc" | "price-desc" | "distance-asc" | "distance-desc",
-): AppSearchSort {
-  switch (sort) {
-    case "price-asc":
-      return "priceAsc";
-    case "price-desc":
-      return "priceDesc";
-    case "distance-desc":
-      return "distanceDesc";
-    default:
-      return "distanceAsc";
-  }
+  return AppServiceSearchResultSchema.parse(result.data);
 }

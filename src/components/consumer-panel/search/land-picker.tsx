@@ -16,49 +16,57 @@ interface LandPickerProps {
 
 export function LandPicker({ lands, value, onChange }: LandPickerProps) {
   return (
-    <div role="radiogroup" aria-label="انتخاب زمین" className="no-scrollbar -mx-4 flex snap-x gap-2.5 overflow-x-auto px-4 pb-1">
-      {lands.map((land) => {
-        const selected = land.id === value;
-        const area = formatAreaSqm(land.areaSqm);
-        return (
-          <button
-            key={land.id}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            onClick={() => onChange(land.id)}
-            className={cn(
-              "relative w-40 shrink-0 snap-start overflow-hidden rounded-[20px] bg-white text-right transition-all",
-              selected ? "ring-[3px] ring-[#b9531f]" : "ring-1 ring-[#efe0c8] hover:ring-[#e3b97f]",
-            )}
-          >
-            <SatelliteThumb
-              lat={land.location.lat}
-              lng={land.location.lng}
-              zoom={15}
-              className="h-20 w-full"
-              fallback={<div className="absolute inset-0 bg-gradient-to-br from-[#efe0c0] to-[#d6b884]" />}
-            />
-            {selected ? (
-              <span className="absolute left-2 top-2 flex size-6 items-center justify-center rounded-full bg-[#b9531f] text-white shadow-md">
-                <Check className="size-3.5" strokeWidth={3} />
+    <div className="space-y-2">
+      <div role="radiogroup" aria-label="انتخاب زمین" className="space-y-2">
+        {lands.map((land) => {
+          const selected = land.id === value;
+          const area = formatAreaSqm(land.areaSqm);
+          return (
+            <button
+              key={land.id}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => onChange(land.id)}
+              className={cn(
+                "flex w-full items-center gap-3 rounded-2xl p-2 pe-3 text-right transition-all active:scale-[0.99]",
+                selected
+                  ? "bg-[#fff6ea] ring-2 ring-[#b9531f]"
+                  : "bg-[#fffcf7] ring-1 ring-[#efe0c8] hover:ring-[#e3b97f]",
+              )}
+            >
+              <SatelliteThumb
+                lat={land.location.lat}
+                lng={land.location.lng}
+                zoom={15}
+                className="size-11 shrink-0 rounded-xl"
+                fallback={<div className="absolute inset-0 bg-gradient-to-br from-[#efe0c0] to-[#d6b884]" />}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-black text-[#3b2410]">{land.title}</span>
+                <span className="mt-0.5 block text-[11px] text-[#8a6a48]">
+                  {area.primary} {area.primaryUnit}
+                </span>
               </span>
-            ) : null}
-            <span className="block px-3 py-2.5">
-              <span className="block truncate text-[13px] font-black text-[#3b2410]">{land.title}</span>
-              <span className="block text-[11px] text-[#8a6a48]">
-                {area.primary} {area.primaryUnit}
+              <span
+                aria-hidden
+                className={cn(
+                  "flex size-5 shrink-0 items-center justify-center rounded-full transition-colors",
+                  selected ? "bg-[#b9531f] text-white" : "ring-[1.5px] ring-inset ring-[#d9c3a2]",
+                )}
+              >
+                {selected ? <Check className="size-3" strokeWidth={3.5} /> : null}
               </span>
-            </span>
-          </button>
-        );
-      })}
+            </button>
+          );
+        })}
+      </div>
       <Link
         href="/users/lands/new"
-        className="flex w-28 shrink-0 snap-start flex-col items-center justify-center gap-1.5 rounded-[20px] border-2 border-dashed border-[#e3c9a3] text-[12px] font-bold text-[#b9531f] transition-colors hover:bg-[#fff8ec]"
+        className="flex w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed border-[#e3c9a3] py-2.5 text-[12px] font-bold text-[#b9531f] transition-colors hover:bg-[#fff8ec]"
       >
-        <Plus className="size-5" strokeWidth={2.5} />
-        زمین جدید
+        <Plus className="size-4" strokeWidth={2.5} />
+        افزودن زمین جدید
       </Link>
     </div>
   );

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MotionConfig, motion } from "framer-motion";
-import { ArrowLeft, LandPlot, LoaderCircle, Plus, Search, ShieldCheck } from "lucide-react";
+import { ArrowLeft, LandPlot, LoaderCircle, Plus, Search, SearchX, ShieldCheck } from "lucide-react";
 
 import { ConsumerPageHero } from "@/components/consumer-panel/consumer-hero";
 import { DatePickerStep } from "@/components/consumer-panel/search/date-picker-step";
@@ -12,14 +12,16 @@ import { LandPicker } from "@/components/consumer-panel/search/land-picker";
 import { SearchStep } from "@/components/consumer-panel/search/search-step";
 import { ServicePicker, type CatalogTree } from "@/components/consumer-panel/search/service-picker";
 import { PageContainer } from "@/components/layout/page-container";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { fetchAppCatalogTree } from "@/lib/api/app-catalog";
 import { fetchAppLands, mapAppLandToUi } from "@/lib/api/app-lands";
-import { createAppServiceSearch } from "@/lib/api/app-search";
+import { createAppServiceSearch, type AppServiceSearchResult } from "@/lib/api/app-search";
 import { isApiClientError } from "@/lib/api/envelope";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
+import { formatRelativeTime } from "@/lib/utils/date";
 import { formatAreaSqm, toPersianDigits } from "@/lib/utils/format";
 import { formatPersianIsoChip } from "@/lib/utils/jalali";
 import { searchFormSchema } from "@/lib/validators/search";
@@ -56,6 +58,9 @@ function ConsumerSearchContent() {
   const [note, setNote] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [openStep, setOpenStep] = useState<StepKey | null>("land");
+  /** The last search found nobody; cleared as soon as the criteria change. */
+  const [noProviders, setNoProviders] = useState(false);
+  const [duplicate, setDuplicate] = useState<Extract<AppServiceSearchResult, { outcome: "duplicate" }> | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -105,7 +110,7 @@ function ConsumerSearchContent() {
 
   const toggleStep = (step: StepKey) => setOpenStep((current) => (current === step ? null : step));
 
-  const handleSearch = async () => {
+  const handleSearch = async (options?: { allowDuplicate?: boolean }) => {
     if (!user) return;
 
     const parsed = searchFormSchema.safeParse({ landId, categoryId, serviceId, scheduledDates });
@@ -122,26 +127,37 @@ function ConsumerSearchContent() {
     }
 
     setErrors({});
+    setNoProviders(false);
     setSearching(true);
     try {
-      const search = await createAppServiceSearch({
+      const result = await createAppServiceSearch({
+        allowDuplicate: options?.allowDuplicate,
         categoryId: parsed.data.categoryId,
         consumerNote: note.trim() || null,
         dates: parsed.data.scheduledDates,
         landId: parsed.data.landId,
         serviceId: parsed.data.serviceId,
       });
-      router.push(`/users/search/results?searchId=${search.searchId}`);
+
+      if (result.outcome === "created") {
+        setDuplicate(null);
+        router.push(`/users/search/results?requestId=${encodeURIComponent(result.requestId)}`);
+        return;
+      }
+      if (result.outcome === "duplicate") {
+        setDuplicate(result);
+      } else {
+        setNoProviders(true);
+      }
+      setSearching(false);
     } catch (cause: unknown) {
-      toast.error(
-        isApiClientError(cause) ? cause.message : "جستجو ناموفق بود",
-        isApiClientError(cause) && cause.code === "NOT_FOUND"
-          ? "خدمات‌دهنده‌ای یافت نشد. خدمت یا زمین دیگری امتحان کنید."
-          : undefined,
-      );
+      toast.error(isApiClientError(cause) ? cause.message : "جستجو ناموفق بود");
       setSearching(false);
     }
   };
+
+  // Any change of criteria invalidates the "nobody found" notice.
+  const markCriteriaChanged = () => setNoProviders(false);
 
   if (!user) return null;
 
@@ -230,6 +246,7 @@ function ConsumerSearchContent() {
                   value={landId}
                   onChange={(id) => {
                     setLandId(id);
+                    markCriteriaChanged();
                     clearError("landId");
                     setOpenStep(!selectedService ? "service" : scheduledDates.length === 0 ? "dates" : null);
                   }}
@@ -239,7 +256,7 @@ function ConsumerSearchContent() {
               <SearchStep
                 index={2}
                 title="چه خدمتی لازم دارید؟"
-                hint="خدمت را جستجو یا از فهرست انتخاب کنید"
+                hint="ابتدا دسته‌بندی، سپس خدمت را انتخاب کنید"
                 summary={selectedService?.name ?? null}
                 done={Boolean(selectedService)}
                 open={openStep === "service"}
@@ -248,10 +265,18 @@ function ConsumerSearchContent() {
               >
                 <ServicePicker
                   catalog={catalog}
-                  value={serviceId}
-                  onChange={(nextService, nextCategory) => {
-                    setServiceId(nextService);
+                  categoryId={categoryId}
+                  serviceId={serviceId}
+                  onCategoryChange={(nextCategory) => {
+                    if (nextCategory === categoryId) return;
                     setCategoryId(nextCategory);
+                    setServiceId("");
+                    markCriteriaChanged();
+                    clearError("categoryId");
+                  }}
+                  onServiceChange={(nextService) => {
+                    setServiceId(nextService);
+                    markCriteriaChanged();
                     clearError("serviceId", "categoryId");
                     setOpenStep(scheduledDates.length > 0 ? null : "dates");
                   }}
@@ -304,6 +329,27 @@ function ConsumerSearchContent() {
                 شماره تماس شما فقط پس از قبول درخواست به خدمات‌دهنده نمایش داده می‌شود.
               </p>
 
+              {noProviders ? (
+                <motion.div
+                  role="status"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-start gap-3 rounded-[22px] bg-white p-4 ring-1 ring-[#f3d3a8]"
+                >
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-[#fdebd3] text-[#b9531f]">
+                    <SearchX className="size-5" strokeWidth={1.9} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-[13.5px] font-black text-[#3b2410]">
+                      خدمات‌دهنده‌ای در محدوده این زمین پیدا نشد
+                    </span>
+                    <span className="mt-0.5 block text-[11.5px] leading-5 text-[#8a6a48]">
+                      درخواستی ثبت نشد. خدمت مشابه دیگری را امتحان کنید یا کمی بعد دوباره جستجو کنید.
+                    </span>
+                  </span>
+                </motion.div>
+              ) : null}
+
               {/* Sticky offsets count from the container's padding edge (pb-32), so this lands just above the dock. */}
               <div className="sticky bottom-[calc(env(safe-area-inset-bottom,0px)-2.5rem)] z-20 pt-2">
                 <button
@@ -311,23 +357,23 @@ function ConsumerSearchContent() {
                   onClick={() => void handleSearch()}
                   disabled={searching}
                   className={cn(
-                    "flex w-full items-center gap-3 rounded-[22px] py-3 pe-3 ps-5 text-right text-white transition active:scale-[0.98] disabled:opacity-80",
+                    "flex w-full items-center gap-3 rounded-[22px] bg-gradient-to-l from-[#2e9b52] to-[#1f7f43] py-3.5 pe-3 ps-5 text-right text-white ring-1 ring-white/20 transition hover:brightness-105 active:scale-[0.98] disabled:opacity-80",
                     completed === 3
-                      ? "bg-[#b9531f] shadow-[0_18px_36px_-14px_rgba(185,83,31,0.95)]"
-                      : "bg-[#5c4120] shadow-[0_18px_36px_-16px_rgba(59,36,16,0.7)]",
+                      ? "shadow-[0_18px_36px_-12px_rgba(31,127,67,0.85)]"
+                      : "shadow-[0_16px_32px_-16px_rgba(31,127,67,0.7)]",
                   )}
                 >
                   <span className="min-w-0 flex-1">
-                    <span className="block text-[14px] font-black">
+                    <span className="block text-[15px] font-black">
                       {searching ? "در حال یافتن خدمات‌دهندگان…" : "یافتن خدمات‌دهندگان"}
                     </span>
-                    <span className="block truncate text-[11px] text-white/75">
+                    <span className="block truncate text-[11.5px] font-medium text-white/85">
                       {selectedService && selectedLand
                         ? `${selectedService.name} برای ${selectedLand.title}`
                         : `${toPersianDigits(3 - completed)} مرحله باقی مانده`}
                     </span>
                   </span>
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/95 text-[#b9531f]">
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white text-[#1f7f43]">
                     {searching ? (
                       <LoaderCircle className="size-5 animate-spin" />
                     ) : completed === 3 ? (
@@ -341,6 +387,27 @@ function ConsumerSearchContent() {
             </>
           )}
         </div>
+
+        <ConfirmDialog
+          open={duplicate !== null}
+          onOpenChange={(open) => {
+            if (!open && !searching) setDuplicate(null);
+          }}
+          title="درخواست مشابهی دارید"
+          description={
+            duplicate
+              ? `برای «${selectedService?.name ?? "این خدمت"}» روی «${selectedLand?.title ?? "این زمین"}» یک درخواست باز دارید (${formatRelativeTime(duplicate.duplicate.createdAt)}). می‌توانید همان را ادامه دهید یا درخواست جدیدی بسازید.`
+              : ""
+          }
+          confirmLabel="ایجاد درخواست جدید"
+          cancelLabel="ادامه درخواست قبلی"
+          loading={searching}
+          onConfirm={() => void handleSearch({ allowDuplicate: true })}
+          onCancel={() => {
+            if (!duplicate) return;
+            router.push(`/users/search/results?requestId=${encodeURIComponent(duplicate.duplicate.requestId)}`);
+          }}
+        />
       </PageContainer>
     </MotionConfig>
   );

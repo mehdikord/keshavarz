@@ -8,6 +8,7 @@ const STATUS_TONES: Record<string, { label: string; variant: BadgeVariant }> = {
   active: { label: "فعال", variant: "success" },
   inactive: { label: "غیرفعال", variant: "secondary" },
   pending: { label: "در انتظار", variant: "accent" },
+  awaiting_send: { label: "آماده ارسال", variant: "outline" },
   pending_provider: { label: "در انتظار تأیید", variant: "accent" },
   approved: { label: "تأییدشده", variant: "success" },
   rejected: { label: "ردشده", variant: "destructive" },

@@ -8,7 +8,7 @@ import { ArrowLeft, Bell, Hourglass, Search, Tractor, Wallet } from "lucide-reac
 
 import { ActiveRequests } from "@/components/consumer-panel/dashboard/active-requests";
 import { LandWeatherCard } from "@/components/consumer-panel/dashboard/land-weather-card";
-import { MyLands } from "@/components/consumer-panel/dashboard/my-lands";
+import { LandsCountCard } from "@/components/consumer-panel/dashboard/lands-count-card";
 import { OnboardingCard } from "@/components/consumer-panel/dashboard/onboarding-card";
 import { ConsumerHeroShell, HARVEST_GLASS_BUTTON } from "@/components/consumer-panel/consumer-hero";
 import { AppMenuTrigger } from "@/components/layout/app-menu-trigger";
@@ -63,6 +63,7 @@ export default function ConsumerHomePage() {
 
   const [loading, setLoading] = useState(true);
   const [lands, setLands] = useState<AppLand[]>([]);
+  const [hasMoreLands, setHasMoreLands] = useState(false);
   const [pending, setPending] = useState<AppConsumerRequestSummary[]>([]);
   const [inProgress, setInProgress] = useState<AppConsumerRequestSummary[]>([]);
   const [monthlyCost, setMonthlyCost] = useState(0);
@@ -83,7 +84,7 @@ export default function ConsumerHomePage() {
 
     void Promise.all([
       fetchAppLands({ limit: 50, signal: controller.signal }),
-      fetchConsumerRequests({ status: "pending_provider", limit: 50, signal: controller.signal }),
+      fetchConsumerRequests({ status: "open", limit: 50, signal: controller.signal }),
       fetchConsumerRequests({ status: "in_progress", limit: 50, signal: controller.signal }),
       fetchConsumerFinancialSummary({
         from: monthStart.toISOString(),
@@ -97,6 +98,7 @@ export default function ConsumerHomePage() {
         if (controller.signal.aborted) return;
 
         setLands(landsResult.items);
+        setHasMoreLands(landsResult.meta.hasMore);
         setPending(pendingResult.items);
         setInProgress(inProgressResult.items);
         setMonthlyCost(monthSummary.totalCostToman);
@@ -260,7 +262,7 @@ export default function ConsumerHomePage() {
 
               {lands.length > 0 ? (
                 <Reveal delay={0.18}>
-                  <MyLands lands={lands} />
+                  <LandsCountCard count={lands.length} hasMore={hasMoreLands} />
                 </Reveal>
               ) : null}
 

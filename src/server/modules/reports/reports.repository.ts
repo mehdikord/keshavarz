@@ -405,7 +405,11 @@ export async function countRequestsCreatedByStatus(input: {
     rows.map((row) => [row.status, row._count._all]),
   ) as Partial<
     Record<
-      "pending_provider" | "in_progress" | "completed" | "cancelled",
+      | "awaiting_send"
+      | "pending_provider"
+      | "in_progress"
+      | "completed"
+      | "cancelled",
       number
     >
   >;

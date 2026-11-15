@@ -17,6 +17,7 @@ import {
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 const REQUEST_STATUSES = [
+  "awaiting_send",
   "pending_provider",
   "in_progress",
   "completed",

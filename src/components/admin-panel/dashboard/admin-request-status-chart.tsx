@@ -20,6 +20,7 @@ import {
 import { toPersianDigits } from "@/lib/utils/format";
 
 const STATUS_COLORS: Record<DashboardRequestStatus, string> = {
+  awaiting_send: "#e9c46a",
   pending_provider: "#f4a261",
   in_progress: "#2d6a4f",
   completed: "#40916c",

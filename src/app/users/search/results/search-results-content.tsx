@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { AnimatePresence, MotionConfig, motion } from "framer-motion";
 import {
   ArrowLeft,
@@ -15,6 +15,7 @@ import {
   SearchX,
   Send,
   SlidersHorizontal,
+  Sparkles,
   Wrench,
 } from "lucide-react";
 
@@ -27,14 +28,14 @@ import {
 } from "@/components/consumer-panel/provider-result-card";
 import { SearchLoading } from "@/components/consumer-panel/search-loading";
 import { PageContainer } from "@/components/layout/page-container";
-import { fetchAppLand } from "@/lib/api/app-lands";
 import {
-  addAppRequestProviders,
-  createAppServiceRequest,
-  fetchConsumerRequest,
-  type AppConsumerRequestDetail,
+  fetchRequestCandidates,
+  sendAppRequestToProviders,
+  type AppCandidateRequestContext,
+  type AppCandidateState,
+  type AppRequestCandidate,
+  type AppSendRequestResult,
 } from "@/lib/api/app-requests";
-import { fetchAppSearchProviders, type AppSearchContext, type AppSearchProvider } from "@/lib/api/app-search";
 import { isApiClientError } from "@/lib/api/envelope";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
@@ -49,36 +50,33 @@ const SORTS: { key: SortKey; label: string }[] = [
   { key: "distance", label: "نزدیک‌ترین" },
 ];
 
-/** Server cap on providers per request. */
-const MAX_PROVIDERS_PER_REQUEST = 30;
+/** Server cap on providers per send. */
+const MAX_PROVIDERS_PER_SEND = 30;
 
 const LIST_ITEM_SPRING = { type: "spring" as const, stiffness: 360, damping: 30, mass: 0.9 };
 
-function getApiProviderResultState(
-  provider: AppSearchProvider,
-  sentLocally: ReadonlySet<string>,
-  requestDetail: AppConsumerRequestDetail | null,
-): ProviderResultState {
-  if (requestDetail) {
-    if (requestDetail.status === "in_progress" || requestDetail.status === "completed") {
-      return requestDetail.assignedProviderId === provider.providerId ? "accepted" : "removed";
-    }
-    if (requestDetail.status === "cancelled") return "removed";
+const OPEN_STATUSES = new Set(["awaiting_send", "pending_provider"]);
 
-    const link = requestDetail.providers.find((item) => item.providerId === provider.providerId);
-    if (link) {
-      if (link.status === "sent") return "sent";
-      if (link.status === "rejected") return "rejected";
-      if (link.status === "removed") return "removed";
-      if (link.status === "accepted") return "accepted";
-    }
-  }
+const CARD_STATE: Record<AppCandidateState, ProviderResultState> = {
+  available: "idle",
+  unavailable: "unavailable",
+  sent: "sent",
+  rejected: "rejected",
+  accepted: "accepted",
+  removed: "removed",
+};
 
-  if (sentLocally.has(provider.providerId)) return "sent";
-  return "idle";
-}
+/** Accepted first, then waiting, then selectable, then closed-out ones. */
+const STATE_RANK: Record<AppCandidateState, number> = {
+  accepted: 0,
+  sent: 1,
+  available: 2,
+  rejected: 3,
+  unavailable: 4,
+  removed: 5,
+};
 
-function SearchSummary({ context }: { context: AppSearchContext }) {
+function SearchSummary({ context }: { context: AppCandidateRequestContext }) {
   const dates = [...context.dates].sort();
   return (
     <div className="mt-5 rounded-[22px] bg-white/55 p-4 ring-1 ring-white/80 backdrop-blur-md">
@@ -99,7 +97,7 @@ function SearchSummary({ context }: { context: AppSearchContext }) {
           className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white/80 px-3 py-1.5 text-[11px] font-black text-[#a0561a] ring-1 ring-white"
         >
           <SlidersHorizontal className="size-3.5" />
-          تغییر
+          جستجوی جدید
         </Link>
       </div>
       {dates.length > 0 ? (
@@ -119,10 +117,16 @@ function SearchSummary({ context }: { context: AppSearchContext }) {
   );
 }
 
-function RequestBanner({ detail }: { detail: AppConsumerRequestDetail }) {
-  const href = `/users/requests/${detail.requestId}`;
+function RequestBanner({
+  context,
+  candidates,
+}: {
+  context: AppCandidateRequestContext;
+  candidates: AppRequestCandidate[];
+}) {
+  const href = `/users/requests/${context.requestId}`;
 
-  if (detail.status === "in_progress" || detail.status === "completed") {
+  if (context.status === "in_progress" || context.status === "completed") {
     return (
       <Link
         href={href}
@@ -134,7 +138,7 @@ function RequestBanner({ detail }: { detail: AppConsumerRequestDetail }) {
         <span className="min-w-0 flex-1">
           <span className="block text-[14px] font-black text-[#1f4d26]">خدمات‌دهنده پیدا شد!</span>
           <span className="block truncate text-[11.5px] text-[#3f6b43]">
-            {detail.assignedProviderName ?? "خدمات‌دهنده"} کار را پذیرفت. جزئیات و تماس را ببینید.
+            {context.assignedProviderName ?? "خدمات‌دهنده"} کار را پذیرفت. جزئیات و تماس را ببینید.
           </span>
         </span>
         <ArrowLeft className="size-5 shrink-0 text-[#2f6a35]" />
@@ -142,7 +146,7 @@ function RequestBanner({ detail }: { detail: AppConsumerRequestDetail }) {
     );
   }
 
-  if (detail.status === "cancelled") {
+  if (context.status === "cancelled") {
     return (
       <Link href={href} className="flex items-center gap-3 rounded-[22px] bg-white/70 p-4 ring-1 ring-[#efe0c8]">
         <span className="text-[12.5px] font-bold text-[#8a6a48]">این درخواست لغو شده است.</span>
@@ -151,7 +155,26 @@ function RequestBanner({ detail }: { detail: AppConsumerRequestDetail }) {
     );
   }
 
-  const waiting = detail.providers.filter((item) => item.status === "sent").length;
+  if (context.status === "awaiting_send") {
+    const available = candidates.filter((item) => item.state === "available").length;
+    return (
+      <div className="flex items-center gap-3 rounded-[22px] bg-[linear-gradient(150deg,#fff6e6_0%,#ffffff_85%)] p-4 ring-1 ring-[#f3d3a8]">
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-[#f0a94f] text-white">
+          <Sparkles className="size-5" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[14px] font-black text-[#5c3410]">
+            {toPersianDigits(available)} خدمات‌دهنده آماده دریافت درخواست
+          </span>
+          <span className="block text-[11.5px] leading-5 text-[#8a6a48]">
+            این جستجو در «درخواست‌های من» ذخیره شد. انتخاب کنید و درخواست را بفرستید.
+          </span>
+        </span>
+      </div>
+    );
+  }
+
+  const waiting = candidates.filter((item) => item.state === "sent").length;
   return (
     <Link href={href} className="flex items-center gap-3 rounded-[22px] bg-[linear-gradient(150deg,#fff1df_0%,#ffffff_85%)] p-4 ring-1 ring-[#f3d3a8]">
       <span className="relative flex size-11 shrink-0 items-center justify-center rounded-2xl bg-[#e8892c] text-white">
@@ -160,7 +183,7 @@ function RequestBanner({ detail }: { detail: AppConsumerRequestDetail }) {
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-[14px] font-black text-[#5c3410]">
-          درخواست برای {toPersianDigits(waiting)} خدمات‌دهنده ارسال شد
+          منتظر پاسخ {toPersianDigits(waiting)} خدمات‌دهنده
         </span>
         <span className="block text-[11.5px] text-[#8a6a48]">
           اولین کسی که قبول کند کار را انجام می‌دهد. پیگیری درخواست
@@ -171,131 +194,107 @@ function RequestBanner({ detail }: { detail: AppConsumerRequestDetail }) {
   );
 }
 
+function describeSkipped(result: AppSendRequestResult): string | undefined {
+  if (result.skipped.length === 0) return undefined;
+  const notEligible = result.skipped.filter((item) => item.reason === "not_eligible").length;
+  const alreadySent = result.skipped.length - notEligible;
+  const parts: string[] = [];
+  if (notEligible > 0) parts.push(`${toPersianDigits(notEligible)} نفر دیگر در دسترس نیستند`);
+  if (alreadySent > 0) parts.push(`${toPersianDigits(alreadySent)} نفر قبلاً درخواست را گرفته‌اند`);
+  return `${parts.join(" و ")}؛ برای آن‌ها ارسال نشد.`;
+}
+
 export default function SearchResultsPage() {
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const searchId = searchParams.get("searchId") ?? "";
+  const requestId = searchParams.get("requestId") ?? "";
   const user = useAuthStore((state) => state.user);
 
-  const [searchContext, setSearchContext] = useState<AppSearchContext | null>(null);
-  const [providers, setProviders] = useState<AppSearchProvider[]>([]);
-  const [requestId, setRequestId] = useState<string | null>(() => searchParams.get("requestId"));
-  const [requestDetail, setRequestDetail] = useState<AppConsumerRequestDetail | null>(null);
-  const [detailVersion, setDetailVersion] = useState(0);
-  const [sentLocally, setSentLocally] = useState<Set<string>>(() => new Set());
+  const [context, setContext] = useState<AppCandidateRequestContext | null>(null);
+  const [candidates, setCandidates] = useState<AppRequestCandidate[]>([]);
   // A provider profile can send the farmer back here with ?select=<providerId>.
   const [selected, setSelected] = useState<Set<string>>(() => {
     const preselect = searchParams.get("select");
     return new Set(preselect ? [preselect] : []);
   });
   const [sort, setSort] = useState<SortKey>("price");
-  const [loading, setLoading] = useState(() => Boolean(searchId));
+  const [loading, setLoading] = useState(() => Boolean(requestId));
+  const [failed, setFailed] = useState(false);
   const [sending, setSending] = useState(false);
-  const [landArea, setLandArea] = useState<LandArea | null>(null);
-
-  const loadProviders = useCallback(
-    (signal: AbortSignal) => {
-      if (!searchId) return;
-
-      void fetchAppSearchProviders({ searchId, sort: "priceAsc", limit: 50, signal })
-        .then((result) => {
-          if (signal.aborted) return;
-          setSearchContext(result.search);
-          setProviders(result.items);
-        })
-        .catch((cause: unknown) => {
-          if (signal.aborted) return;
-          setSearchContext(null);
-          setProviders([]);
-          toast.error(isApiClientError(cause) ? cause.message : "بارگذاری نتایج جستجو ناموفق بود");
-        })
-        .finally(() => {
-          if (!signal.aborted) setLoading(false);
-        });
-    },
-    [searchId],
-  );
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    if (!searchId) return;
+    if (!requestId || !user) return;
     const controller = new AbortController();
-    loadProviders(controller.signal);
-    return () => controller.abort();
-  }, [loadProviders, searchId]);
-
-  const handleRetrySearch = useCallback(() => {
-    setLoading(true);
-    loadProviders(new AbortController().signal);
-  }, [loadProviders]);
-
-  useEffect(() => {
-    if (!requestId) return;
-    const controller = new AbortController();
-    void fetchConsumerRequest(requestId, controller.signal)
-      .then((detail) => {
-        if (!controller.signal.aborted) setRequestDetail(detail);
+    void fetchRequestCandidates(requestId, controller.signal)
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        setContext(result.request);
+        setCandidates(result.candidates);
+        setFailed(false);
       })
-      .catch(() => {
-        if (!controller.signal.aborted) setRequestDetail(null);
+      .catch((cause: unknown) => {
+        if (controller.signal.aborted) return;
+        setFailed(true);
+        toast.error(isApiClientError(cause) ? cause.message : "بارگذاری خدمات‌دهندگان ناموفق بود");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [requestId, detailVersion]);
+  }, [requestId, user, reloadKey]);
 
-  const landId = searchContext?.landId;
-  useEffect(() => {
-    if (!landId) return;
-    const controller = new AbortController();
-    void fetchAppLand(landId, controller.signal)
-      .then((land) => {
-        if (controller.signal.aborted) return;
-        const squareMeters = Number(land.areaSquareMeters);
-        const area = formatAreaSqm(squareMeters);
-        setLandArea({ squareMeters, label: `${area.primary} ${area.primaryUnit}` });
-      })
-      .catch(() => undefined); // The estimate is optional.
-    return () => controller.abort();
-  }, [landId]);
+  const reload = useCallback(() => setReloadKey((key) => key + 1), []);
 
-  const activeRequestDetail = requestId ? requestDetail : null;
+  const isOpen = context ? OPEN_STATUSES.has(context.status) : false;
+  const landArea = useMemo<LandArea | null>(() => {
+    const squareMeters = Number(context?.landAreaSquareMeters);
+    if (!context || !Number.isFinite(squareMeters) || squareMeters <= 0) return null;
+    const area = formatAreaSqm(squareMeters);
+    return { squareMeters, label: `${area.primary} ${area.primaryUnit}` };
+  }, [context]);
 
   const visibleResults = useMemo(() => {
-    const valueOf = sort === "price" ? (p: AppSearchProvider) => p.priceToman : (p: AppSearchProvider) => p.distanceKm;
-    return providers
-      .map((provider) => ({ provider, state: getApiProviderResultState(provider, sentLocally, activeRequestDetail) }))
-      .filter((item) => item.state !== "removed")
-      .sort((a, b) => {
-        const rank = (state: ProviderResultState) => (state === "accepted" ? 0 : state === "sent" ? 1 : 2);
-        if (rank(a.state) !== rank(b.state)) return rank(a.state) - rank(b.state);
-        return valueOf(a.provider) - valueOf(b.provider);
-      });
-  }, [providers, sort, activeRequestDetail, sentLocally]);
+    const valueOf = sort === "price" ? (item: AppRequestCandidate) => item.priceToman : (item: AppRequestCandidate) => item.distanceKm;
+    return candidates
+      .filter((item) => {
+        if (item.state === "removed") return false;
+        // Once the job is closed, only the providers who were part of it matter.
+        if (!isOpen) return item.state !== "available" && item.state !== "unavailable";
+        return true;
+      })
+      .sort((a, b) => STATE_RANK[a.state] - STATE_RANK[b.state] || valueOf(a) - valueOf(b));
+  }, [candidates, sort, isOpen]);
 
   const highlightsFor = useMemo(() => {
     const map = new Map<string, ProviderHighlight[]>();
-    if (visibleResults.length < 2) return map;
-    const minDistance = Math.min(...visibleResults.map((item) => item.provider.distanceKm));
-    const minPrice = Math.min(...visibleResults.map((item) => item.provider.priceToman));
-    for (const { provider } of visibleResults) {
+    const comparable = visibleResults.filter((item) => item.state !== "unavailable");
+    if (comparable.length < 2) return map;
+    const minDistance = Math.min(...comparable.map((item) => item.distanceKm));
+    const minPrice = Math.min(...comparable.map((item) => item.priceToman));
+    for (const item of comparable) {
       const tags: ProviderHighlight[] = [];
-      if (provider.distanceKm === minDistance) tags.push("nearest");
-      if (provider.priceToman === minPrice) tags.push("cheapest");
-      if (tags.length) map.set(provider.providerId, tags);
+      if (item.distanceKm === minDistance) tags.push("nearest");
+      if (item.priceToman === minPrice) tags.push("cheapest");
+      if (tags.length) map.set(item.providerId, tags);
     }
     return map;
   }, [visibleResults]);
 
-  const selectableIds = visibleResults.filter((item) => item.state === "idle").map((item) => item.provider.providerId);
+  const selectableIds = isOpen
+    ? visibleResults.filter((item) => item.state === "available").map((item) => item.providerId)
+    : [];
   const selectedIds = selectableIds.filter((id) => selected.has(id));
-  const allSelected = selectableIds.length > 0 && selectedIds.length === Math.min(selectableIds.length, MAX_PROVIDERS_PER_REQUEST);
+  const allSelected =
+    selectableIds.length > 0 && selectedIds.length === Math.min(selectableIds.length, MAX_PROVIDERS_PER_SEND);
 
   const toggleSelect = (providerId: string) => {
     setSelected((current) => {
       const next = new Set(current);
       if (next.has(providerId)) {
         next.delete(providerId);
-      } else if (next.size >= MAX_PROVIDERS_PER_REQUEST) {
-        toast.info(`حداکثر ${toPersianDigits(MAX_PROVIDERS_PER_REQUEST)} خدمات‌دهنده در هر درخواست`);
+      } else if (next.size >= MAX_PROVIDERS_PER_SEND) {
+        toast.info(`حداکثر ${toPersianDigits(MAX_PROVIDERS_PER_SEND)} خدمات‌دهنده در هر ارسال`);
         return current;
       } else {
         next.add(providerId);
@@ -305,60 +304,51 @@ export default function SearchResultsPage() {
   };
 
   const toggleSelectAll = () => {
-    setSelected(allSelected ? new Set() : new Set(selectableIds.slice(0, MAX_PROVIDERS_PER_REQUEST)));
+    setSelected(allSelected ? new Set() : new Set(selectableIds.slice(0, MAX_PROVIDERS_PER_SEND)));
   };
 
   const handleSend = async () => {
-    if (!searchId || selectedIds.length === 0) return;
+    if (!requestId || selectedIds.length === 0) return;
 
     setSending(true);
     try {
-      if (!requestId) {
-        const created = await createAppServiceRequest({ searchId, providerIds: selectedIds });
-        setRequestId(created.requestId);
-        // Keep the request in the URL so a refresh or back-navigation restores it.
-        router.replace(`${pathname}?${new URLSearchParams({ searchId, requestId: created.requestId }).toString()}`, {
-          scroll: false,
-        });
-      } else {
-        await addAppRequestProviders({ requestId, providerIds: selectedIds });
-        setDetailVersion((version) => version + 1);
-      }
-
-      setSentLocally((current) => new Set([...current, ...selectedIds]));
+      const result = await sendAppRequestToProviders({ requestId, providerIds: selectedIds });
       setSelected(new Set());
-      toast.success(
-        "درخواست ارسال شد",
-        `برای ${toPersianDigits(selectedIds.length)} خدمات‌دهنده. با اولین پذیرش به شما اطلاع می‌دهیم.`,
-      );
+      if (result.sent.length === 0) {
+        toast.error("درخواست برای هیچ‌کس ارسال نشد", describeSkipped(result));
+      } else if (result.skipped.length > 0) {
+        toast.warning(`درخواست برای ${toPersianDigits(result.sent.length)} خدمات‌دهنده ارسال شد`, describeSkipped(result));
+      } else {
+        toast.success(
+          "درخواست ارسال شد",
+          `برای ${toPersianDigits(result.sent.length)} خدمات‌دهنده. با اولین پذیرش به شما اطلاع می‌دهیم.`,
+        );
+      }
     } catch (cause: unknown) {
       toast.error(isApiClientError(cause) ? cause.message : "ارسال درخواست ناموفق بود");
     } finally {
       setSending(false);
+      reload();
     }
   };
 
   if (!user) return null;
 
-  const backHref = searchContext ? `/users/search?landId=${encodeURIComponent(searchContext.landId)}` : "/users/search";
-  const resultsFrom = `${pathname}?${new URLSearchParams({ searchId, ...(requestId ? { requestId } : {}) }).toString()}`;
+  const backHref = context ? `/users/requests/${context.requestId}` : "/users/requests";
+  const resultsFrom = `${pathname}?${new URLSearchParams({ requestId }).toString()}`;
 
-  const emptyCard = (
+  const emptyCard = (title: string, hint: string) => (
     <div className="flex flex-col items-center rounded-[28px] bg-white px-6 py-9 text-center shadow-[0_18px_40px_-24px_rgba(160,86,26,0.55)] ring-1 ring-[#efe0c8]">
       <span className="flex size-16 items-center justify-center rounded-[22px] bg-[#fdebd3] text-[#b9531f]">
         <SearchX className="size-8" strokeWidth={1.75} />
       </span>
-      <h2 className="mt-4 text-[16px] font-black text-[#3b2410]">خدمات‌دهنده‌ای در این محدوده پیدا نشد</h2>
-      <ul className="mt-3 space-y-1 text-[12px] leading-6 text-[#8a6a48]">
-        <li>• روزهای بیشتری برای انجام کار انتخاب کنید</li>
-        <li>• خدمت مشابه دیگری را امتحان کنید</li>
-        <li>• کمی بعد دوباره جستجو کنید</li>
-      </ul>
+      <h2 className="mt-4 text-[16px] font-black text-[#3b2410]">{title}</h2>
+      <p className="mt-2 max-w-72 text-[12px] leading-6 text-[#8a6a48]">{hint}</p>
       <Link
-        href={backHref}
+        href={context ? `/users/search?landId=${encodeURIComponent(context.landId)}` : "/users/search"}
         className="mt-5 inline-flex h-12 items-center gap-2 rounded-2xl bg-[#b9531f] px-6 text-[14px] font-black text-white"
       >
-        جستجوی دوباره
+        جستجوی جدید
         <ArrowLeft className="size-4" />
       </Link>
     </div>
@@ -368,48 +358,51 @@ export default function SearchResultsPage() {
     <MotionConfig reducedMotion="user">
       <PageContainer withDock className="px-0 pt-0">
         <ConsumerPageHero
-          title="نتایج جستجو"
+          title="خدمات‌دهندگان پیدا شده"
           subtitle={loading ? "در حال یافتن بهترین گزینه‌ها برای زمین شما" : undefined}
           backHref={backHref}
         >
-          {searchContext ? <SearchSummary context={searchContext} /> : null}
+          {context ? <SearchSummary context={context} /> : null}
         </ConsumerPageHero>
 
         <div className="relative z-10 -mt-4 space-y-3 px-4 pt-1">
-          {!searchId ? (
-            emptyCard
+          {!requestId ? (
+            emptyCard("درخواستی انتخاب نشده", "از صفحه جستجو یا «درخواست‌های من» یک درخواست را باز کنید.")
           ) : loading ? (
             <SearchLoading />
-          ) : !searchContext && requestId ? (
-            <div className="space-y-3">
-              <div className="flex items-center gap-3 rounded-[22px] bg-[#fdebd3] p-4 ring-1 ring-[#f3d3a8]">
-                <RefreshCw className="size-5 shrink-0 text-[#b9531f]" />
-                <p className="min-w-0 flex-1 text-[12px] leading-5 text-[#6b4210]">
-                  مهلت این جستجو تمام شده، اما درخواست شما همچنان فعال است.
-                </p>
-                <button
-                  type="button"
-                  onClick={handleRetrySearch}
-                  className="shrink-0 rounded-full bg-[#b9531f] px-3.5 py-2 text-[11.5px] font-black text-white"
-                >
-                  تازه کردن
-                </button>
-              </div>
-              {requestDetail ? <RequestBanner detail={requestDetail} /> : null}
+          ) : failed && !context ? (
+            <div className="flex items-center gap-3 rounded-[22px] bg-[#fdebd3] p-4 ring-1 ring-[#f3d3a8]">
+              <RefreshCw className="size-5 shrink-0 text-[#b9531f]" />
+              <p className="min-w-0 flex-1 text-[12px] leading-5 text-[#6b4210]">بارگذاری خدمات‌دهندگان ناموفق بود.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoading(true);
+                  reload();
+                }}
+                className="shrink-0 rounded-full bg-[#b9531f] px-3.5 py-2 text-[11.5px] font-black text-white"
+              >
+                تلاش دوباره
+              </button>
             </div>
-          ) : !searchContext ? (
-            emptyCard
+          ) : !context ? (
+            emptyCard("درخواست پیدا نشد", "ممکن است این درخواست حذف شده باشد.")
           ) : (
             <>
-              {activeRequestDetail ? <RequestBanner detail={activeRequestDetail} /> : null}
+              <RequestBanner context={context} candidates={candidates} />
 
               {visibleResults.length === 0 ? (
-                emptyCard
+                isOpen ? (
+                  emptyCard(
+                    "فعلاً خدمات‌دهنده‌ای در دسترس نیست",
+                    "خدمات‌دهندگانی که قبلاً پیدا شده بودند الان فعال نیستند. کمی بعد دوباره سر بزنید یا جستجوی جدیدی انجام دهید.",
+                  )
+                ) : null
               ) : (
                 <>
                   <div className="flex items-center justify-between gap-2 px-1 pt-1">
                     <p className="text-[14px] font-black text-[#3b2410]">
-                      {toPersianDigits(visibleResults.length)} خدمات‌دهنده پیدا شد
+                      {toPersianDigits(visibleResults.length)} خدمات‌دهنده
                     </p>
                     <div className="flex gap-1" role="group" aria-label="مرتب‌سازی">
                       {SORTS.map((item) => (
@@ -447,28 +440,26 @@ export default function SearchResultsPage() {
                   ) : null}
 
                   <ul className="space-y-3">
-                    {visibleResults.map(({ provider, state }) => {
-                      const link = activeRequestDetail?.providers.find((item) => item.providerId === provider.providerId);
-                      return (
-                        <motion.li key={provider.providerId} layout transition={LIST_ITEM_SPRING}>
-                          <ProviderResultCard
-                            displayName={provider.name ?? "خدمات‌دهنده"}
-                            image={provider.image}
-                            distanceKm={provider.distanceKm}
-                            price={provider.priceToman}
-                            pricingUnit={provider.pricingUnit}
-                            state={state}
-                            profileHref={`/users/providers/${encodeURIComponent(provider.providerId)}?from=${encodeURIComponent(resultsFrom)}`}
-                            selected={selected.has(provider.providerId)}
-                            onToggleSelect={() => toggleSelect(provider.providerId)}
-                            highlights={highlightsFor.get(provider.providerId)}
-                            landArea={landArea}
-                            declinedBefore={provider.previousStatus === "rejected"}
-                            phone={state === "accepted" ? link?.phone : null}
-                          />
-                        </motion.li>
-                      );
-                    })}
+                    {visibleResults.map((item) => (
+                      <motion.li key={item.providerId} layout transition={LIST_ITEM_SPRING}>
+                        <ProviderResultCard
+                          displayName={item.name}
+                          image={item.image}
+                          distanceKm={item.distanceKm}
+                          price={item.priceToman}
+                          pricingUnit={item.pricingUnit}
+                          state={CARD_STATE[item.state]}
+                          profileHref={`/users/providers/${encodeURIComponent(item.providerId)}?from=${encodeURIComponent(resultsFrom)}`}
+                          selected={selected.has(item.providerId)}
+                          onToggleSelect={isOpen ? () => toggleSelect(item.providerId) : undefined}
+                          highlights={highlightsFor.get(item.providerId)}
+                          landArea={landArea}
+                          declinedBefore={item.declinedBefore}
+                          sentElsewhere={item.sentInOtherRequest}
+                          phone={item.phone}
+                        />
+                      </motion.li>
+                    ))}
                   </ul>
                 </>
               )}
@@ -508,7 +499,7 @@ export default function SearchResultsPage() {
                 ) : null}
               </AnimatePresence>
 
-              {!activeRequestDetail && selectedIds.length === 0 && visibleResults.length > 0 ? (
+              {selectedIds.length === 0 ? (
                 <Link
                   href="/users/requests"
                   className="flex h-11 items-center justify-center gap-1.5 rounded-2xl text-[12.5px] font-bold text-[#a0561a]"

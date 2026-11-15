@@ -6,6 +6,10 @@ const STATUS_CONFIG: Record<
   RequestStatus,
   { label: string; className: string }
 > = {
+  awaiting_send: {
+    label: "آماده ارسال",
+    className: "border-orange-200 bg-orange-50 text-orange-800",
+  },
   pending_provider: {
     label: "در انتظار تأیید",
     className: "border-amber-200 bg-amber-50 text-amber-800",
