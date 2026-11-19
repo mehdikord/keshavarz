@@ -58,7 +58,10 @@ export async function getAdminDashboard(input: {
   const range = resolveRange(input);
   const fromIso = range.from.toISOString();
   const toIso = range.to.toISOString();
-  const cacheKey = `dashboard:${fromIso}:${toIso}`;
+  // Minute buckets: clients send ms-precision "now", which would otherwise
+  // make every request a cache miss.
+  const minute = (iso: string) => iso.slice(0, 16);
+  const cacheKey = `dashboard:${minute(fromIso)}:${minute(toIso)}`;
 
   const cached = getDashboardCache<AdminDashboardKpis>(cacheKey);
   if (cached) {

@@ -210,6 +210,7 @@ export async function grantAdminProviderSubscription(
     planCode: string;
     reason?: string;
   },
+  idempotencyKey: string = createAdminIdempotencyKey("grant"),
 ): Promise<{
   amountToman: number;
   endsAt: string | null;
@@ -231,7 +232,7 @@ export async function grantAdminProviderSubscription(
     subscriptionId: string;
   }>(`/providers/${providerId}/subscriptions/grant`, input, {
     headers: {
-      [ADMIN_IDEMPOTENCY_HEADER]: createAdminIdempotencyKey("grant"),
+      [ADMIN_IDEMPOTENCY_HEADER]: idempotencyKey,
     },
   });
   return result.data;

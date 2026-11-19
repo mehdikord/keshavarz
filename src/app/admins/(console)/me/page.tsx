@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -91,7 +92,7 @@ function AdminMeForm({
             <p className="text-sm text-muted-foreground">وضعیت دسترسی</p>
             <div className="mt-3 flex flex-wrap gap-2">
               {admin.isSuperAdmin ? (
-                <AdminStatusBadge status="approved" label="Super Admin" />
+                <AdminStatusBadge status="approved" label="مدیر ارشد" />
               ) : (
                 <AdminStatusBadge status="active" label="مدیر عادی" />
               )}
@@ -102,10 +103,22 @@ function AdminMeForm({
           </AdminSectionCard>
 
           <AdminSectionCard>
+            <p className="text-sm font-medium">امنیت حساب</p>
+            <div className="mt-3 flex flex-col gap-2">
+              <Button asChild variant="outline" size="sm">
+                <Link href="/admins/me/change-password">تغییر رمز عبور</Link>
+              </Button>
+              <Button asChild variant="outline" size="sm">
+                <Link href="/admins/me/sessions">نشست‌های فعال و دستگاه‌ها</Link>
+              </Button>
+            </div>
+          </AdminSectionCard>
+
+          <AdminSectionCard>
             <p className="mb-3 text-sm font-medium">مجوزهای مؤثر</p>
             {admin.isSuperAdmin ? (
               <p className="text-sm text-muted-foreground">
-                Super Admin می‌تواند تمام مجوزها را دور بزند (مگر deny صریح).
+                مدیر ارشد همه مجوزها را دارد، مگر مواردی که صریحاً منع شده باشند.
               </p>
             ) : null}
             <ul className="mt-3 max-h-72 space-y-1 overflow-y-auto">

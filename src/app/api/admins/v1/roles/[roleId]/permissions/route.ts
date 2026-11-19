@@ -50,7 +50,7 @@ export const PUT = withApiHandler(async (request: NextRequest, context) => {
   });
   const input = await parseJsonBody(request, RolePermissionsReplaceSchema);
   const result = await replaceManagedRolePermissions({
-    actorAdminId: auth.internalAdminId,
+    actor: auth,
     permissionCodes: input.permissionCodes,
     roleId: params.roleId,
   });

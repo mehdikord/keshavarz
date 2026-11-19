@@ -99,6 +99,7 @@ export function AdminAuditLogsListPage() {
     list.cursor,
     list.limit,
     moduleFilter,
+    list.refreshToken,
     reloadKey,
     to,
   ]);

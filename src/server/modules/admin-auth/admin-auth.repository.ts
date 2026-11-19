@@ -162,6 +162,34 @@ export async function touchAdminSession(
   });
 }
 
+export async function getAdminSessionTiming(sessionId: bigint) {
+  return prisma.adminSession.findUnique({
+    where: { id: sessionId },
+    select: {
+      createdAt: true,
+      expiresAt: true,
+      lastActivityAt: true,
+    },
+  });
+}
+
+/** Sessions that are neither revoked nor past their absolute expiry. */
+export async function listActiveAdminSessions(adminId: bigint, now: Date) {
+  return prisma.adminSession.findMany({
+    where: { adminId, revokedAt: null, expiresAt: { gt: now } },
+    orderBy: { lastActivityAt: "desc" },
+    select: {
+      createdAt: true,
+      expiresAt: true,
+      id: true,
+      ipAddress: true,
+      lastActivityAt: true,
+      userAgent: true,
+    },
+    take: 50,
+  });
+}
+
 export async function getCurrentAdminProfile(adminId: bigint) {
   return prisma.admin.findFirst({
     where: { id: adminId, deletedAt: null },

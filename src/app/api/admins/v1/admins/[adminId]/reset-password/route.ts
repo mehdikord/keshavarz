@@ -33,6 +33,7 @@ export const POST = withApiHandler(async (request: NextRequest, context) => {
   });
   const input = await parseJsonBody(request, AdminResetPasswordSchema);
   const admin = await resetManagedAdminPassword({
+    actor: auth,
     adminId: params.adminId,
     newPassword: input.newPassword,
   });

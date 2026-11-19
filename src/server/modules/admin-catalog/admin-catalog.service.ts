@@ -297,26 +297,27 @@ export async function reorderCatalogForAdmin(input: {
   categories?: Array<{ categoryId: string; sortOrder: number }>;
   services?: Array<{ serviceId: string; sortOrder: number }>;
 }) {
-  const result = await runInTransaction(async (transaction) =>
-    reorderAdminCatalog(transaction, input),
-  );
-
-  if (result.kind === "missing_category") {
-    throw new ApiError(
-      404,
-      API_ERROR_CODES.notFound,
-      "دسته یافت نشد.",
-      { fields: { categoryId: [result.categoryId] } },
-    );
-  }
-  if (result.kind === "missing_service") {
-    throw new ApiError(
-      404,
-      API_ERROR_CODES.notFound,
-      "خدمت یافت نشد.",
-      { fields: { serviceId: [result.serviceId] } },
-    );
-  }
+  // Throw inside the callback so a missing row rolls back the whole reorder
+  // instead of committing the updates that ran before it.
+  await runInTransaction(async (transaction) => {
+    const result = await reorderAdminCatalog(transaction, input);
+    if (result.kind === "missing_category") {
+      throw new ApiError(
+        404,
+        API_ERROR_CODES.notFound,
+        "دسته یافت نشد.",
+        { fields: { categoryId: [result.categoryId] } },
+      );
+    }
+    if (result.kind === "missing_service") {
+      throw new ApiError(
+        404,
+        API_ERROR_CODES.notFound,
+        "خدمت یافت نشد.",
+        { fields: { serviceId: [result.serviceId] } },
+      );
+    }
+  });
 
   invalidateCatalogCache();
   return {

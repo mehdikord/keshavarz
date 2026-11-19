@@ -10,6 +10,7 @@ import {
   AdminPageHeader,
   AdminSectionCard,
   AdminStatusBadge,
+  adminStatusLabel,
 } from "@/components/admin-panel";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +25,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useAdminPermissions } from "@/hooks/admin/use-admin-permissions";
+import { useIdempotencyKey } from "@/hooks/admin/use-idempotency-key";
 import { copyPublicId, formatAdminDateTime } from "@/lib/admin/format";
 import {
   createAdminPaymentRefund,
@@ -49,6 +51,9 @@ export function AdminPaymentDetailPage({
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [refundOpen, setRefundOpen] = useState(false);
+  // Same key across retries of the same refund, so a lost response can't
+  // turn into a second refund.
+  const refundKey = useIdempotencyKey("refund");
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -193,11 +198,13 @@ export function AdminPaymentDetailPage({
             {payment.subscriptionId ? (
               <div className="flex justify-between gap-3">
                 <dt className="text-muted-foreground">اشتراک</dt>
-                <dd className="font-mono text-xs" dir="ltr">
-                  {payment.subscriptionId}
-                  {payment.subscriptionStatus
-                    ? ` (${payment.subscriptionStatus})`
-                    : ""}
+                <dd className="flex items-center gap-2">
+                  {payment.subscriptionStatus ? (
+                    <AdminStatusBadge status={payment.subscriptionStatus} />
+                  ) : null}
+                  <span className="font-mono text-xs" dir="ltr">
+                    {payment.subscriptionId}
+                  </span>
                 </dd>
               </div>
             ) : null}
@@ -324,12 +331,15 @@ export function AdminPaymentDetailPage({
                 }
                 setSubmitting(true);
                 try {
-                  const result = await createAdminPaymentRefund(paymentId, {
-                    amountToman,
-                    reason: reason.trim(),
-                  });
+                  const payload = { amountToman, reason: reason.trim() };
+                  const result = await createAdminPaymentRefund(
+                    paymentId,
+                    payload,
+                    refundKey.keyFor({ paymentId, ...payload }),
+                  );
+                  refundKey.reset();
                   toast.success(
-                    `بازپرداخت ثبت شد · وضعیت پرداخت: ${result.paymentStatus}`,
+                    `بازپرداخت ثبت شد · وضعیت پرداخت: ${adminStatusLabel(result.paymentStatus)}`,
                   );
                   setRefundOpen(false);
                   setLoading(true);

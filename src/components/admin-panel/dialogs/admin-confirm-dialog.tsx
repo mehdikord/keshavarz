@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { Loader2 } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -44,15 +46,42 @@ export function AdminConfirmDialog({
   onConfirm,
 }: AdminConfirmDialogProps) {
   const [reason, setReason] = useState("");
+  // Guards against double-submit even when the caller doesn't pass `loading`.
+  const [pending, setPending] = useState(false);
+  const busy = loading || pending;
+
+  // Reset the reason whenever the dialog closes (also when closed by the
+  // caller after success), so it never carries over to the next item.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
+    if (!open) setReason("");
+  }
 
   const canConfirm = !requireReason || reason.trim().length >= 3;
+
+  function requestClose() {
+    if (busy) return;
+    onOpenChange(false);
+  }
+
+  async function confirm() {
+    if (busy || !canConfirm) return;
+    setPending(true);
+    try {
+      // Keep the reason on failure so the admin doesn't have to retype it.
+      await onConfirm(requireReason ? reason.trim() : undefined);
+    } finally {
+      setPending(false);
+    }
+  }
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!next) setReason("");
-        onOpenChange(next);
+        if (!next) requestClose();
+        else onOpenChange(true);
       }}
     >
       <DialogContent className="sm:max-w-md">
@@ -72,7 +101,11 @@ export function AdminConfirmDialog({
               onChange={(event) => setReason(event.target.value)}
               placeholder={reasonPlaceholder}
               rows={3}
+              disabled={busy}
             />
+            {reason.length > 0 && reason.trim().length < 3 ? (
+              <p className="text-xs text-muted-foreground">حداقل ۳ کاراکتر</p>
+            ) : null}
           </div>
         ) : null}
 
@@ -80,20 +113,20 @@ export function AdminConfirmDialog({
           <Button
             type="button"
             variant="outline"
-            disabled={loading}
-            onClick={() => onOpenChange(false)}
+            disabled={busy}
+            onClick={requestClose}
           >
             {cancelLabel}
           </Button>
           <Button
             type="button"
             variant={destructive ? "destructive" : "default"}
-            disabled={!canConfirm || loading}
-            onClick={async () => {
-              await onConfirm(requireReason ? reason.trim() : undefined);
-              setReason("");
-            }}
+            disabled={!canConfirm || busy}
+            onClick={() => void confirm()}
           >
+            {busy ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : null}
             {confirmLabel}
           </Button>
         </DialogFooter>

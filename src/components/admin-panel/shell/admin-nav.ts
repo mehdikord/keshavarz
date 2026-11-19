@@ -1,8 +1,9 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  Activity,
   BadgeCheck,
   Bell,
+  ChartLine,
+  ChartPie,
   ClipboardList,
   CreditCard,
   FileDown,
@@ -11,10 +12,12 @@ import {
   LayoutDashboard,
   ListOrdered,
   Package,
-  Receipt,
+  ReceiptText,
   ScrollText,
   Settings,
+  Shapes,
   Shield,
+  Undo2,
   Users,
   UserCog,
   Wallet,
@@ -27,8 +30,14 @@ export interface AdminNavItem {
   title: string;
   href: string;
   icon: LucideIcon;
-  /** When set, UI may hide the item after phase 02 wires RBAC. */
+  /** Item is shown only when the admin holds this permission. */
   permission?: AdminPermissionCode;
+  /** Item is shown when the admin holds at least one of these permissions. */
+  anyPermissions?: AdminPermissionCode[];
+  /** Developer tooling: hidden from production builds. */
+  devOnly?: boolean;
+  /** Extra search terms for the command palette. */
+  keywords?: string[];
 }
 
 export interface AdminNavGroup {
@@ -105,7 +114,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         title: "اشتراک‌ها",
         href: "/admins/provider-subscriptions",
-        icon: Receipt,
+        icon: ReceiptText,
         permission: "subscriptions.view",
       },
       {
@@ -117,7 +126,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         title: "بازپرداخت‌ها",
         href: "/admins/refunds",
-        icon: Receipt,
+        icon: Undo2,
         permission: "payments.view",
       },
     ],
@@ -165,19 +174,21 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         title: "گزارش کلی",
         href: "/admins/reports/overview",
-        icon: Activity,
+        icon: ChartPie,
         permission: "reports.view",
       },
       {
         title: "گزارش مالی",
         href: "/admins/reports/financial",
-        icon: Activity,
+        icon: ChartLine,
         permission: "reports.view",
       },
       {
         title: "خروجی‌ها",
         href: "/admins/exports",
         icon: FileDown,
+        anyPermissions: ["payments.export", "reports.export"],
+        keywords: ["csv", "export", "دانلود"],
       },
       {
         title: "تنظیمات",
@@ -186,18 +197,50 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         permission: "settings.view",
       },
       {
-        title: "Jobs",
+        title: "کارهای زمان‌بندی‌شده",
         href: "/admins/jobs",
         icon: Wrench,
+        anyPermissions: ["settings.manage", "payments.view", "notifications.view"],
+        keywords: ["jobs", "dead letter", "صف"],
       },
       {
         title: "نمایش کامپوننت‌ها",
         href: "/admins/demo",
-        icon: LayoutDashboard,
+        icon: Shapes,
+        devOnly: true,
       },
     ],
   },
 ];
+
+/** Pages reachable from the account menu rather than the sidebar. */
+export const ADMIN_ACCOUNT_ITEMS: AdminNavItem[] = [
+  { title: "پروفایل", href: "/admins/me", icon: UserCog, keywords: ["profile"] },
+  {
+    title: "تغییر رمز عبور",
+    href: "/admins/me/change-password",
+    icon: KeyRound,
+    keywords: ["password", "رمز"],
+  },
+  {
+    title: "نشست‌های فعال",
+    href: "/admins/me/sessions",
+    icon: Shield,
+    keywords: ["sessions", "دستگاه", "خروج"],
+  },
+];
+
+export function isAdminNavItemAllowed(
+  item: AdminNavItem,
+  can: (permission?: string) => boolean,
+): boolean {
+  if (item.devOnly && process.env.NODE_ENV === "production") return false;
+  if (item.permission && !can(item.permission)) return false;
+  if (item.anyPermissions && !item.anyPermissions.some((code) => can(code))) {
+    return false;
+  }
+  return true;
+}
 
 export function isAdminNavActive(pathname: string, href: string) {
   if (href === "/admins") {

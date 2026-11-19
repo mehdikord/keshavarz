@@ -280,6 +280,44 @@ test.describe.serial("critical business flows (E2E)", () => {
     expect((complete.data as { status: string }).status).toBe("completed");
   });
 
+  test("UI: a provider who lost the race sees the 'taken' screen without request data", async () => {
+    const { requestId } = await createSearch(consumerContext, consumerTokens, consumerLandId);
+    const providers = await listCandidates(consumerContext, requestId);
+    // Sent to every provider at once; the first one accepts.
+    await sendTo(
+      consumerContext,
+      consumerTokens,
+      requestId,
+      providers.map((provider) => provider.providerId),
+      "e2e-taken",
+    );
+    const accepted = await mutation(
+      providerContexts[0]!,
+      providerTokens[0]!,
+      "post",
+      `/api/app/v1/provider/requests/${requestId}/accept`,
+      {},
+    );
+    expect(accepted.status).toBe(200);
+
+    const loser = providerContexts[1]!;
+    const detail = await loser.request.get(`/api/app/v1/provider/requests/${requestId}`);
+    expect(detail.status()).toBe(409);
+    expect((await detail.json()).error.code).toBe("REQUEST_ALREADY_ACCEPTED");
+
+    const page = await loser.newPage();
+    await page.goto(`/providers/requests/${requestId}`);
+    await expect(
+      page.getByRole("heading", { name: "این درخواست توسط خدمات‌دهنده دیگری قبول شد" }),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("دسترسی به این درخواست مجاز نیست")).toHaveCount(0);
+    await expect(page.getByText("زمین آزمایش E2E")).toHaveCount(0);
+
+    await page.getByRole("link", { name: "بازگشت به لیست درخواست‌ها" }).click();
+    await expect(page).toHaveURL(/\/providers\/requests$/);
+    await page.close();
+  });
+
   test("a provider can reject a pending request", async () => {
     const { requestId } = await createSearch(consumerContext, consumerTokens, consumerLandId);
 

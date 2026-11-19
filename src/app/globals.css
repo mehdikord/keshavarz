@@ -1,7 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "leaflet/dist/leaflet.css";
+@import "@neshan-maps-platform/maplibre-sdk/style.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -116,6 +116,41 @@
   body {
     @apply bg-[var(--outer-bg)] text-foreground font-sans antialiased;
     font-feature-settings: "ss01";
+  }
+
+  /* --- Native-app feel (PWA) ------------------------------------------- */
+
+  html {
+    /* No gray flash on tap; each control has its own :active feedback. */
+    -webkit-tap-highlight-color: transparent;
+    /* No font inflation when rotating to landscape. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  html,
+  body {
+    /* The shell scrolls inside its own containers: no pull-to-refresh or page bounce. */
+    overscroll-behavior: none;
+  }
+
+  /* Controls behave like native ones: instant taps, no label selection or callouts.
+     Content text stays selectable (addresses, phone numbers, request IDs). */
+  button,
+  a,
+  [role="button"],
+  [role="tab"],
+  [role="menuitem"],
+  summary,
+  label {
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* No iOS link-preview callout on long-press; images keep "Save" for gallery photos. */
+  a {
+    -webkit-touch-callout: none;
   }
 }
 
@@ -352,41 +387,23 @@
 }
 
 
-.leaflet-container {
-  font-family: var(--font-sans);
-  direction: ltr;
+.neshan-map {
   background: var(--muted);
   -webkit-tap-highlight-color: transparent;
 }
 
-.leaflet-control-attribution {
-  font-size: 9px !important;
-  border-top-left-radius: 6px;
+/* Neshan's attribution must stay visible; keep it small and off the corners. */
+.neshan-map .maplibregl-ctrl-attrib {
+  font-family: var(--font-sans);
+  font-size: 9px;
 }
 
-/* Keep the required Parsimap attribution clear of rounded map corners. */
-.parsimap-container .leaflet-control-attribution {
-  margin: 0 14px 6px 0 !important;
-  padding: 1px 6px !important;
-  border-radius: 999px;
+.neshan-map .maplibregl-ctrl-bottom-left,
+.neshan-map .maplibregl-ctrl-bottom-right {
+  margin: 0 8px 4px;
 }
 
-/*
- * Parsimap tiles are opaque, so overlap them by half a pixel and use normal
- * blending: Leaflet's default plus-lighter blend leaves bright hairline seams.
- */
-.parsimap-container .leaflet-tile-container img.leaflet-tile {
-  width: 256.5px !important;
-  height: 256.5px !important;
-  mix-blend-mode: normal;
-}
-
-.parsimap-marker {
-  background: transparent;
-  border: 0;
-}
-
-.parsimap-pin {
+.map-pin {
   position: relative;
   display: block;
   width: 36px;
@@ -394,7 +411,7 @@
   filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.35));
 }
 
-.parsimap-pin::before {
+.map-pin::before {
   content: "";
   position: absolute;
   top: 2px;
@@ -407,7 +424,7 @@
   transform: rotate(-45deg);
 }
 
-.parsimap-pin::after {
+.map-pin::after {
   content: "";
   position: absolute;
   top: 14px;

@@ -1,31 +1,33 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { DivIcon, Map as LeafletMap, Marker, TileLayer } from "leaflet";
 import { CloudOff, Map as MapIcon, Minus, Plus, Satellite } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { DEFAULT_MAP_OVERVIEW_ZOOM } from "@/lib/maps/defaults";
 import {
-  DEFAULT_PARSIMAP_LAYER,
-  PARSIMAP_LAYERS,
-  PARSIMAP_MAP_TOKEN,
-  PARSIMAP_MAX_ZOOM,
+  DEFAULT_MAP_LAYER,
+  MAP_LAYERS,
+  MAP_MAX_ZOOM,
+  NESHAN_MAP_KEY,
+  SATELLITE_IMAGERY_SOURCE_ID,
   isSameLocation,
+  loadMapStyle,
   normalizeLocation,
-  resolveParsimapLayer,
-  type ParsimapLayerId,
-} from "@/lib/maps/parsimap";
+  type MapLayerId,
+} from "@/lib/maps/neshan";
 import type { GeoLocation } from "@/types";
 
-type Leaflet = typeof import("leaflet");
+type NeshanSdk = typeof import("@neshan-maps-platform/maplibre-sdk").default;
+export type NeshanMapInstance = InstanceType<NeshanSdk["Map"]>;
+type MapMarker = InstanceType<NeshanSdk["Marker"]>;
 
-const LAYER_ICONS: Record<ParsimapLayerId, typeof Satellite> = {
+const LAYER_ICONS: Record<MapLayerId, typeof Satellite> = {
   satellite: Satellite,
   street: MapIcon,
 };
 
-interface ParsimapMapProps {
+interface NeshanMapProps {
   center: GeoLocation;
   value?: GeoLocation | null;
   onChange?: (location: GeoLocation) => void;
@@ -38,7 +40,7 @@ interface ParsimapMapProps {
   showControls?: boolean;
   /** Extra round buttons rendered under the zoom controls. */
   controls?: ReactNode;
-  onMapReady?: (map: LeafletMap | null) => void;
+  onMapReady?: (map: NeshanMapInstance | null) => void;
   className?: string;
 }
 
@@ -72,7 +74,14 @@ export function MapControlButton({
   );
 }
 
-export function ParsimapMap({
+function pinElement() {
+  const element = document.createElement("span");
+  element.className = "map-pin";
+  element.setAttribute("aria-hidden", "true");
+  return element;
+}
+
+export function NeshanMap({
   center,
   value,
   onChange,
@@ -82,22 +91,21 @@ export function ParsimapMap({
   controls,
   onMapReady,
   className,
-}: ParsimapMapProps) {
+}: NeshanMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const leafletRef = useRef<Leaflet | null>(null);
-  const mapRef = useRef<LeafletMap | null>(null);
-  const markerRef = useRef<Marker | null>(null);
-  const markerIconRef = useRef<DivIcon | null>(null);
-  const tileLayerRef = useRef<TileLayer | null>(null);
+  const sdkRef = useRef<NeshanSdk | null>(null);
+  const mapRef = useRef<NeshanMapInstance | null>(null);
+  const markerRef = useRef<MapMarker | null>(null);
+  const appliedLayerRef = useRef<MapLayerId>(DEFAULT_MAP_LAYER);
   const lastCenterRef = useRef<GeoLocation>(value ?? center);
   const initialValueRef = useRef(value);
   const onChangeRef = useRef(onChange);
   const onMapReadyRef = useRef(onMapReady);
 
   const [ready, setReady] = useState(false);
-  const [layer, setLayer] = useState<ParsimapLayerId>(DEFAULT_PARSIMAP_LAYER);
+  const [layer, setLayer] = useState<MapLayerId>(DEFAULT_MAP_LAYER);
   const [moving, setMoving] = useState(false);
-  const [tilesFailed, setTilesFailed] = useState(false);
+  const [failure, setFailure] = useState<"style" | "imagery" | null>(null);
 
   useEffect(() => {
     onChangeRef.current = onChange;
@@ -105,101 +113,109 @@ export function ParsimapMap({
   }, [onChange, onMapReady]);
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
+    if (!containerRef.current || mapRef.current || !NESHAN_MAP_KEY) return;
 
     let disposed = false;
     let resizeObserver: ResizeObserver | null = null;
+    const initialLayer = appliedLayerRef.current;
 
-    void import("leaflet").then((leafletModule) => {
-      if (disposed || !containerRef.current) return;
+    void Promise.all([
+      import("@neshan-maps-platform/maplibre-sdk"),
+      loadMapStyle(initialLayer),
+    ])
+      .then(([sdkModule, style]) => {
+        if (disposed || !containerRef.current) return;
 
-      const L = leafletModule.default;
-      const start = lastCenterRef.current;
-      const map = L.map(containerRef.current, {
-        center: [start.lat, start.lng],
-        zoom: initialValueRef.current ? zoom : DEFAULT_MAP_OVERVIEW_ZOOM,
-        maxZoom: PARSIMAP_MAX_ZOOM,
-        zoomControl: false,
-        attributionControl: true,
-        // Zooming around the center keeps the picker pin on the same spot.
-        scrollWheelZoom: interactive ? "center" : true,
-        touchZoom: interactive ? "center" : true,
-        doubleClickZoom: interactive ? "center" : true,
-        zoomSnap: 0.5,
-      });
-
-      markerIconRef.current = L.divIcon({
-        className: "parsimap-marker",
-        html: '<span class="parsimap-pin" aria-hidden="true"></span>',
-        iconSize: [36, 44],
-        iconAnchor: [18, 43],
-      });
-
-      if (interactive) {
-        map.on("movestart", () => setMoving(true));
-        map.on("moveend", () => {
-          setMoving(false);
-          const point = map.getCenter();
-          const location = normalizeLocation(point.lat, point.lng);
-          if (isSameLocation(location, lastCenterRef.current)) return;
-          lastCenterRef.current = location;
-          onChangeRef.current?.(location);
+        const sdk = sdkModule.default;
+        const start = lastCenterRef.current;
+        const map = new sdk.Map({
+          container: containerRef.current,
+          apiKey: NESHAN_MAP_KEY,
+          style,
+          center: [start.lng, start.lat],
+          zoom: initialValueRef.current ? zoom : DEFAULT_MAP_OVERVIEW_ZOOM,
+          maxZoom: MAP_MAX_ZOOM,
+          // A flat, north-up map: rotation and tilt only confuse parcel picking.
+          dragRotate: false,
+          pitchWithRotate: false,
+          touchPitch: false,
+          // Zooming around the center keeps the picker pin on the same spot.
+          scrollZoom: interactive ? { around: "center" } : true,
+          touchZoomRotate: interactive ? { around: "center" } : true,
+          doubleClickZoom: !interactive,
+          logoPosition: "bottom-left",
+          copyRightPosition: "bottom-right",
         });
-        map.on("click", (event) => map.panTo(event.latlng));
-      }
+        map.touchZoomRotate.disableRotation();
+        map.keyboard.disableRotation();
 
-      resizeObserver = new ResizeObserver(() => map.invalidateSize());
-      resizeObserver.observe(containerRef.current);
+        if (interactive) {
+          map.on("movestart", () => setMoving(true));
+          map.on("moveend", () => {
+            setMoving(false);
+            const point = map.getCenter();
+            const location = normalizeLocation(point.lat, point.lng);
+            if (isSameLocation(location, lastCenterRef.current)) return;
+            lastCenterRef.current = location;
+            onChangeRef.current?.(location);
+          });
+          map.on("click", (event) => map.easeTo({ center: event.lngLat }));
+        }
 
-      leafletRef.current = L;
-      mapRef.current = map;
-      setReady(true);
-      onMapReadyRef.current?.(map);
-    });
+        let imageryErrors = 0;
+        map.on("error", (event) => {
+          // Tile errors carry the id of the source that failed.
+          const sourceId = (event as { sourceId?: string }).sourceId;
+          if (sourceId !== SATELLITE_IMAGERY_SOURCE_ID) return;
+          imageryErrors += 1;
+          if (imageryErrors >= 4) setFailure("imagery");
+        });
+        map.on("sourcedata", (event) => {
+          if (event.sourceId !== SATELLITE_IMAGERY_SOURCE_ID || !event.tile) return;
+          imageryErrors = 0;
+          setFailure((current) => (current === "imagery" ? null : current));
+        });
+
+        const container = containerRef.current;
+        resizeObserver = new ResizeObserver(() => map.resize());
+        resizeObserver.observe(container);
+
+        sdkRef.current = sdk;
+        mapRef.current = map;
+        setReady(true);
+        onMapReadyRef.current?.(map);
+      })
+      .catch(() => {
+        if (!disposed) setFailure("style");
+      });
 
     return () => {
       disposed = true;
       resizeObserver?.disconnect();
       onMapReadyRef.current?.(null);
       markerRef.current = null;
-      tileLayerRef.current = null;
       mapRef.current?.remove();
       mapRef.current = null;
       setReady(false);
     };
   }, [interactive, zoom]);
 
-  // Base layer
+  // Base layer: swap the whole style; DOM markers survive a style change.
   useEffect(() => {
-    if (!ready) return;
+    const map = mapRef.current;
+    if (!ready || !map || appliedLayerRef.current === layer) return;
 
     let stale = false;
-    void resolveParsimapLayer(layer).then((resolved) => {
-      const L = leafletRef.current;
-      const map = mapRef.current;
-      if (stale || !L || !map) return;
-
-      const tileLayer = L.tileLayer(resolved.tileUrl, {
-        attribution: resolved.attribution,
-        maxNativeZoom: resolved.maxNativeZoom,
-        maxZoom: PARSIMAP_MAX_ZOOM,
-        keepBuffer: 4,
+    void loadMapStyle(layer)
+      .then((style) => {
+        if (stale || mapRef.current !== map) return;
+        appliedLayerRef.current = layer;
+        map.setStyle(style);
+        setFailure(null);
+      })
+      .catch(() => {
+        if (!stale) setFailure("style");
       });
-
-      let failures = 0;
-      tileLayer.on("tileerror", () => {
-        failures += 1;
-        if (failures >= 4) setTilesFailed(true);
-      });
-      tileLayer.on("tileload", () => {
-        failures = 0;
-        setTilesFailed(false);
-      });
-
-      tileLayer.addTo(map);
-      tileLayerRef.current?.remove();
-      tileLayerRef.current = tileLayer;
-    });
 
     return () => {
       stale = true;
@@ -211,21 +227,26 @@ export function ParsimapMap({
   const centerLng = center.lng;
 
   useEffect(() => {
-    const L = leafletRef.current;
+    const sdk = sdkRef.current;
     const map = mapRef.current;
-    if (!ready || !L || !map) return;
+    if (!ready || !sdk || !map) return;
 
     if (interactive) {
       if (!value || isSameLocation(value, lastCenterRef.current)) return;
       lastCenterRef.current = value;
-      map.flyTo([value.lat, value.lng], Math.max(map.getZoom(), zoom), {
-        duration: 0.8,
+      map.flyTo({
+        center: [value.lng, value.lat],
+        zoom: Math.max(map.getZoom(), zoom),
+        duration: 800,
       });
       return;
     }
 
     const location = value ?? { lat: centerLat, lng: centerLng };
-    map.setView([location.lat, location.lng], value ? zoom : DEFAULT_MAP_OVERVIEW_ZOOM);
+    map.jumpTo({
+      center: [location.lng, location.lat],
+      zoom: value ? zoom : DEFAULT_MAP_OVERVIEW_ZOOM,
+    });
 
     if (!value) {
       markerRef.current?.remove();
@@ -234,27 +255,36 @@ export function ParsimapMap({
     }
 
     if (markerRef.current) {
-      markerRef.current.setLatLng([value.lat, value.lng]);
+      markerRef.current.setLngLat([value.lng, value.lat]);
       return;
     }
 
-    if (!markerIconRef.current) return;
-    markerRef.current = L.marker([value.lat, value.lng], {
-      icon: markerIconRef.current,
-      keyboard: false,
-      interactive: false,
-    }).addTo(map);
+    markerRef.current = new sdk.Marker({ element: pinElement(), anchor: "bottom" })
+      .setLngLat([value.lng, value.lat])
+      .addTo(map);
   }, [centerLat, centerLng, interactive, ready, value, zoom]);
+
+  const message = !NESHAN_MAP_KEY
+    ? "کلید نقشه نشان تنظیم نشده است"
+    : failure === "style"
+      ? "بارگذاری نقشه ناموفق بود؛ اتصال اینترنت را بررسی کنید"
+      : failure === "imagery"
+        ? "بارگذاری تصویر ماهواره‌ای ناموفق بود؛ حالت «نقشه» را امتحان کنید"
+        : null;
 
   return (
     <div className={cn("relative isolate h-72 w-full overflow-hidden bg-muted", className)}>
       <div
         ref={containerRef}
-        className="parsimap-container absolute inset-0"
+        dir="ltr"
+        // Inline on purpose: the SDK's unlayered `.maplibregl-map { position: relative }`
+        // beats Tailwind's layered `absolute`, which collapsed the map to 0px height.
+        style={{ position: "absolute", inset: 0 }}
+        className="neshan-map"
         aria-label={interactive ? "انتخاب موقعیت روی نقشه" : "نمایش موقعیت روی نقشه"}
       />
 
-      {!ready ? (
+      {!ready && failure !== "style" ? (
         <div className="pointer-events-none absolute inset-0 z-[400] animate-pulse bg-muted" />
       ) : null}
 
@@ -262,7 +292,7 @@ export function ParsimapMap({
         <div className="pointer-events-none absolute left-1/2 top-1/2 z-[450] -translate-x-1/2 -translate-y-full">
           <span
             className={cn(
-              "parsimap-pin block transition-transform duration-200 ease-out",
+              "map-pin block transition-transform duration-200 ease-out",
               moving && "-translate-y-3",
               !value && "opacity-90",
             )}
@@ -283,7 +313,7 @@ export function ParsimapMap({
             aria-label="نوع نقشه"
             className="absolute left-3 top-3 z-[500] flex gap-0.5 rounded-full bg-background/95 p-1 shadow-lg ring-1 ring-black/5 backdrop-blur-md dark:ring-white/10"
           >
-            {(Object.keys(PARSIMAP_LAYERS) as ParsimapLayerId[]).map((item) => {
+            {(Object.keys(MAP_LAYERS) as MapLayerId[]).map((item) => {
               const Icon = LAYER_ICONS[item];
               const active = layer === item;
               return (
@@ -301,7 +331,7 @@ export function ParsimapMap({
                   )}
                 >
                   <Icon className="size-3.5" />
-                  {PARSIMAP_LAYERS[item].label}
+                  {MAP_LAYERS[item].label}
                 </button>
               );
             })}
@@ -332,13 +362,11 @@ export function ParsimapMap({
         </>
       ) : null}
 
-      {tilesFailed || !PARSIMAP_MAP_TOKEN ? (
+      {message ? (
         <div className="pointer-events-none absolute inset-x-3 bottom-8 z-[500] flex justify-center">
           <span className="flex items-center gap-1.5 rounded-full bg-background/95 px-3 py-1.5 text-[11px] text-destructive shadow-lg backdrop-blur-md">
             <CloudOff className="size-3.5" />
-            {PARSIMAP_MAP_TOKEN
-              ? "بارگذاری نقشه ناموفق بود؛ اتصال اینترنت را بررسی کنید"
-              : "توکن نقشه پارسی‌مپ تنظیم نشده است"}
+            {message}
           </span>
         </div>
       ) : null}

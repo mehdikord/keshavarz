@@ -85,12 +85,12 @@ export async function fetchAdminNotifications(input: {
     },
     signal: input.signal,
   });
-  return z
-    .object({
-      items: z.array(AdminNotificationSchema),
-      meta: CursorMetaSchema,
-    })
-    .parse(result.data);
+  // Rows live under `data.notifications`; pagination is in the envelope `meta`.
+  const data = z.object({ notifications: z.array(AdminNotificationSchema) }).parse(result.data);
+  return {
+    items: data.notifications,
+    meta: CursorMetaSchema.parse(result.meta),
+  };
 }
 
 export async function sendAdminNotification(input: {

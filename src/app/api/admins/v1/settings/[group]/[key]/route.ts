@@ -24,9 +24,18 @@ function settingParamsFromPath(request: NextRequest): {
   key: string | undefined;
 } {
   const parts = request.nextUrl.pathname.split("/");
+  // The client encodes segments; decode so "a%20b" doesn't become a new key.
+  const decode = (value: string | undefined) => {
+    if (value === undefined) return undefined;
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  };
   return {
-    group: parts.at(-2),
-    key: parts.at(-1),
+    group: decode(parts.at(-2)),
+    key: decode(parts.at(-1)),
   };
 }
 

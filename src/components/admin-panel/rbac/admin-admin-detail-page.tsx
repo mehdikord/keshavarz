@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Copy, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 
@@ -36,6 +36,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAdminPermissions } from "@/hooks/admin/use-admin-permissions";
 import { useAdminSession } from "@/hooks/admin/use-admin-session";
 import { copyPublicId, formatAdminDateTime } from "@/lib/admin/format";
+import { fetchAdminMe } from "@/lib/api/admin-auth";
 import {
   fetchAdminAdmin,
   fetchAdminPermissions,
@@ -61,10 +62,12 @@ interface AdminAdminDetailPageProps {
 }
 
 export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
-  const { can } = useAdminPermissions();
-  const { admin: sessionAdmin } = useAdminSession();
+  const { can, isSuperAdmin: actorIsSuperAdmin } = useAdminPermissions();
+  const { admin: sessionAdmin, setAdmin: setSessionAdmin } = useAdminSession();
   const canView = can("admins.view");
   const canManage = can("admins.manage");
+  // Role and permission catalogs are behind roles.view; degrade without it.
+  const canViewRoles = can("roles.view");
 
   const [detail, setDetail] = useState<AdminDetail | null>(null);
   const [rolesCatalog, setRolesCatalog] = useState<AdminRole[]>([]);
@@ -106,8 +109,10 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
 
     void Promise.all([
       fetchAdminAdmin(adminId, controller.signal),
-      fetchAdminRoles(controller.signal),
-      fetchAdminPermissions(controller.signal),
+      canViewRoles ? fetchAdminRoles(controller.signal) : Promise.resolve([]),
+      canViewRoles
+        ? fetchAdminPermissions(controller.signal)
+        : Promise.resolve([]),
     ])
       .then(async ([admin, roles, perms]) => {
         if (controller.signal.aborted) return;
@@ -119,7 +124,9 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
         setRolesCatalog(roles);
         setPermissions(perms);
 
-        const roleCodes = admin.roles.map((role) => role.roleId);
+        const roleCodes = canViewRoles
+          ? admin.roles.map((role) => role.roleId)
+          : [];
         const entries = await Promise.all(
           roleCodes.map(async (roleId) => {
             const result = await fetchAdminRolePermissions(
@@ -146,7 +153,23 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
       });
 
     return () => controller.abort();
-  }, [adminId, canView, reloadKey]);
+  }, [adminId, canView, canViewRoles, reloadKey]);
+
+  // Newly ticked roles need their permission codes for the preview.
+  const ensureRolePermissions = useCallback(
+    (roleId: string) => {
+      if (!canViewRoles || rolePermissionMap[roleId]) return;
+      void fetchAdminRolePermissions(roleId)
+        .then((result) =>
+          setRolePermissionMap((prev) => ({
+            ...prev,
+            [roleId]: result.permissionCodes,
+          })),
+        )
+        .catch(() => undefined);
+    },
+    [canViewRoles, rolePermissionMap],
+  );
 
   const rolePermissionCodes = useMemo(() => {
     const codes = new Set<string>();
@@ -174,6 +197,19 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
   );
 
   const isSelf = sessionAdmin?.adminId === adminId;
+  // Mirrors the server escalation guards: only super admins manage super
+  // admins, and nobody but a super admin edits their own access.
+  const canEditTarget =
+    canManage && Boolean(detail) && (actorIsSuperAdmin || !detail?.isSuperAdmin);
+  const canEditAccess = canEditTarget && (actorIsSuperAdmin || !isSelf);
+
+  /** Keep the session (menu, gating) in sync after editing your own account. */
+  const syncSelf = useCallback(() => {
+    if (!isSelf) return;
+    void fetchAdminMe()
+      .then(setSessionAdmin)
+      .catch(() => undefined);
+  }, [isSelf, setSessionAdmin]);
 
   if (!canView) return <AdminForbidden />;
 
@@ -188,8 +224,20 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
 
   if (error || !detail) {
     return (
-      <AdminSectionCard className="text-center text-sm text-destructive">
+      <AdminSectionCard className="flex flex-col items-center gap-3 text-center text-sm text-destructive">
         {error ?? "مدیر یافت نشد."}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setLoading(true);
+            setError(null);
+            setReloadKey((value) => value + 1);
+          }}
+        >
+          تلاش مجدد
+        </Button>
       </AdminSectionCard>
     );
   }
@@ -204,9 +252,13 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
             <Button asChild variant="outline" size="sm">
               <Link href="/admins/admins">بازگشت</Link>
             </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/admins/audit-logs">گزارش ممیزی (فاز ۰۹)</Link>
-            </Button>
+            {can("audit_logs.view") ? (
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/admins/audit-logs?adminId=${encodeURIComponent(adminId)}`}>
+                  گزارش ممیزی این مدیر
+                </Link>
+              </Button>
+            ) : null}
           </div>
         }
       />
@@ -217,7 +269,7 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
           label={detail.isActive ? "فعال" : "غیرفعال"}
         />
         {detail.isSuperAdmin ? (
-          <AdminStatusBadge status="approved" label="Super Admin" />
+          <AdminStatusBadge status="approved" label="مدیر ارشد" />
         ) : null}
         <Button
           type="button"
@@ -236,7 +288,7 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
         <TabsList variant="line" className="w-full justify-start overflow-x-auto">
           <TabsTrigger value="profile">پروفایل</TabsTrigger>
           <TabsTrigger value="roles">نقش‌ها</TabsTrigger>
-          <TabsTrigger value="overrides">Override</TabsTrigger>
+          <TabsTrigger value="overrides">استثناهای دسترسی</TabsTrigger>
           <TabsTrigger value="effective">
             مجوزهای مؤثر ({toPersianDigits(effectivePreview.length)})
           </TabsTrigger>
@@ -249,7 +301,7 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
                 className="grid gap-4 sm:grid-cols-2"
                 onSubmit={async (event) => {
                   event.preventDefault();
-                  if (!canManage) return;
+                  if (!canEditTarget) return;
                   setSavingProfile(true);
                   try {
                     const updated = await patchAdminAdmin(adminId, {
@@ -257,6 +309,7 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
                       name: name.trim(),
                     });
                     setDetail(updated);
+                    syncSelf();
                     toast.success("پروفایل به‌روزرسانی شد");
                   } catch (cause) {
                     toast.error(
@@ -274,7 +327,7 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
                   <Input
                     value={name}
                     onChange={(event) => setName(event.target.value)}
-                    disabled={!canManage || savingProfile}
+                    disabled={!canEditTarget || savingProfile}
                   />
                 </div>
                 <div className="space-y-2">
@@ -286,7 +339,7 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
                   <Input
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
-                    disabled={!canManage || savingProfile}
+                    disabled={!canEditTarget || savingProfile}
                     dir="ltr"
                   />
                 </div>
@@ -294,7 +347,7 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
                   ایجاد: {formatAdminDateTime(detail.createdAt)} · به‌روزرسانی:{" "}
                   {formatAdminDateTime(detail.updatedAt)}
                 </p>
-                {canManage ? (
+                {canEditTarget ? (
                   <div className="sm:col-span-2">
                     <Button type="submit" disabled={savingProfile}>
                       {savingProfile ? "در حال ذخیره..." : "ذخیره پروفایل"}
@@ -308,7 +361,11 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
               <h2 className="mb-3 text-sm font-semibold">اقدامات امنیتی</h2>
               {!canManage ? (
                 <p className="text-sm text-muted-foreground">
-                  مجوز `admins.manage` لازم است.
+                  برای این بخش به مجوز «مدیریت مدیران» نیاز دارید.
+                </p>
+              ) : !canEditTarget ? (
+                <p className="text-sm text-muted-foreground">
+                  فقط مدیر ارشد می‌تواند حساب مدیر ارشد دیگری را مدیریت کند.
                 </p>
               ) : (
                 <div className="space-y-2">
@@ -322,21 +379,30 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
                   >
                     {detail.isActive ? "غیرفعال‌سازی" : "فعال‌سازی"}
                   </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => {
-                      setNewPassword("");
-                      setResetOpen(true);
-                    }}
-                  >
-                    <KeyRound className="size-4" />
-                    ریست رمز عبور
-                  </Button>
+                  {isSelf ? (
+                    <Button asChild variant="outline" className="w-full">
+                      <Link href="/admins/me/change-password">
+                        <KeyRound className="size-4" />
+                        تغییر رمز عبور خودم
+                      </Link>
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => {
+                        setNewPassword("");
+                        setResetOpen(true);
+                      }}
+                    >
+                      <KeyRound className="size-4" />
+                      ریست رمز عبور
+                    </Button>
+                  )}
                   {isSelf ? (
                     <p className="text-xs text-muted-foreground">
-                      غیرفعال‌سازی حساب خودتان توسط API رد می‌شود.
+                      حساب خودتان را نمی‌توانید غیرفعال کنید.
                     </p>
                   ) : null}
                 </div>
@@ -348,9 +414,19 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
         <TabsContent value="roles">
           <AdminSectionCard>
             <p className="mb-4 text-sm text-muted-foreground">
-              تخصیص نقش‌ها جایگزین کامل است. پس از ذخیره، منوی همان مدیر با refresh
-              نشست به‌روز می‌شود.
+              با ذخیره، فهرست نقش‌های این مدیر به‌طور کامل با انتخاب‌های زیر جایگزین می‌شود.
             </p>
+            {!canViewRoles ? (
+              <p className="mb-4 text-sm text-muted-foreground">
+                برای دیدن و تغییر نقش‌ها به مجوز «مشاهده نقش‌ها» نیاز دارید.
+              </p>
+            ) : canManage && !canEditAccess ? (
+              <p className="mb-4 text-sm text-amber-700">
+                {isSelf
+                  ? "نقش‌ها و مجوزهای حساب خودتان را نمی‌توانید تغییر دهید."
+                  : "فقط مدیر ارشد می‌تواند نقش‌های مدیر ارشد را تغییر دهد."}
+              </p>
+            ) : null}
             <div className="space-y-2">
               {rolesCatalog.map((role) => {
                 const checked = selectedRoleIds.includes(role.roleId);
@@ -361,8 +437,10 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
                   >
                     <Checkbox
                       checked={checked}
-                      disabled={!canManage || !role.isActive}
+                      // An inactive role can still be removed, just not added.
+                      disabled={!canEditAccess || (!role.isActive && !checked)}
                       onCheckedChange={(value) => {
+                        if (value) ensureRolePermissions(role.roleId);
                         setSelectedRoleIds((prev) => {
                           if (value) return [...new Set([...prev, role.roleId])];
                           return prev.filter((id) => id !== role.roleId);
@@ -387,7 +465,7 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
                 );
               })}
             </div>
-            {canManage ? (
+            {canEditAccess && canViewRoles ? (
               <Button
                 type="button"
                 className="mt-4"
@@ -403,7 +481,8 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
         <TabsContent value="overrides" className="space-y-4">
           <AdminSectionCard>
             <p className="mb-4 text-sm text-muted-foreground">
-              Deny حتی برای Super Admin اولویت دارد. جایگزین کامل لیست overrideها.
+              استثنا یک مجوز را جدا از نقش‌ها به این مدیر می‌دهد (اجازه) یا از او می‌گیرد (منع).
+              «منع» حتی برای مدیر ارشد اولویت دارد. با ذخیره، کل فهرست جایگزین می‌شود.
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2 sm:col-span-2">
@@ -436,19 +515,20 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="allow">allow</SelectItem>
-                    <SelectItem value="deny">deny</SelectItem>
+                    <SelectItem value="allow">اجازه</SelectItem>
+                    <SelectItem value="deny">منع</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>انقضا (اختیاری، ISO UTC)</Label>
+                <Label htmlFor="override-expires-at">انقضا (اختیاری)</Label>
                 <Input
+                  id="override-expires-at"
+                  type="datetime-local"
                   value={overrideExpiresAt}
                   onChange={(event) => setOverrideExpiresAt(event.target.value)}
-                  placeholder="2026-12-31T23:59:59.000Z"
                   dir="ltr"
-                  className="font-mono text-xs"
+                  className="text-xs"
                 />
               </div>
               <div className="space-y-2 sm:col-span-2">
@@ -460,13 +540,25 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
                 />
               </div>
             </div>
-            {canManage ? (
+            {canEditAccess ? (
               <Button
                 type="button"
                 variant="outline"
                 className="mt-3"
                 disabled={!overrideCode}
                 onClick={() => {
+                  // datetime-local is wall-clock time; the API wants UTC ISO.
+                  const expiresAt = overrideExpiresAt
+                    ? new Date(overrideExpiresAt)
+                    : null;
+                  if (expiresAt && Number.isNaN(expiresAt.getTime())) {
+                    toast.error("تاریخ انقضا معتبر نیست.");
+                    return;
+                  }
+                  if (expiresAt && expiresAt.getTime() <= Date.now()) {
+                    toast.error("تاریخ انقضا باید در آینده باشد.");
+                    return;
+                  }
                   if (
                     overrides.some((item) => item.permissionCode === overrideCode)
                   ) {
@@ -477,7 +569,7 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
                     ...prev,
                     {
                       effect: overrideEffect,
-                      expiresAt: overrideExpiresAt.trim() || null,
+                      expiresAt: expiresAt ? expiresAt.toISOString() : null,
                       permissionCode: overrideCode,
                       reason: overrideReason.trim() || null,
                     },
@@ -493,7 +585,7 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
           </AdminSectionCard>
 
           <AdminSectionCard>
-            <h2 className="mb-3 text-sm font-semibold">پیش‌نویس overrideها</h2>
+            <h2 className="mb-3 text-sm font-semibold">پیش‌نویس استثناها</h2>
             {overrides.length === 0 ? (
               <p className="text-sm text-muted-foreground">موردی نیست.</p>
             ) : (
@@ -505,7 +597,7 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
                   >
                     <AdminStatusBadge
                       status={item.effect === "deny" ? "rejected" : "approved"}
-                      label={item.effect}
+                      label={item.effect === "deny" ? "منع" : "اجازه"}
                     />
                     <span className="font-mono text-xs" dir="ltr">
                       {item.permissionCode}
@@ -515,7 +607,7 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
                         تا {formatAdminDateTime(item.expiresAt)}
                       </span>
                     ) : null}
-                    {canManage ? (
+                    {canEditAccess ? (
                       <Button
                         type="button"
                         size="sm"
@@ -537,13 +629,13 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
                 ))}
               </ul>
             )}
-            {canManage ? (
+            {canEditAccess ? (
               <Button
                 type="button"
                 className="mt-4"
                 onClick={() => setOverridesConfirmOpen(true)}
               >
-                ذخیره overrideها
+                ذخیره استثناها
               </Button>
             ) : null}
           </AdminSectionCard>
@@ -552,12 +644,11 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
         <TabsContent value="effective">
           <AdminSectionCard>
             <p className="mb-3 text-sm text-muted-foreground">
-              پیش‌نمایش سمت کلاینت بر اساس نقش‌های انتخاب‌شده و overrideهای پیش‌نویس.
-              منبع نهایی برای منو: `GET /me` پس از refresh نشست.
+              پیش‌نمایش بر اساس نقش‌های انتخاب‌شده و استثناهای پیش‌نویس؛ تا ذخیره نکنید اعمال نمی‌شود.
             </p>
             {detail.isSuperAdmin ? (
               <p className="mb-3 text-xs text-muted-foreground">
-                Super Admin همه مجوزها را دارد مگر deny فعال.
+                مدیر ارشد همه مجوزها را دارد، مگر مواردی که صریحاً منع شده باشند.
               </p>
             ) : null}
             <div className="space-y-4">
@@ -602,6 +693,7 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
             });
             setDetail(updated);
             setSelectedRoleIds(updated.roles.map((role) => role.roleId));
+            syncSelf();
             toast.success("نقش‌ها ذخیره شد");
             setRolesConfirmOpen(false);
             setLoading(true);
@@ -621,8 +713,8 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
       <AdminConfirmDialog
         open={overridesConfirmOpen}
         onOpenChange={setOverridesConfirmOpen}
-        title="تأیید ذخیره override"
-        description="لیست فعلی جایگزین کامل overrideهای قبلی می‌شود."
+        title="تأیید ذخیره استثناها"
+        description="فهرست فعلی به‌طور کامل جایگزین استثناهای قبلی می‌شود."
         confirmLabel="ذخیره"
         onConfirm={async () => {
           try {
@@ -636,13 +728,14 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
             });
             setDetail(updated);
             setOverrides(updated.permissionOverrides);
-            toast.success("Overrideها ذخیره شد");
+            syncSelf();
+            toast.success("استثناها ذخیره شد");
             setOverridesConfirmOpen(false);
           } catch (cause) {
             toast.error(
               isApiClientError(cause)
                 ? cause.message
-                : "ذخیره override ناموفق بود.",
+                : "ذخیره استثناها ناموفق بود.",
             );
           }
         }}
@@ -658,7 +751,7 @@ export function AdminAdminDetailPage({ adminId }: AdminAdminDetailPageProps) {
         }
         description={
           statusConfirm === "deactivate"
-            ? "غیرفعال‌سازی آخرین Super Admin یا حساب خودتان توسط API رد می‌شود."
+            ? "همه نشست‌های این مدیر بلافاصله پایان می‌یابد. آخرین مدیر ارشد را نمی‌توان غیرفعال کرد."
             : undefined
         }
         destructive={statusConfirm === "deactivate"}

@@ -6,9 +6,11 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import {
   fetchAdminMe,
@@ -16,6 +18,7 @@ import {
   logoutAllAdminSessions,
   type AdminMe,
 } from "@/lib/api/admin-auth";
+import { ADMIN_SESSION_EXPIRED_EVENT } from "@/lib/api/admin-client";
 import { isApiClientError } from "@/lib/api/envelope";
 
 interface AdminSessionContextValue {
@@ -34,7 +37,9 @@ const AdminSessionContext = createContext<AdminSessionContextValue | null>(
 
 function redirectToLogin(router: ReturnType<typeof useRouter>) {
   const next =
-    typeof window === "undefined" ? "/admins" : window.location.pathname;
+    typeof window === "undefined"
+      ? "/admins"
+      : `${window.location.pathname}${window.location.search}`;
   router.replace(
     next.startsWith("/admins/login")
       ? "/admins/login"
@@ -93,6 +98,28 @@ export function AdminSessionProvider({
       cancelled = true;
     };
   }, [router]);
+
+  // Any admin API call that reports a dead session (idle timeout, absolute
+  // expiry, revoked from another device) lands here exactly once.
+  const expiredHandledRef = useRef(false);
+  useEffect(() => {
+    function onSessionExpired() {
+      if (expiredHandledRef.current) return;
+      expiredHandledRef.current = true;
+      setAdmin(null);
+      toast.error("نشست شما منقضی شد. لطفاً دوباره وارد شوید.");
+      redirectToLogin(router);
+    }
+
+    window.addEventListener(ADMIN_SESSION_EXPIRED_EVENT, onSessionExpired);
+    return () => {
+      window.removeEventListener(ADMIN_SESSION_EXPIRED_EVENT, onSessionExpired);
+    };
+  }, [router]);
+
+  useEffect(() => {
+    if (admin) expiredHandledRef.current = false;
+  }, [admin]);
 
   const refresh = useCallback(async () => {
     setLoading(true);

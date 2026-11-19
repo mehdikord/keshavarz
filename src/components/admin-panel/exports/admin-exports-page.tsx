@@ -21,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { adminStatusLabel } from "@/components/admin-panel/status/admin-status-badge";
 import { useAdminPermissions } from "@/hooks/admin/use-admin-permissions";
 import { formatAdminDateTime } from "@/lib/admin/format";
 import {
@@ -56,6 +57,8 @@ function pushRecentId(exportId: string) {
   sessionStorage.setItem(RECENT_KEY, JSON.stringify(next));
 }
 
+const TERMINAL_EXPORT_STATUSES = new Set(["ready", "failed", "expired"]);
+
 export function AdminExportsPage() {
   const { canAny } = useAdminPermissions();
   const searchParams = useSearchParams();
@@ -85,19 +88,35 @@ export function AdminExportsPage() {
 
   useEffect(() => {
     if (!active?.exportId) return;
-    if (active.status === "ready" || active.status === "failed") return;
+    if (TERMINAL_EXPORT_STATUSES.has(active.status)) return;
 
+    let failures = 0;
     const timer = window.setInterval(() => {
       void fetchAdminExport(active.exportId)
         .then((job) => {
+          failures = 0;
           setActive(job);
         })
         .catch((cause: unknown) => {
-          toast.error(
-            isApiClientError(cause)
-              ? cause.message
-              : "پیگیری وضعیت خروجی ناموفق بود.",
-          );
+          failures += 1;
+          // Gone (restart/expiry) or forbidden: stop polling instead of
+          // toasting every two seconds forever.
+          const gone =
+            isApiClientError(cause) && [403, 404, 410].includes(cause.status);
+          if (gone || failures >= 3) {
+            window.clearInterval(timer);
+            setActive((current) =>
+              current
+                ? {
+                    ...current,
+                    errorMessage: isApiClientError(cause)
+                      ? cause.message
+                      : "پیگیری وضعیت خروجی ناموفق بود.",
+                    status: "failed",
+                  }
+                : current,
+            );
+          }
         });
     }, 2000);
 
@@ -108,8 +127,29 @@ export function AdminExportsPage() {
 
   const polling =
     Boolean(active?.exportId) &&
-    active?.status !== "ready" &&
-    active?.status !== "failed";
+    !TERMINAL_EXPORT_STATUSES.has(active?.status ?? "");
+
+  const [downloading, setDownloading] = useState(false);
+
+  /** Signed links expire after a few minutes; mint a fresh one per click. */
+  async function onDownload(exportId: string) {
+    setDownloading(true);
+    try {
+      const job = await fetchAdminExport(exportId);
+      setActive(job);
+      if (job.status === "ready" && job.downloadUrl) {
+        window.location.assign(job.downloadUrl);
+      } else {
+        toast.error("فایل خروجی دیگر در دسترس نیست.");
+      }
+    } catch (cause: unknown) {
+      toast.error(
+        isApiClientError(cause) ? cause.message : "دریافت لینک دانلود ناموفق بود.",
+      );
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   const domainOptions = useMemo(() => {
     const options: AdminExportDomain[] = [];
@@ -119,17 +159,31 @@ export function AdminExportsPage() {
   }, [canExportPayments, canExportReports]);
 
   async function onCreate() {
+    // datetime-local is wall-clock; the API expects UTC ISO (…Z).
+    const fromDate = from ? new Date(from) : null;
+    const toDate = to ? new Date(to) : null;
+    if (
+      (fromDate && Number.isNaN(fromDate.getTime())) ||
+      (toDate && Number.isNaN(toDate.getTime()))
+    ) {
+      toast.error("تاریخ وارد‌شده معتبر نیست.");
+      return;
+    }
+    if (fromDate && toDate && fromDate >= toDate) {
+      toast.error("تاریخ «از» باید قبل از «تا» باشد.");
+      return;
+    }
     setCreating(true);
     try {
       const job = await createAdminExport({
         domain,
         filters: {
-          from: from.trim() || undefined,
+          from: fromDate?.toISOString(),
           status:
             domain === "payments" && status !== "all"
               ? (status as (typeof PAYMENT_STATUSES)[number])
               : undefined,
-          to: to.trim() || undefined,
+          to: toDate?.toISOString(),
         },
       });
       pushRecentId(job.exportId);
@@ -194,22 +248,33 @@ export function AdminExportsPage() {
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label>از (ISO UTC)</Label>
+                <Label htmlFor="export-from">از تاریخ</Label>
                 <Input
-                  className="rounded-lg font-mono text-xs"
+                  id="export-from"
+                  type="datetime-local"
+                  dir="ltr"
+                  className="rounded-lg text-xs"
                   value={from}
                   onChange={(event) => setFrom(event.target.value)}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>تا (ISO UTC)</Label>
+                <Label htmlFor="export-to">تا تاریخ</Label>
                 <Input
-                  className="rounded-lg font-mono text-xs"
+                  id="export-to"
+                  type="datetime-local"
+                  dir="ltr"
+                  className="rounded-lg text-xs"
                   value={to}
                   onChange={(event) => setTo(event.target.value)}
                 />
               </div>
             </div>
+            {!from && !to ? (
+              <p className="text-xs text-muted-foreground">
+                بدون انتخاب بازه، خروجی ۳۰ روز اخیر را شامل می‌شود.
+              </p>
+            ) : null}
 
             {domain === "payments" ? (
               <div className="space-y-1.5">
@@ -222,7 +287,7 @@ export function AdminExportsPage() {
                     <SelectItem value="all">همه</SelectItem>
                     {PAYMENT_STATUSES.map((item) => (
                       <SelectItem key={item} value={item}>
-                        {item}
+                        {adminStatusLabel(item)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -247,7 +312,8 @@ export function AdminExportsPage() {
           <div className="flex gap-2">
             <Input
               className="rounded-lg font-mono text-xs"
-              placeholder="exportId"
+              placeholder="شناسه خروجی"
+              dir="ltr"
               value={lookupId}
               onChange={(event) => setLookupId(event.target.value)}
             />
@@ -299,11 +365,13 @@ export function AdminExportsPage() {
           <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <div>
               <dt className="text-xs text-muted-foreground">شناسه</dt>
-              <dd className="font-mono text-xs">{active.exportId}</dd>
+              <dd className="font-mono text-xs" dir="ltr">{active.exportId}</dd>
             </div>
             <div>
               <dt className="text-xs text-muted-foreground">دامنه</dt>
-              <dd className="text-sm">{active.domain}</dd>
+              <dd className="text-sm">
+                {active.domain === "payments" ? "پرداخت‌ها" : "گزارش‌ها"}
+              </dd>
             </div>
             <div>
               <dt className="text-xs text-muted-foreground">وضعیت</dt>
@@ -321,7 +389,7 @@ export function AdminExportsPage() {
                 {active.rowCount == null
                   ? "—"
                   : toPersianDigits(active.rowCount)}
-                {active.truncated ? " (truncated)" : ""}
+                {active.truncated ? " (محدود به سقف مجاز؛ بازه را کوچک‌تر کنید)" : ""}
               </dd>
             </div>
             {active.errorMessage ? (
@@ -334,18 +402,18 @@ export function AdminExportsPage() {
 
           {active.status === "ready" && active.downloadUrl ? (
             <div className="mt-4">
-              <Button asChild className="rounded-lg">
-                <a href={active.downloadUrl}>
-                  <Download className="size-4" />
-                  دانلود CSV
-                </a>
+              <Button
+                type="button"
+                className="rounded-lg"
+                disabled={downloading}
+                onClick={() => void onDownload(active.exportId)}
+              >
+                <Download className="size-4" />
+                {downloading ? "در حال آماده‌سازی..." : "دانلود CSV"}
               </Button>
-              {active.downloadExpiresAt ? (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  لینک دانلود تا{" "}
-                  {formatAdminDateTime(active.downloadExpiresAt)} معتبر است.
-                </p>
-              ) : null}
+              <p className="mt-2 text-xs text-muted-foreground">
+                فایل تا {formatAdminDateTime(active.expiresAt)} قابل دانلود است.
+              </p>
             </div>
           ) : null}
         </AdminSectionCard>

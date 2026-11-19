@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "icon-tile-stack",
+        "value": "*",
+        "files": [
+          "public/offline.html"
+        ],
+        "createdAt": "2026-11-18T17:48:46.794Z",
+        "reason": "Claude (agent) decided: the offline page intentionally mirrors the existing AppSplash launch screen (src/components/shared/app-splash.tsx), which uses the same glass tile holding the sprout mark above the title, for brand continuity"
+      }
+    ]
+  }
+}

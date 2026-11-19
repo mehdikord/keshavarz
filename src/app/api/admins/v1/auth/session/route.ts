@@ -4,10 +4,21 @@ import { requireAdminSession } from "@/server/auth";
 import { getAllowedOrigins } from "@/server/config/env";
 import { apiSuccess, withApiHandler } from "@/server/http";
 import { clearAdminAuthCookies } from "@/server/modules/admin-auth/admin-auth.cookies";
-import { logoutCurrentAdminSession } from "@/server/modules/admin-auth/admin-auth.service";
+import {
+  getCurrentAdminSessionInfo,
+  logoutCurrentAdminSession,
+} from "@/server/modules/admin-auth/admin-auth.service";
 import { assertMutationProtection } from "@/server/security";
 
 export const runtime = "nodejs";
+
+export const GET = withApiHandler(async (request: NextRequest, context) => {
+  const auth = await requireAdminSession(request);
+  return apiSuccess(
+    await getCurrentAdminSessionInfo(auth.sessionId),
+    context.requestId,
+  );
+});
 
 export const DELETE = withApiHandler(async (request: NextRequest, context) => {
   assertMutationProtection(

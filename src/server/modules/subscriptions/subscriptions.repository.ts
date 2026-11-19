@@ -480,8 +480,11 @@ export async function cancelPendingSubscription(
   });
 }
 
-export async function sumRefundedAmountToman(paymentId: bigint): Promise<bigint> {
-  const result = await prisma.paymentRefund.aggregate({
+export async function sumRefundedAmountToman(
+  paymentId: bigint,
+  transaction: TransactionClient = prisma,
+): Promise<bigint> {
+  const result = await transaction.paymentRefund.aggregate({
     where: {
       status: { in: ["requested", "processing", "succeeded"] },
       subscriptionPaymentId: paymentId,

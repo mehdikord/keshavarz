@@ -9,6 +9,7 @@ import {
   patchCurrentAdminProfile,
   requireCurrentAdminProfile,
 } from "@/server/modules/admin-auth/admin-auth.service";
+import { listManagedPermissions } from "@/server/modules/admin-management/admin-management.service";
 import { resolveAdminPermissionContext } from "@/server/modules/admin-rbac/require-admin-permission";
 import { assertMutationProtection } from "@/server/security";
 
@@ -20,10 +21,15 @@ async function mapCurrentAdmin(internalAdminId: bigint) {
     resolveAdminPermissionContext(internalAdminId),
   ]);
 
-  return mapAdminProfile(
-    profile,
-    [...permissionContext.allowedPermissions].sort(),
-  );
+  // Effective set as the server enforces it: super admins hold every active
+  // permission except explicit denies, so the console can gate on this alone.
+  const effective = permissionContext.isSuperAdmin
+    ? (await listManagedPermissions())
+        .map((permission) => permission.permissionCode)
+        .filter((code) => !permissionContext.deniedPermissions.has(code))
+    : [...permissionContext.allowedPermissions];
+
+  return mapAdminProfile(profile, [...new Set(effective)].sort());
 }
 
 export const GET = withApiHandler(async (request: NextRequest, context) => {

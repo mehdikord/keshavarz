@@ -33,7 +33,7 @@ export const PUT = withApiHandler(async (request: NextRequest, context) => {
   });
   const input = await parseJsonBody(request, AdminRolesReplaceSchema);
   const admin = await replaceManagedAdminRoles({
-    actorAdminId: auth.internalAdminId,
+    actor: auth,
     adminId: params.adminId,
     roleIds: input.roleIds,
   });

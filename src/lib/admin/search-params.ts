@@ -61,3 +61,24 @@ export function buildQueryString(params: URLSearchParams): string {
   const qs = params.toString();
   return qs ? `?${qs}` : "";
 }
+
+/** Crockford base32 ULID — the format of every public ID the admin API accepts. */
+export const PUBLIC_ID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+
+/** Trim, drop inner whitespace and upper-case pasted IDs. */
+export function normalizePublicIdInput(value: string): string {
+  return value.replace(/\s+/g, "").toUpperCase();
+}
+
+/**
+ * Narrow a URL value to an allowed set; anything else (hand-edited or stale
+ * shared links) is treated as "no filter" instead of producing an API 400.
+ */
+export function readEnumParam<T extends string>(
+  value: string | null,
+  allowed: readonly T[],
+): T | null {
+  return value !== null && (allowed as readonly string[]).includes(value)
+    ? (value as T)
+    : null;
+}

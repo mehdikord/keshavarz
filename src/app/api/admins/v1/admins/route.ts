@@ -48,7 +48,7 @@ export const POST = withApiHandler(async (request: NextRequest, context) => {
   const input = await parseJsonBody(request, AdminCreateSchema);
 
   const admin = await createManagedAdmin({
-    actorAdminId: auth.internalAdminId,
+    actor: auth,
     email: input.email,
     isSuperAdmin: input.isSuperAdmin,
     name: input.name,

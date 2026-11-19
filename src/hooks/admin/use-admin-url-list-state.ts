@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import {
@@ -10,6 +10,7 @@ import {
   resetCursorParams,
   type AdminListLimit,
 } from "@/lib/admin/search-params";
+import { toLatinDigits } from "@/lib/utils/format";
 
 export function useAdminUrlListState() {
   const router = useRouter();
@@ -25,52 +26,72 @@ export function useAdminUrlListState() {
     return raw.split(",").filter(Boolean);
   }, [searchParams]);
 
-  const replaceParams = useCallback(
-    (updates: Record<string, string | null | undefined>) => {
-      const next = applySearchParamUpdates(searchParams, updates);
+  // Bumped when a navigation would leave the URL unchanged (e.g. "apply" with
+  // no filter change). Pages put it in their fetch deps so a handler that set
+  // `loading` still gets a response instead of a skeleton that never clears.
+  const [refreshToken, setRefreshToken] = useState(0);
+
+  const navigate = useCallback(
+    (next: URLSearchParams) => {
       const qs = next.toString();
+      if (qs === searchParams.toString()) {
+        setRefreshToken((value) => value + 1);
+        return;
+      }
       router.replace(qs ? `${pathname}?${qs}` : pathname);
     },
     [pathname, router, searchParams],
+  );
+
+  const replaceParams = useCallback(
+    (updates: Record<string, string | null | undefined>) => {
+      navigate(applySearchParamUpdates(searchParams, updates));
+    },
+    [navigate, searchParams],
   );
 
   const setSearch = useCallback(
     (value: string) => {
-      const next = resetCursorParams(searchParams, {
-        q: value.trim() || null,
-        stack: null,
-      });
-      const qs = next.toString();
-      router.replace(qs ? `${pathname}?${qs}` : pathname);
+      // Persian/Arabic digits so phone searches match the stored Latin digits.
+      const normalized = toLatinDigits(value).trim();
+      navigate(
+        resetCursorParams(searchParams, {
+          q: normalized || null,
+          stack: null,
+        }),
+      );
     },
-    [pathname, router, searchParams],
+    [navigate, searchParams],
   );
 
   const setFilters = useCallback(
     (updates: Record<string, string | null | undefined>) => {
-      const next = resetCursorParams(searchParams, {
-        ...updates,
-        stack: null,
-      });
-      const qs = next.toString();
-      router.replace(qs ? `${pathname}?${qs}` : pathname);
+      navigate(
+        resetCursorParams(searchParams, {
+          ...updates,
+          stack: null,
+        }),
+      );
     },
-    [pathname, router, searchParams],
+    [navigate, searchParams],
   );
 
   const setLimit = useCallback(
     (nextLimit: AdminListLimit) => {
-      const next = resetCursorParams(searchParams, {
-        limit: String(nextLimit),
-        stack: null,
-      });
-      router.replace(`${pathname}?${next.toString()}`);
+      navigate(
+        resetCursorParams(searchParams, {
+          limit: String(nextLimit),
+          stack: null,
+        }),
+      );
     },
-    [pathname, router, searchParams],
+    [navigate, searchParams],
   );
 
   const goNext = useCallback(
     (nextCursor: string) => {
+      // A fast double click would push the same cursor twice.
+      if (nextCursor === cursor) return;
       const stack = [...cursorStack, cursor ?? ""].filter(Boolean);
       replaceParams({
         cursor: nextCursor,
@@ -94,8 +115,8 @@ export function useAdminUrlListState() {
   }, [cursorStack, replaceParams]);
 
   const clearAll = useCallback(() => {
-    router.replace(pathname);
-  }, [pathname, router]);
+    navigate(new URLSearchParams());
+  }, [navigate]);
 
   return {
     clearAll,
@@ -106,6 +127,7 @@ export function useAdminUrlListState() {
     goPrevious,
     limit: limit || ADMIN_DEFAULT_LIMIT,
     q,
+    refreshToken,
     replaceParams,
     setFilters,
     setLimit,

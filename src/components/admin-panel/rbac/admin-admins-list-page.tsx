@@ -62,7 +62,7 @@ const CreateAdminFormSchema = z.object({
 });
 
 export function AdminAdminsListPage() {
-  const { can } = useAdminPermissions();
+  const { can, isSuperAdmin: actorIsSuperAdmin } = useAdminPermissions();
   const canView = can("admins.view");
   const canManage = can("admins.manage");
   const router = useRouter();
@@ -114,7 +114,7 @@ export function AdminAdminsListPage() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      if (searchDraft === urlQ) return;
+      if (searchDraft.trim() === urlQ) return;
       setLoading(true);
       setSearch(searchDraft);
     }, 300);
@@ -153,7 +153,7 @@ export function AdminAdminsListPage() {
       });
 
     return () => controller.abort();
-  }, [canView, isActive, list.cursor, list.limit, list.q, reloadKey]);
+  }, [canView, isActive, list.cursor, list.limit, list.q, list.refreshToken, reloadKey]);
 
   const chips: AdminFilterChip[] = useMemo(() => {
     const next: AdminFilterChip[] = [];
@@ -190,7 +190,7 @@ export function AdminAdminsListPage() {
             label={row.isActive ? "فعال" : "غیرفعال"}
           />
           {row.isSuperAdmin ? (
-            <AdminStatusBadge status="approved" label="Super Admin" />
+            <AdminStatusBadge status="approved" label="مدیر ارشد" />
           ) : null}
         </div>
       ),
@@ -486,8 +486,9 @@ export function AdminAdminsListPage() {
                   <p className="text-xs text-muted-foreground">حداقل ۱۲ کاراکتر</p>
                 )}
               </div>
+              {actorIsSuperAdmin ? (
               <div className="space-y-2 sm:col-span-2">
-                <Label>Super Admin</Label>
+                <Label>مدیر ارشد (دسترسی کامل)</Label>
                 <Select
                   value={createValues.isSuperAdmin ? "1" : "0"}
                   onValueChange={(value) =>
@@ -507,6 +508,7 @@ export function AdminAdminsListPage() {
                   </SelectContent>
                 </Select>
               </div>
+              ) : null}
             </div>
             <DialogFooter>
               <Button

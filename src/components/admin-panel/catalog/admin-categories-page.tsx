@@ -27,7 +27,10 @@ import {
 import { useAdminPermissions } from "@/hooks/admin/use-admin-permissions";
 import { useAdminUrlListState } from "@/hooks/admin/use-admin-url-list-state";
 import { copyPublicId, formatAdminDateTime } from "@/lib/admin/format";
-import type { AdminFilterChip } from "@/lib/admin/search-params";
+import {
+  readEnumParam,
+  type AdminFilterChip,
+} from "@/lib/admin/search-params";
 import {
   deleteAdminCategory,
   fetchAdminCategories,
@@ -40,7 +43,7 @@ export function AdminCategoriesPage() {
   const canView = can("catalog.view");
   const canManage = can("catalog.manage");
   const list = useAdminUrlListState();
-  const isActive = list.get("isActive") as "0" | "1" | null;
+  const isActive = readEnumParam(list.get("isActive"), ["0", "1"] as const);
 
   const [filterOpen, setFilterOpen] = useState(false);
   const [activeDraft, setActiveDraft] = useState(isActive ?? "all");
@@ -83,7 +86,7 @@ export function AdminCategoriesPage() {
       });
 
     return () => controller.abort();
-  }, [canView, isActive, reloadKey]);
+  }, [canView, isActive, list.refreshToken, reloadKey]);
 
   const chips: AdminFilterChip[] = useMemo(() => {
     const next: AdminFilterChip[] = [];

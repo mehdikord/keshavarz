@@ -27,7 +27,10 @@ import {
 } from "@/components/ui/select";
 import { useAdminPermissions } from "@/hooks/admin/use-admin-permissions";
 import { useAdminUrlListState } from "@/hooks/admin/use-admin-url-list-state";
-import type { AdminCursorMeta, AdminFilterChip } from "@/lib/admin/search-params";
+import {
+  readEnumParam,
+  type AdminCursorMeta, type AdminFilterChip,
+} from "@/lib/admin/search-params";
 import { copyPublicId, formatAdminDateTime } from "@/lib/admin/format";
 import {
   fetchAdminUsers,
@@ -41,7 +44,7 @@ export function AdminUsersListPage() {
   const router = useRouter();
   const list = useAdminUrlListState();
 
-  const isActive = list.get("isActive") as "0" | "1" | null;
+  const isActive = readEnumParam(list.get("isActive"), ["0", "1"] as const);
   const urlQ = list.q;
   const setSearch = list.setSearch;
   const [searchDraft, setSearchDraft] = useState(urlQ);
@@ -68,7 +71,7 @@ export function AdminUsersListPage() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      if (searchDraft === urlQ) return;
+      if (searchDraft.trim() === urlQ) return;
       setLoading(true);
       setSearch(searchDraft);
     }, 300);
@@ -108,7 +111,7 @@ export function AdminUsersListPage() {
       });
 
     return () => controller.abort();
-  }, [canView, isActive, list.cursor, list.limit, list.q, reloadKey]);
+  }, [canView, isActive, list.cursor, list.limit, list.q, list.refreshToken, reloadKey]);
 
   const chips: AdminFilterChip[] = useMemo(() => {
     const next: AdminFilterChip[] = [];

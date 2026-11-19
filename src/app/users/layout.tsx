@@ -1,5 +1,13 @@
+import type { Viewport } from "next";
+
 import { ConsumerDock } from "@/components/consumer-panel/consumer-dock";
 import { AuthGuard } from "@/components/shared/auth-guard";
+import { STATUS_BAR_COLORS } from "@/lib/pwa/config";
+
+/** Status bar blends into the golden harvest hero. */
+export const viewport: Viewport = {
+  themeColor: STATUS_BAR_COLORS.harvest,
+};
 
 export default function UsersLayout({
   children,

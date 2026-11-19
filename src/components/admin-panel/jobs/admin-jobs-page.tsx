@@ -10,6 +10,7 @@ import {
   AdminForbidden,
   AdminPageHeader,
   AdminSectionCard,
+  AdminStatusBadge,
   type AdminDataTableColumn,
 } from "@/components/admin-panel";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useAdminPermissions } from "@/hooks/admin/use-admin-permissions";
 import { formatAdminDateTime } from "@/lib/admin/format";
 import {
+  ADMIN_JOB_LABELS,
   ADMIN_JOB_NAMES,
   fetchNotificationDeadLetters,
   fetchPaymentDeadLetters,
@@ -24,6 +26,7 @@ import {
   replayPaymentDeadLetter,
   runAdminJobs,
   type AdminJobName,
+  type JobRunOutcome,
   type NotificationDeadLetter,
   type PaymentDeadLetter,
 } from "@/lib/api/admin-jobs";
@@ -56,6 +59,13 @@ export function AdminJobsPage() {
   const [runConfirmOpen, setRunConfirmOpen] = useState(false);
   const [running, setRunning] = useState(false);
   const [lastRun, setLastRun] = useState<string | null>(null);
+  const [lastResults, setLastResults] = useState<
+    Array<[string, JobRunOutcome]>
+  >([]);
+  const [paymentsError, setPaymentsError] = useState<string | null>(null);
+  const [notificationsError, setNotificationsError] = useState<string | null>(
+    null,
+  );
 
   const [replayTarget, setReplayTarget] = useState<
     | { kind: "payment"; id: string }
@@ -69,14 +79,18 @@ export function AdminJobsPage() {
     const controller = new AbortController();
     void fetchPaymentDeadLetters(controller.signal)
       .then((items) => {
-        if (!controller.signal.aborted) setPaymentItems(items);
+        if (controller.signal.aborted) return;
+        setPaymentItems(items);
+        setPaymentsError(null);
       })
       .catch((cause: unknown) => {
         if (controller.signal.aborted) return;
-        toast.error(
+        // Show the failure in the table, not as an "empty queue".
+        setPaymentItems([]);
+        setPaymentsError(
           isApiClientError(cause)
             ? cause.message
-            : "بارگذاری dead-letter پرداخت ناموفق بود.",
+            : "بارگذاری صف خطای پرداخت ناموفق بود.",
         );
       })
       .finally(() => {
@@ -90,14 +104,17 @@ export function AdminJobsPage() {
     const controller = new AbortController();
     void fetchNotificationDeadLetters(controller.signal)
       .then((items) => {
-        if (!controller.signal.aborted) setNotificationItems(items);
+        if (controller.signal.aborted) return;
+        setNotificationItems(items);
+        setNotificationsError(null);
       })
       .catch((cause: unknown) => {
         if (controller.signal.aborted) return;
-        toast.error(
+        setNotificationItems([]);
+        setNotificationsError(
           isApiClientError(cause)
             ? cause.message
-            : "بارگذاری dead-letter اعلان ناموفق بود.",
+            : "بارگذاری صف خطای اعلان ناموفق بود.",
         );
       })
       .finally(() => {
@@ -144,7 +161,7 @@ export function AdminJobsPage() {
             className="rounded-lg"
             onClick={() => setReplayTarget({ kind: "payment", id: row.id })}
           >
-            Replay
+            ارسال دوباره
           </Button>
         ) : null,
     },
@@ -206,7 +223,7 @@ export function AdminJobsPage() {
               setReplayTarget({ kind: "notification", id: row.deliveryId })
             }
           >
-            Replay
+            ارسال دوباره
           </Button>
         ) : null,
     },
@@ -233,7 +250,21 @@ export function AdminJobsPage() {
     try {
       const result = await runAdminJobs(selectedJobs);
       setLastRun(result.ranAt);
-      toast.success("اجرای jobها تمام شد.");
+      const outcomes = Object.entries(result.jobs);
+      setLastResults(outcomes);
+      const failed = outcomes.filter(([, outcome]) => !outcome.ok);
+      const skipped = outcomes.filter(([, outcome]) => outcome.ok && outcome.skipped);
+      if (failed.length > 0) {
+        toast.error(
+          `${failed.length.toLocaleString("fa-IR")} کار با خطا مواجه شد. جزئیات را در نتیجه اجرا ببینید.`,
+        );
+      } else if (skipped.length > 0) {
+        toast.warning(
+          `اجرا تمام شد؛ ${skipped.length.toLocaleString("fa-IR")} کار رد شد (در حال اجرا توسط سرویس دیگر).`,
+        );
+      } else {
+        toast.success("همه کارها با موفقیت اجرا شدند.");
+      }
       setRunConfirmOpen(false);
       setPaymentsLoading(canViewPayments);
       setNotificationsLoading(canViewNotifications);
@@ -275,8 +306,8 @@ export function AdminJobsPage() {
   return (
     <div className="space-y-4 animate-fade-in">
       <AdminPageHeader
-        title="Jobs و Dead letters"
-        description="مانیتورینگ صف خطا و اجرای کنترل‌شده jobهای پس‌زمینه."
+        title="کارهای زمان‌بندی‌شده"
+        description="پایش صف‌های خطا و اجرای کنترل‌شده کارهای پس‌زمینه."
         actions={
           <Button
             type="button"
@@ -300,7 +331,7 @@ export function AdminJobsPage() {
             <div>
               <h2 className="text-sm font-semibold">اجرای Job</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                نیاز به تأیید صریح دارد · مجوز settings.manage
+                اجرای دستی کارهای پس‌زمینه؛ پیش از اجرا تأیید گرفته می‌شود.
               </p>
               {lastRun ? (
                 <p className="mt-1 text-xs text-muted-foreground">
@@ -327,7 +358,7 @@ export function AdminJobsPage() {
                   toggleJob("all", checked === true)
                 }
               />
-              all
+              {ADMIN_JOB_LABELS.all}
             </label>
             {RUNNABLE_JOBS.map((name) => (
               <label key={name} className="flex items-center gap-2 text-sm">
@@ -340,10 +371,37 @@ export function AdminJobsPage() {
                     toggleJob(name, checked === true)
                   }
                 />
-                <span className="font-mono text-xs">{name}</span>
+                <span>{ADMIN_JOB_LABELS[name]}</span>
               </label>
             ))}
           </div>
+
+          {lastResults.length > 0 ? (
+            <ul className="mt-4 divide-y divide-[var(--admin-border)] rounded-lg border border-[var(--admin-border)]">
+              {lastResults.map(([name, outcome]) => (
+                <li key={name} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
+                  <AdminStatusBadge
+                    status={!outcome.ok ? "failed" : outcome.skipped ? "skipped" : "succeeded"}
+                    label={!outcome.ok ? "خطا" : outcome.skipped ? "ردشده" : "موفق"}
+                  />
+                  <span className="font-medium">
+                    {ADMIN_JOB_LABELS[name as AdminJobName] ?? name}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {(outcome.durationMs / 1000).toLocaleString("fa-IR", {
+                      maximumFractionDigits: 1,
+                    })}{" "}
+                    ثانیه
+                  </span>
+                  {outcome.error ? (
+                    <span className="w-full font-mono text-xs text-destructive" dir="ltr">
+                      {outcome.error}
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </AdminSectionCard>
       ) : null}
 
@@ -352,11 +410,16 @@ export function AdminJobsPage() {
           <AdminSectionCard>
             <div className="mb-3 flex items-center gap-2">
               <CreditCard className="size-4 text-primary" />
-              <h3 className="text-sm font-semibold">Dead letters · Payments</h3>
+              <h3 className="text-sm font-semibold">صف خطای پرداخت</h3>
             </div>
             <AdminDataTable
               columns={paymentColumns}
               emptyTitle="صف پرداخت خالی است."
+              error={paymentsError ? { message: paymentsError } : null}
+              onRetry={() => {
+                setPaymentsLoading(true);
+                setReloadKey((value) => value + 1);
+              }}
               getRowId={(row) => row.id}
               loading={paymentsLoading}
               rows={paymentItems}
@@ -369,13 +432,16 @@ export function AdminJobsPage() {
           <AdminSectionCard>
             <div className="mb-3 flex items-center gap-2">
               <Bell className="size-4 text-primary" />
-              <h3 className="text-sm font-semibold">
-                Dead letters · Notifications
-              </h3>
+              <h3 className="text-sm font-semibold">صف خطای اعلان</h3>
             </div>
             <AdminDataTable
               columns={notificationColumns}
               emptyTitle="صف اعلان خالی است."
+              error={notificationsError ? { message: notificationsError } : null}
+              onRetry={() => {
+                setNotificationsLoading(true);
+                setReloadKey((value) => value + 1);
+              }}
               getRowId={(row) => row.deliveryId}
               loading={notificationsLoading}
               rows={notificationItems}
@@ -388,8 +454,8 @@ export function AdminJobsPage() {
       <AdminConfirmDialog
         open={runConfirmOpen}
         onOpenChange={setRunConfirmOpen}
-        title="تأیید اجرای Job"
-        description={`Jobهای انتخاب‌شده اجرا می‌شوند: ${selectedJobs.join(", ")}`}
+        title="تأیید اجرای کارها"
+        description={`این کارها اجرا می‌شوند: ${selectedJobs.map((name) => ADMIN_JOB_LABELS[name]).join("، ")}`}
         confirmLabel="اجرا"
         loading={running}
         onConfirm={() => void onRunJobs()}
@@ -400,7 +466,7 @@ export function AdminJobsPage() {
         onOpenChange={(open) => {
           if (!open) setReplayTarget(null);
         }}
-        title="تأیید Replay"
+        title="تأیید ارسال دوباره"
         description={
           replayTarget
             ? `Replay برای ${replayTarget.kind} · ${replayTarget.id}`

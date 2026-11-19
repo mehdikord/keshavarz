@@ -7,6 +7,7 @@ import { PanelLeftClose, PanelLeftOpen, Sprout, X } from "lucide-react";
 import {
   ADMIN_NAV_GROUPS,
   isAdminNavActive,
+  isAdminNavItemAllowed,
 } from "@/components/admin-panel/shell/admin-nav";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -35,7 +36,7 @@ export function AdminSidebar() {
     () =>
       ADMIN_NAV_GROUPS.map((group) => ({
         ...group,
-        items: group.items.filter((item) => can(item.permission)),
+        items: group.items.filter((item) => isAdminNavItemAllowed(item, can)),
       })).filter((group) => group.items.length > 0),
     [can],
   );

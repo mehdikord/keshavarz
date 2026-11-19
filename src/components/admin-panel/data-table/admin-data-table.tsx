@@ -165,7 +165,30 @@ export function AdminDataTable<T>({
                         ? "bg-primary/5"
                         : "hover:bg-[var(--admin-row-hover)]",
                     )}
-                    onClick={() => onRowClick?.(row)}
+                    onClick={(event) => {
+                      if (!onRowClick) return;
+                      // Let links, buttons and inputs inside a cell do their
+                      // own thing instead of also opening the row.
+                      const target = event.target as HTMLElement;
+                      if (target.closest("a,button,input,select,textarea,label,[role=checkbox]")) {
+                        return;
+                      }
+                      // Don't hijack text selection.
+                      if (window.getSelection()?.toString()) return;
+                      onRowClick(row);
+                    }}
+                    onKeyDown={
+                      onRowClick
+                        ? (event) => {
+                            if (event.target !== event.currentTarget) return;
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              onRowClick(row);
+                            }
+                          }
+                        : undefined
+                    }
+                    tabIndex={onRowClick ? 0 : undefined}
                   >
                     {visibleColumns.map((column) => (
                       <TableCell

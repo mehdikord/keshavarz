@@ -811,24 +811,37 @@ export async function refundPaymentByAdmin(input: {
         );
       }
 
-      const refunded = await sumRefundedAmountToman(payment.id);
-      const remaining = payment.amountToman - refunded;
       const requested = BigInt(input.amountToman);
-
-      if (requested > remaining) {
-        throw new ApiError(
-          400,
-          API_ERROR_CODES.validationFailed,
-          "مبلغ refund از مانده قابل استرداد بیشتر است.",
-        );
-      }
-
       const now = systemClock.now();
-      const paymentStatus =
-        requested === remaining ? "refunded" : "partially_refunded";
 
       try {
-        const refund = await runInTransaction(async (transaction) => {
+        const { paymentStatus, refund } = await runInTransaction(async (transaction) => {
+          // Lock the payment row so concurrent refunds serialise and cannot
+          // together exceed the refundable remainder.
+          const locked = await lockPaymentForActivation(transaction, payment.id);
+          if (
+            !locked ||
+            (locked.status !== "paid" && locked.status !== "partially_refunded")
+          ) {
+            throw new ApiError(
+              409,
+              API_ERROR_CODES.conflict,
+              "وضعیت پرداخت برای refund معتبر نیست.",
+            );
+          }
+
+          const refunded = await sumRefundedAmountToman(payment.id, transaction);
+          const remaining = locked.amountToman - refunded;
+          if (requested > remaining) {
+            throw new ApiError(
+              400,
+              API_ERROR_CODES.validationFailed,
+              "مبلغ refund از مانده قابل استرداد بیشتر است.",
+            );
+          }
+
+          const nextStatus =
+            requested === remaining ? "refunded" : "partially_refunded";
           const created = await createRefund(transaction, {
             adminId: input.adminId,
             amountToman: requested,
@@ -838,10 +851,10 @@ export async function refundPaymentByAdmin(input: {
           await processRefundSuccess(transaction, {
             now,
             paymentId: payment.id,
-            paymentStatus,
+            paymentStatus: nextStatus,
             refundId: created.id,
           });
-          return created;
+          return { paymentStatus: nextStatus, refund: created };
         });
 
         return {
@@ -853,6 +866,7 @@ export async function refundPaymentByAdmin(input: {
           }),
         };
       } catch (error) {
+        if (error instanceof ApiError) throw error;
         throw (
           mapPrismaError(error) ??
           new ApiError(

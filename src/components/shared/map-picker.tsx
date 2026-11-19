@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState } from "react";
-import type { Map as LeafletMap } from "leaflet";
 import {
   Check,
   Crosshair,
@@ -13,7 +12,11 @@ import {
   X,
 } from "lucide-react";
 
-import { MapControlButton, ParsimapMap } from "@/components/shared/parsimap-map";
+import {
+  MapControlButton,
+  NeshanMap,
+  type NeshanMapInstance,
+} from "@/components/shared/neshan-map";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -23,7 +26,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { DEFAULT_MAP_CENTER } from "@/lib/maps/defaults";
-import { normalizeLocation } from "@/lib/maps/parsimap";
+import { normalizeLocation } from "@/lib/maps/neshan";
 import { cn } from "@/lib/utils";
 import { toPersianDigits } from "@/lib/utils/format";
 import type { GeoLocation } from "@/types";
@@ -114,13 +117,13 @@ export function MapPicker({
   const [fullscreen, setFullscreen] = useState(false);
   const [fullscreenCenter, setFullscreenCenter] =
     useState<GeoLocation>(DEFAULT_MAP_CENTER);
-  const inlineMapRef = useRef<LeafletMap | null>(null);
-  const fullscreenMapRef = useRef<LeafletMap | null>(null);
+  const inlineMapRef = useRef<NeshanMapInstance | null>(null);
+  const fullscreenMapRef = useRef<NeshanMapInstance | null>(null);
   const { locate, locating, error } = useCurrentPosition((location) =>
     onChange?.(location),
   );
 
-  const selectCenter = (map: LeafletMap | null) => {
+  const selectCenter = (map: NeshanMapInstance | null) => {
     if (!map) return;
     const point = map.getCenter();
     onChange?.(normalizeLocation(point.lat, point.lng));
@@ -149,7 +152,7 @@ export function MapPicker({
   return (
     <div className={cn("space-y-2.5", className)}>
       <div className="relative isolate overflow-hidden rounded-3xl border border-border shadow-sm">
-        <ParsimapMap
+        <NeshanMap
           center={value ?? DEFAULT_MAP_CENTER}
           value={value}
           onChange={onChange}
@@ -225,7 +228,7 @@ export function MapPicker({
 
             <div className="relative min-h-0 flex-1">
               {fullscreen ? (
-                <ParsimapMap
+                <NeshanMap
                   center={value ?? fullscreenCenter}
                   value={value}
                   onChange={onChange}
@@ -263,7 +266,7 @@ export function MapPicker({
   );
 }
 
-function inlineCenter(map: LeafletMap | null): GeoLocation {
+function inlineCenter(map: NeshanMapInstance | null): GeoLocation {
   if (!map) return DEFAULT_MAP_CENTER;
   const point = map.getCenter();
   return normalizeLocation(point.lat, point.lng);

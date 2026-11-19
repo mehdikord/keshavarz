@@ -102,7 +102,7 @@ export function AdminRefundsListPage() {
       });
 
     return () => controller.abort();
-  }, [canView, list.cursor, list.limit, reloadKey, status]);
+  }, [canView, list.cursor, list.limit, list.refreshToken, reloadKey, status]);
 
   const chips: AdminFilterChip[] = useMemo(() => {
     if (!status) return [];

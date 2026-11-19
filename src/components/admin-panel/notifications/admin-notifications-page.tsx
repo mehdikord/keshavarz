@@ -130,7 +130,7 @@ export function AdminNotificationsPage() {
       });
 
     return () => controller.abort();
-  }, [canView, list.cursor, list.limit, recipientType, reloadKey, type]);
+  }, [canView, list.cursor, list.limit, recipientType, list.refreshToken, reloadKey, type]);
 
   const chips: AdminFilterChip[] = useMemo(() => {
     const next: AdminFilterChip[] = [];

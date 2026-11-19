@@ -357,6 +357,18 @@ describe.sequential("phase 08 request lifecycle", () => {
     });
     expect(links.filter((link) => link.status === "accepted")).toHaveLength(1);
     expect(links.filter((link) => link.status === "removed")).toHaveLength(1);
+
+    // The provider who lost the race is told why, without any request data.
+    const winnerIsP1 = results[0]?.status === "fulfilled";
+    const [winner, loser] = winnerIsP1 ? [p1, p2] : [p2, p1];
+    const loserView = await getProviderServiceRequest(loser.user.id, created.requestId).catch(
+      (error: unknown) => error,
+    );
+    expect(loserView).toBeInstanceOf(ApiError);
+    expect(loserView).toMatchObject({ code: "REQUEST_ALREADY_ACCEPTED", status: 409 });
+
+    const winnerView = await getProviderServiceRequest(winner.user.id, created.requestId);
+    expect(winnerView.isAssigned).toBe(true);
   });
 
   it("rejects without changing parent status and completes only by consumer", async () => {

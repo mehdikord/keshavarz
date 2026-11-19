@@ -1,5 +1,7 @@
 "use client";
 
+import { AdminSessionKeeper } from "@/components/admin-panel/auth/admin-session-keeper";
+import { AdminCommandPalette } from "@/components/admin-panel/shell/admin-command-palette";
 import { AdminSidebar } from "@/components/admin-panel/shell/admin-sidebar";
 import { AdminTopbar } from "@/components/admin-panel/shell/admin-topbar";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -30,6 +32,8 @@ export function AdminShell({ children }: AdminShellProps) {
           <AdminTopbar />
           <main className="flex-1 px-4 py-5 lg:px-6 lg:py-6">{children}</main>
         </div>
+        <AdminCommandPalette />
+        <AdminSessionKeeper />
       </div>
     </TooltipProvider>
   );

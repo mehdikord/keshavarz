@@ -15,6 +15,17 @@ export const ADMIN_JOB_NAMES = [
 
 export type AdminJobName = (typeof ADMIN_JOB_NAMES)[number];
 
+export const ADMIN_JOB_LABELS: Record<AdminJobName, string> = {
+  "app-auth-cleanup": "پاک‌سازی نشست‌ها و کدهای ورود",
+  "subscription-expiration": "انقضای اشتراک‌ها",
+  "payment-reconciliation": "تطبیق پرداخت‌ها",
+  "payment-dead-letter-drain": "پردازش صف خطای پرداخت",
+  "notification-deliveries": "ارسال اعلان‌ها",
+  "export-cleanup": "پاک‌سازی خروجی‌های منقضی",
+  "rbac-expiry": "انقضای استثناهای دسترسی",
+  all: "همه",
+};
+
 export const PaymentDeadLetterSchema = z
   .object({
     attempts: z.number().int(),
@@ -41,9 +52,22 @@ export const NotificationDeadLetterSchema = z
 export type PaymentDeadLetter = z.infer<typeof PaymentDeadLetterSchema>;
 export type NotificationDeadLetter = z.infer<typeof NotificationDeadLetterSchema>;
 
+export const JobRunOutcomeSchema = z
+  .object({
+    durationMs: z.number(),
+    error: z.string().optional(),
+    ok: z.boolean(),
+    reason: z.string().optional(),
+    runId: z.string().optional(),
+    skipped: z.boolean().optional(),
+  })
+  .passthrough();
+
+export type JobRunOutcome = z.infer<typeof JobRunOutcomeSchema>;
+
 const JobsRunResultSchema = z
   .object({
-    jobs: z.record(z.string(), z.unknown()),
+    jobs: z.record(z.string(), JobRunOutcomeSchema),
     ranAt: z.string(),
   })
   .strict();

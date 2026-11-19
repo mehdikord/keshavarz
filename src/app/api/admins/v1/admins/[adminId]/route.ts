@@ -50,7 +50,7 @@ export const PATCH = withApiHandler(async (request: NextRequest, context) => {
   });
   const input = await parseJsonBody(request, AdminUpdateSchema);
   const oldAdmin = await getManagedAdmin(params.adminId);
-  const admin = await updateManagedAdmin(params.adminId, input);
+  const admin = await updateManagedAdmin(auth, params.adminId, input);
 
   await writeAdminAuditLog({
     action: "admin_update",

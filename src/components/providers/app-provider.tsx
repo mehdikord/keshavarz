@@ -6,6 +6,7 @@ import { AnimatePresence, MotionConfig } from "framer-motion";
 
 import { AppSplash } from "@/components/shared/app-splash";
 import { useInitializeApp } from "@/hooks/use-initialize-app";
+import { useSplashStore } from "@/stores/splash-store";
 
 interface AppProviderProps {
   children: React.ReactNode;
@@ -31,6 +32,10 @@ export function AppProvider({ children }: AppProviderProps) {
   }, []);
 
   const showSplash = !isAdmin && (!ready || !introDone);
+
+  useEffect(() => {
+    useSplashStore.getState().setVisible(showSplash);
+  }, [showSplash]);
 
   return (
     <>

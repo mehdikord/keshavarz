@@ -36,7 +36,7 @@ export const PUT = withApiHandler(async (request: NextRequest, context) => {
     AdminPermissionOverridesReplaceSchema,
   );
   const admin = await replaceManagedAdminPermissionOverrides({
-    actorAdminId: auth.internalAdminId,
+    actor: auth,
     adminId: params.adminId,
     overrides: input.overrides,
   });

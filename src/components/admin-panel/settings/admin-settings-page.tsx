@@ -40,6 +40,7 @@ import {
   type AdminSettingValueType,
 } from "@/lib/api/admin-settings";
 import { isApiClientError } from "@/lib/api/envelope";
+import { toLatinDigits } from "@/lib/utils/format";
 
 function formatSettingValue(setting: AdminSetting): string {
   if (setting.valueType === "json") {
@@ -63,9 +64,14 @@ function parseDraftValue(
     case "string":
       return raw;
     case "integer": {
-      const n = Number(raw);
-      if (!Number.isInteger(n) || !Number.isSafeInteger(n)) {
+      const normalized = toLatinDigits(raw).trim();
+      // Number("") is 0 — an empty field must not silently save zero.
+      if (!/^-?\d+$/.test(normalized)) {
         throw new Error("مقدار باید عدد صحیح معتبر باشد.");
+      }
+      const n = Number(normalized);
+      if (!Number.isSafeInteger(n)) {
+        throw new Error("عدد واردشده خارج از محدوده مجاز است.");
       }
       return n;
     }
@@ -73,8 +79,18 @@ function parseDraftValue(
       if (raw === "true") return true;
       if (raw === "false") return false;
       throw new Error("مقدار boolean باید true یا false باشد.");
-    case "json":
-      return JSON.parse(raw) as unknown;
+    case "json": {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw) as unknown;
+      } catch {
+        throw new Error("JSON معتبر نیست. ساختار و ویرگول‌ها را بررسی کنید.");
+      }
+      if (parsed === null) {
+        throw new Error("مقدار JSON نمی‌تواند null باشد.");
+      }
+      return parsed;
+    }
     default:
       return raw;
   }
@@ -113,8 +129,8 @@ export function AdminSettingsPage() {
         const message = isApiClientError(cause)
           ? cause.message
           : "بارگذاری تنظیمات ناموفق بود.";
+        setItems([]);
         setError(message);
-        toast.error(message);
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
@@ -266,11 +282,14 @@ export function AdminSettingsPage() {
           </Select>
         </div>
 
-        {error ? <p className="mb-3 text-sm text-destructive">{error}</p> : null}
-
         <AdminDataTable
           columns={columns}
           emptyTitle="تنظیمی یافت نشد."
+          error={error ? { message: error } : null}
+          onRetry={() => {
+            setLoading(true);
+            setReloadKey((value) => value + 1);
+          }}
           getRowId={(row) => `${row.group}.${row.key}`}
           loading={loading}
           rows={filtered}
@@ -280,7 +299,7 @@ export function AdminSettingsPage() {
       <Dialog
         open={Boolean(editing)}
         onOpenChange={(open) => {
-          if (!open) setEditing(null);
+          if (!open && !saving) setEditing(null);
         }}
       >
         <DialogContent className="sm:max-w-lg">
@@ -293,8 +312,10 @@ export function AdminSettingsPage() {
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label>نوع مقدار</Label>
+              {/* Code reading an existing key relies on its type; keep it fixed. */}
               <Select
                 value={draftType}
+                disabled
                 onValueChange={(value) =>
                   setDraftType(value as AdminSettingValueType)
                 }
@@ -326,8 +347,8 @@ export function AdminSettingsPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="true">true</SelectItem>
-                    <SelectItem value="false">false</SelectItem>
+                    <SelectItem value="true">بله (true)</SelectItem>
+                    <SelectItem value="false">خیر (false)</SelectItem>
                   </SelectContent>
                 </Select>
               ) : (
@@ -362,6 +383,12 @@ export function AdminSettingsPage() {
                   <SelectItem value="internal">داخلی</SelectItem>
                 </SelectContent>
               </Select>
+              {editing && !editing.isPublic && draftIsPublic ? (
+                <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  با ذخیره، مقدار این تنظیم بدون نیاز به ورود از طریق API عمومی برای همه
+                  قابل مشاهده می‌شود. از نبودن اطلاعات محرمانه در آن مطمئن شوید.
+                </p>
+              ) : null}
             </div>
           </div>
 
@@ -381,7 +408,11 @@ export function AdminSettingsPage() {
               onClick={() => void onSave()}
               disabled={saving}
             >
-              ذخیره
+              {saving
+                ? "در حال ذخیره..."
+                : editing && !editing.isPublic && draftIsPublic
+                  ? "ذخیره و انتشار عمومی"
+                  : "ذخیره"}
             </Button>
           </DialogFooter>
         </DialogContent>

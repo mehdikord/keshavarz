@@ -29,7 +29,12 @@ export function AdminLoginForm({ nextPath = "/admins" }: AdminLoginFormProps) {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const safeNext = useMemo(() => {
-    if (!nextPath.startsWith("/admins")) return "/admins";
+    // Same-origin console paths only.
+    const isConsolePath =
+      nextPath === "/admins" || /^\/admins[/?#]/.test(nextPath);
+    if (!isConsolePath || nextPath.includes("//") || nextPath.includes("\\")) {
+      return "/admins";
+    }
     if (nextPath.startsWith("/admins/login")) return "/admins";
     return nextPath;
   }, [nextPath]);

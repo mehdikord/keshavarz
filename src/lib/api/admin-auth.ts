@@ -64,3 +64,52 @@ export async function logoutAllAdminSessions(): Promise<void> {
 export async function refreshAdminSession(): Promise<void> {
   await adminApi.post("/auth/session/refresh", {});
 }
+
+export async function logoutOtherAdminSessions(): Promise<number> {
+  const result = await adminApi.delete<{ revokedCount: number }>("/auth/sessions", {
+    query: { scope: "others" },
+  });
+  return result.data.revokedCount;
+}
+
+export const AdminSessionInfoSchema = z
+  .object({
+    absoluteLifetimeSeconds: z.number().int().positive(),
+    createdAt: z.string().min(1),
+    expiresAt: z.string().min(1),
+    idleTimeoutSeconds: z.number().int().positive(),
+    lastActivityAt: z.string().min(1),
+    refreshWindowSeconds: z.number().int().positive(),
+    serverTime: z.string().min(1),
+  })
+  .strict();
+
+export type AdminSessionInfo = z.infer<typeof AdminSessionInfoSchema>;
+
+export async function fetchAdminSessionInfo(): Promise<AdminSessionInfo> {
+  const result = await adminApi.get<unknown>("/auth/session");
+  return AdminSessionInfoSchema.parse(result.data);
+}
+
+export const AdminDeviceSessionSchema = z
+  .object({
+    createdAt: z.string().min(1),
+    current: z.boolean(),
+    expiresAt: z.string().min(1),
+    ipAddress: z.string().nullable(),
+    lastActivityAt: z.string().min(1),
+    sessionId: z.string().min(1),
+    userAgent: z.string().nullable(),
+  })
+  .strict();
+
+export type AdminDeviceSession = z.infer<typeof AdminDeviceSessionSchema>;
+
+export async function listAdminDeviceSessions(): Promise<AdminDeviceSession[]> {
+  const result = await adminApi.get<unknown>("/auth/sessions");
+  return z.array(AdminDeviceSessionSchema).parse(result.data);
+}
+
+export async function revokeAdminDeviceSession(sessionId: string): Promise<void> {
+  await adminApi.delete(`/auth/sessions/${encodeURIComponent(sessionId)}`);
+}

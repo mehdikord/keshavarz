@@ -231,9 +231,10 @@ describe.sequential("phase 11 reports and exports", () => {
   });
 
   it("creates async export and becomes ready without blocking create", async () => {
+    const ownerPublicId = createPublicId();
     const created = await createAdminExport({
       adminId: BigInt(1),
-      adminPublicId: createPublicId(),
+      adminPublicId: ownerPublicId,
       domain: "reports",
       filters: {},
     });
@@ -242,8 +243,17 @@ describe.sequential("phase 11 reports and exports", () => {
 
     await processExportJob(created.exportId);
 
+    // Another admin must not be able to read (or mint a download link for)
+    // someone else's export.
+    await expect(
+      getAdminExport({
+        adminPublicId: createPublicId(),
+        exportId: created.exportId,
+      }),
+    ).rejects.toMatchObject({ status: 404 });
+
     const status = await getAdminExport({
-      adminPublicId: createPublicId(),
+      adminPublicId: ownerPublicId,
       exportId: created.exportId,
     });
     expect(status.status).toBe("ready");

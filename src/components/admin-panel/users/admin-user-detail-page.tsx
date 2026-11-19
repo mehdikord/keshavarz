@@ -135,11 +135,29 @@ export function AdminUserDetailPage({ userId }: AdminUserDetailPageProps) {
     <div className="space-y-4 animate-fade-in">
       <AdminPageHeader
         title={user.name}
-        description="جزئیات کاربر، ویرایش فیلدهای مجاز و timeline moderation."
+        description="جزئیات کاربر، ویرایش فیلدهای مجاز و سابقه اقدامات انضباطی."
         actions={
-          <Button asChild variant="outline" size="sm">
-            <Link href="/admins/users">بازگشت به فهرست</Link>
-          </Button>
+          <>
+            {can("requests.view") ? (
+              <Button asChild variant="outline" size="sm">
+                <Link
+                  href={`/admins/service-requests?consumerUserId=${encodeURIComponent(user.userId)}`}
+                >
+                  درخواست‌های این کاربر
+                </Link>
+              </Button>
+            ) : null}
+            {can("payments.view") ? (
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/admins/payments?userId=${encodeURIComponent(user.userId)}`}>
+                  پرداخت‌ها
+                </Link>
+              </Button>
+            ) : null}
+            <Button asChild variant="outline" size="sm">
+              <Link href="/admins/users">بازگشت به فهرست</Link>
+            </Button>
+          </>
         }
       />
 
@@ -263,14 +281,32 @@ export function AdminUserDetailPage({ userId }: AdminUserDetailPageProps) {
                     className="rounded-lg border border-[var(--admin-border)] bg-[var(--admin-canvas)]/50 px-3 py-3"
                   >
                     <div className="flex flex-wrap items-center gap-2">
-                      <AdminStatusBadge status="pending" label={item.action} />
+                      <AdminStatusBadge status={item.action} />
                       <span className="text-xs text-muted-foreground">
                         {formatAdminDateTime(item.createdAt)}
                       </span>
+                      {item.endsAt ? (
+                        <span className="text-xs text-muted-foreground">
+                          · تا {formatAdminDateTime(item.endsAt)}
+                        </span>
+                      ) : null}
                     </div>
                     <p className="mt-2 text-sm text-foreground">{item.reason}</p>
-                    <p className="mt-1 font-mono text-[11px] text-muted-foreground" dir="ltr">
-                      by {item.adminId}
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      ثبت توسط{" "}
+                      {can("admins.view") ? (
+                        <Link
+                          href={`/admins/admins/${item.adminId}`}
+                          className="font-mono underline-offset-2 hover:underline"
+                          dir="ltr"
+                        >
+                          {item.adminId}
+                        </Link>
+                      ) : (
+                        <span className="font-mono" dir="ltr">
+                          {item.adminId}
+                        </span>
+                      )}
                     </p>
                   </li>
                 ))}

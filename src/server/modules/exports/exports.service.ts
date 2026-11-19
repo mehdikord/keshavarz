@@ -119,7 +119,9 @@ export async function getAdminExport(input: {
   exportId: string;
 }) {
   const job = getExportJob(input.exportId);
-  if (!job) {
+  // Exports can contain personal data; only the admin who requested one may
+  // see it or mint a download link (404 so IDs can't be probed).
+  if (!job || job.adminPublicId !== input.adminPublicId) {
     throw new ApiError(404, API_ERROR_CODES.notFound, "خروجی یافت نشد.");
   }
   if (job.expiresAt <= systemClock.now()) {
@@ -133,7 +135,12 @@ export function getExportFilePathForDownload(input: {
   exportId: string;
 }): { fileName: string; filePath: string } {
   const job = getExportJob(input.exportId);
-  if (!job || !job.filePath || job.status !== "ready") {
+  if (
+    !job ||
+    job.adminPublicId !== input.adminPublicId ||
+    !job.filePath ||
+    job.status !== "ready"
+  ) {
     throw new ApiError(404, API_ERROR_CODES.notFound, "فایل خروجی آماده نیست.");
   }
   if (job.expiresAt <= systemClock.now()) {

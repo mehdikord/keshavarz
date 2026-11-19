@@ -54,13 +54,12 @@ export async function fetchAdminAuditLogs(input: {
     },
     signal: input.signal,
   });
-  const parsed = z
-    .object({
-      items: z.array(AdminAuditLogSchema),
-      meta: CursorMetaSchema,
-    })
-    .parse(result.data);
-  return parsed;
+  // Rows live under `data.auditLogs`; pagination is in the envelope `meta`.
+  const data = z.object({ auditLogs: z.array(AdminAuditLogSchema) }).parse(result.data);
+  return {
+    items: data.auditLogs,
+    meta: CursorMetaSchema.parse(result.meta),
+  };
 }
 
 export async function fetchAdminAuditLog(

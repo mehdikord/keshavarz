@@ -1,16 +1,20 @@
-<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#2D6A4F"/>
-      <stop offset="50%" stop-color="#40916C"/>
-      <stop offset="100%" stop-color="#95D5B2"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#1f5a40"/>
+      <stop offset="0.55" stop-color="#0f3324"/>
+      <stop offset="1" stop-color="#071d14"/>
     </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.3" r="0.55">
+      <stop offset="0" stop-color="rgba(255,214,140,0.16)"/>
+      <stop offset="1" stop-color="rgba(255,214,140,0)"/>
+    </radialGradient>
   </defs>
   <rect width="512" height="512" rx="112" fill="url(#bg)"/>
-  <g fill="none" stroke="#FFFFFF" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M256 120 C256 120 200 180 200 240 C200 280 224 300 256 300 C288 300 312 280 312 240 C312 180 256 120 256 120Z"/>
-    <path d="M256 300 L256 380"/>
-    <path d="M220 380 L292 380"/>
-    <path d="M180 200 Q256 160 332 200"/>
-  </g>
-</svg>
+  <rect width="512" height="512" rx="112" fill="url(#glow)"/>
+  <g transform="translate(256 261.12) scale(4.5) translate(-60 -65.5)">
+    <ellipse cx="60" cy="94" rx="30" ry="5" fill="rgba(216,243,220,0.25)"/>
+    <path d="M60 92 C 60 78 59 66 60 48" fill="none" stroke="#d8f3dc" stroke-width="5" stroke-linecap="round"/>
+    <path d="M59.5 68 C 46 67 37 57 38 44 C 51 45 59.5 54 59.5 68Z" fill="#74c69d"/>
+    <path d="M60.5 58 C 74 57 83 46 82 32 C 69 34 60.5 43 60.5 58Z" fill="#b7e4c7"/>
+  </g></svg>

@@ -111,7 +111,7 @@ export function AdminPaymentsListPage() {
       });
 
     return () => controller.abort();
-  }, [canView, list.cursor, list.limit, reloadKey, status, userId]);
+  }, [canView, list.cursor, list.limit, list.refreshToken, reloadKey, status, userId]);
 
   const chips: AdminFilterChip[] = useMemo(() => {
     const next: AdminFilterChip[] = [];

@@ -183,19 +183,23 @@ export async function resetAdminPassword(
   });
 }
 
-export async function findRolesByCodes(codes: string[]) {
+export async function findRolesByCodes(
+  codes: string[],
+  options: { includeInactive?: boolean } = {},
+) {
   if (codes.length === 0) {
     return [];
   }
 
-  return prisma.adminRole.findMany({
+  const rows = await prisma.adminRole.findMany({
     where: {
       code: { in: codes },
       deletedAt: null,
-      isActive: 1,
+      ...(options.includeInactive ? {} : { isActive: 1 }),
     },
-    select: { code: true, id: true },
+    select: { code: true, id: true, isActive: true },
   });
+  return rows.map((row) => ({ ...row, isActive: row.isActive === 1 }));
 }
 
 export async function replaceAdminRoleAssignments(input: {

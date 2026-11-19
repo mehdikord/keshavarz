@@ -334,6 +334,7 @@ export async function findProviderLinkForRequest(
       providerNameSnapshot: true,
       providerProfileId: true,
       providerServiceId: true,
+      removedReason: true,
       servicePriceSnapshotToman: true,
       status: true,
       viewedAt: true,

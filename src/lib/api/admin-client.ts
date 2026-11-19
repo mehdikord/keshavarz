@@ -37,13 +37,67 @@ function buildUrl(
   return `${url.pathname}${url.search}`;
 }
 
+const ACTIVITY_STORAGE_KEY = "keshavarz.admin.last-activity";
+let lastAdminActivityAt = 0;
+
+function recordAdminActivity() {
+  lastAdminActivityAt = Date.now();
+  try {
+    // Shared across tabs: activity in any tab keeps the one server session alive.
+    window.localStorage.setItem(ACTIVITY_STORAGE_KEY, String(lastAdminActivityAt));
+  } catch {
+    // Storage unavailable (private mode); the in-memory value still works.
+  }
+}
+
+/**
+ * Epoch ms of the last admin API response in any tab. Every authenticated
+ * request resets the server-side idle timer, so this mirrors it for the idle
+ * warning.
+ */
+export function getLastAdminActivityAt(): number {
+  let shared = 0;
+  try {
+    shared = Number(window.localStorage.getItem(ACTIVITY_STORAGE_KEY)) || 0;
+  } catch {
+    shared = 0;
+  }
+  return Math.max(lastAdminActivityAt, shared);
+}
+
+/** Fired on window when any admin API call reports a dead session. */
+export const ADMIN_SESSION_EXPIRED_EVENT = "keshavarz:admin-session-expired";
+
+/**
+ * 401s from these endpoints are expected outcomes (bad credentials, refresh
+ * attempted outside its window) and must not force the console to sign out.
+ */
+const SESSION_EXPIRY_EXEMPT_PATHS = ["/auth/login", "/auth/session/refresh"];
+
+function notifySessionExpired(path: string, error: ApiClientError) {
+  if (typeof window === "undefined") return;
+  if (error.status !== 401) return;
+  if (error.code !== "AUTH_REQUIRED" && error.code !== "INVALID_SESSION") return;
+  if (SESSION_EXPIRY_EXEMPT_PATHS.some((exempt) => path.startsWith(exempt))) {
+    return;
+  }
+  window.dispatchEvent(new CustomEvent(ADMIN_SESSION_EXPIRED_EVENT));
+}
+
 async function parseResponse<T>(
+  path: string,
   response: Response,
 ): Promise<ApiSuccessEnvelope<T>> {
   const payload: unknown = await response.json().catch(() => null);
 
+  if (response.status !== 401 && typeof window !== "undefined") {
+    recordAdminActivity();
+  }
+
   if (!response.ok) {
-    throw createApiClientErrorFromResponse(response, payload);
+    const error = createApiClientErrorFromResponse(response, payload);
+    notifySessionExpired(path, error);
+    throw error;
   }
 
   return parseApiSuccessEnvelope<T>(payload);
@@ -81,7 +135,10 @@ async function adminRequest<T>(
     signal: options.signal,
   });
 
-  return parseResponse<T>(response);
+  return parseResponse<T>(
+    path.startsWith("/") ? path : `/${path}`,
+    response,
+  );
 }
 
 export const adminApi = {

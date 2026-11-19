@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { MobileShell } from "@/components/layout/mobile-shell";
+import { InstallSheet, OfflineIndicator, StatusBarScrim } from "@/components/pwa";
 
 interface RootChromeProps {
   children: React.ReactNode;
@@ -23,7 +24,10 @@ export function RootChrome({ children }: RootChromeProps) {
 
   return (
     <MobileShell>
+      <StatusBarScrim />
       <AppShell>{children}</AppShell>
+      <OfflineIndicator />
+      <InstallSheet />
     </MobileShell>
   );
 }

@@ -26,6 +26,7 @@ import {
   grantAdminProviderSubscription,
   type AdminSubscriptionPlan,
 } from "@/lib/api/admin-subscriptions";
+import { useIdempotencyKey } from "@/hooks/admin/use-idempotency-key";
 import { isApiClientError } from "@/lib/api/envelope";
 import { formatPrice, toPersianDigits } from "@/lib/utils/format";
 
@@ -50,6 +51,7 @@ export function AdminGrantSubscriptionDialog({
   const [reason, setReason] = useState("");
   const [loadingPlans, setLoadingPlans] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const grantKey = useIdempotencyKey("grant");
 
   if (seedKey !== seedSnapshot) {
     setSeedSnapshot(seedKey);
@@ -91,7 +93,14 @@ export function AdminGrantSubscriptionDialog({
   }, [open]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        // Don't let Esc / outside click abandon an in-flight grant.
+        if (!next && submitting) return;
+        onOpenChange(next);
+      }}
+    >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>اعطای اشتراک</DialogTitle>
@@ -169,11 +178,17 @@ export function AdminGrantSubscriptionDialog({
               }
               setSubmitting(true);
               try {
-                await grantAdminProviderSubscription(providerId, {
+                const payload = {
                   durationMonths: duration,
                   planCode,
                   reason: reason.trim() || undefined,
-                });
+                };
+                await grantAdminProviderSubscription(
+                  providerId,
+                  payload,
+                  grantKey.keyFor({ providerId, ...payload }),
+                );
+                grantKey.reset();
                 toast.success("اشتراک اعطا شد");
                 onOpenChange(false);
                 onGranted();

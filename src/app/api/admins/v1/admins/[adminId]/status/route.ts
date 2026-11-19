@@ -33,7 +33,7 @@ export const POST = withApiHandler(async (request: NextRequest, context) => {
   });
   const input = await parseJsonBody(request, AdminStatusSchema);
   const admin = await setManagedAdminStatus({
-    actorAdminId: auth.internalAdminId,
+    actor: auth,
     adminId: params.adminId,
     isActive: input.isActive,
   });

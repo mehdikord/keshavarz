@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Expand, MapPin, Pencil, Search, Trash2 } from "lucide-react";
 
-import { ParsimapMap } from "@/components/shared/parsimap-map";
+import { NeshanMap } from "@/components/shared/neshan-map";
 import { SatelliteThumb } from "@/components/shared/satellite-thumb";
 import {
   Dialog,
@@ -63,7 +63,7 @@ export function LandCard({ land, onDelete }: LandCardProps) {
           <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.25)_0%,transparent_35%,transparent_55%,rgba(30,18,6,0.65)_100%)]" />
 
           <span className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-full">
-            <span className="parsimap-pin block scale-75" />
+            <span className="map-pin block scale-75" />
           </span>
 
           <span className="absolute right-3 top-3 rounded-full bg-white/90 px-2.5 py-1 text-[12px] font-black text-[#3b2410] shadow-sm backdrop-blur">
@@ -128,7 +128,7 @@ export function LandCard({ land, onDelete }: LandCardProps) {
             </DialogDescription>
           </DialogHeader>
           {mapOpen ? (
-            <ParsimapMap
+            <NeshanMap
               center={land.location}
               value={land.location}
               interactive={false}

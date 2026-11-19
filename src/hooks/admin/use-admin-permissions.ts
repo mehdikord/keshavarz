@@ -16,7 +16,8 @@ export function useAdminPermissions() {
     (permission?: string) => {
       if (!permission) return true;
       if (!admin) return false;
-      if (admin.isSuperAdmin) return true;
+      // `/me` returns the effective set (super admins: everything minus
+      // explicit denies), mirroring server-side enforcement.
       return permissionSet.has(permission);
     },
     [admin, permissionSet],

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Copy, Eye, Filter } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import {
   AdminCursorPagination,
@@ -29,7 +30,12 @@ import {
 import { useAdminPermissions } from "@/hooks/admin/use-admin-permissions";
 import { useAdminUrlListState } from "@/hooks/admin/use-admin-url-list-state";
 import { copyPublicId, formatAdminDateTime } from "@/lib/admin/format";
-import type { AdminCursorMeta, AdminFilterChip } from "@/lib/admin/search-params";
+import {
+  normalizePublicIdInput,
+  PUBLIC_ID_PATTERN,
+  type AdminCursorMeta,
+  type AdminFilterChip,
+} from "@/lib/admin/search-params";
 import {
   REQUEST_STATUSES,
   fetchAdminServiceRequests,
@@ -86,14 +92,21 @@ export function AdminServiceRequestsListPage() {
     setSearchDraft(urlQ);
   }
 
+  // The API only accepts a complete public ID, so partial input is held back
+  // instead of turning the table into a validation error on every pause.
+  const normalizedSearch = normalizePublicIdInput(searchDraft);
+  const searchIncomplete =
+    normalizedSearch.length > 0 && !PUBLIC_ID_PATTERN.test(normalizedSearch);
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      if (searchDraft === urlQ) return;
+      if (normalizedSearch === urlQ) return;
+      if (normalizedSearch && !PUBLIC_ID_PATTERN.test(normalizedSearch)) return;
       setLoading(true);
-      setSearch(searchDraft);
+      setSearch(normalizedSearch);
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [searchDraft, setSearch, urlQ]);
+  }, [normalizedSearch, setSearch, urlQ]);
 
   useEffect(() => {
     if (!canView) return;
@@ -134,6 +147,7 @@ export function AdminServiceRequestsListPage() {
     list.cursor,
     list.limit,
     list.q,
+    list.refreshToken,
     reloadKey,
     status,
   ]);
@@ -261,7 +275,7 @@ export function AdminServiceRequestsListPage() {
       <AdminFilterBar
         searchValue={searchDraft}
         onSearchChange={setSearchDraft}
-        searchPlaceholder="شناسه عمومی درخواست..."
+        searchPlaceholder="شناسه ۲۶ کاراکتری درخواست..."
         onOpenFilters={() => {
           setStatusDraft(status ?? "all");
           setConsumerDraft(consumerUserId ?? "");
@@ -294,6 +308,11 @@ export function AdminServiceRequestsListPage() {
           </Button>
         }
       />
+      {searchIncomplete ? (
+        <p className="-mt-2 text-xs text-muted-foreground">
+          شناسه درخواست ۲۶ کاراکتر است؛ جستجو پس از وارد کردن کامل شناسه انجام می‌شود.
+        </p>
+      ) : null}
 
       <AdminFilterChips
         chips={chips}
@@ -361,10 +380,15 @@ export function AdminServiceRequestsListPage() {
           setConsumerDraft("");
         }}
         onApply={() => {
+          const consumer = normalizePublicIdInput(consumerDraft);
+          if (consumer && !PUBLIC_ID_PATTERN.test(consumer)) {
+            toast.error("شناسه مصرف‌کننده باید ۲۶ کاراکتر باشد.");
+            return;
+          }
           setLoading(true);
           list.setFilters({
             status: statusDraft === "all" ? null : statusDraft,
-            consumerUserId: consumerDraft.trim() || null,
+            consumerUserId: consumer || null,
           });
         }}
       >
@@ -393,7 +417,7 @@ export function AdminServiceRequestsListPage() {
               onChange={(event) => setConsumerDraft(event.target.value)}
               dir="ltr"
               className="font-mono text-xs"
-              placeholder="Public ID کاربر"
+              placeholder="شناسه ۲۶ کاراکتری کاربر"
             />
           </div>
         </div>

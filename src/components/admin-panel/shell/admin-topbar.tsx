@@ -21,8 +21,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { ADMIN_NAV_GROUPS } from "@/components/admin-panel/shell/admin-nav";
+import {
+  ADMIN_ACCOUNT_ITEMS,
+  ADMIN_NAV_GROUPS,
+} from "@/components/admin-panel/shell/admin-nav";
 import { useAdminSession } from "@/hooks/admin/use-admin-session";
 import { useAdminShellStore } from "@/stores/admin-shell-store";
 
@@ -35,7 +37,10 @@ function resolveBreadcrumbs(pathname: string) {
     return [{ href: "/admins", label: "داشبورد" }];
   }
 
-  const allItems = ADMIN_NAV_GROUPS.flatMap((group) => group.items);
+  const allItems = [
+    ...ADMIN_NAV_GROUPS.flatMap((group) => group.items),
+    ...ADMIN_ACCOUNT_ITEMS,
+  ];
   const exact = allItems.find((item) => item.href === pathname);
   if (exact) {
     crumbs.push({ href: exact.href, label: exact.title });
@@ -60,6 +65,7 @@ export function AdminTopbar() {
   const pathname = usePathname();
   const { admin, logout, logoutAll } = useAdminSession();
   const setMobileNavOpen = useAdminShellStore((s) => s.setMobileNavOpen);
+  const setCommandPaletteOpen = useAdminShellStore((s) => s.setCommandPaletteOpen);
   const breadcrumbs = resolveBreadcrumbs(pathname);
 
   return (
@@ -103,15 +109,25 @@ export function AdminTopbar() {
         </BreadcrumbList>
       </Breadcrumb>
 
-      <div className="relative hidden w-full max-w-xs md:block">
-        <Search className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          disabled
-          placeholder="جستجوی سراسری (فاز بعد)"
-          className="h-9 rounded-lg bg-muted/40 pr-9 text-sm"
-          aria-label="جستجوی سراسری"
-        />
-      </div>
+      <Button
+        type="button"
+        variant="outline"
+        className="h-9 shrink-0 gap-2 rounded-lg px-2.5 text-muted-foreground md:w-64 md:justify-start md:bg-muted/40"
+        onClick={() => setCommandPaletteOpen(true)}
+        aria-label="جستجوی سراسری"
+        aria-keyshortcuts="Control+K"
+      >
+        <Search className="size-4" />
+        <span className="hidden flex-1 text-start text-sm font-normal md:inline">
+          جستجو...
+        </span>
+        <kbd
+          className="hidden rounded border border-[var(--admin-border)] bg-background px-1.5 py-0.5 font-mono text-[10px] md:inline"
+          dir="ltr"
+        >
+          Ctrl K
+        </kbd>
+      </Button>
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -140,6 +156,9 @@ export function AdminTopbar() {
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <Link href="/admins/me/change-password">تغییر رمز</Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link href="/admins/me/sessions">نشست‌های فعال</Link>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem

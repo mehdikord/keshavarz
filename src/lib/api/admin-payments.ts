@@ -119,6 +119,7 @@ export async function fetchAdminPayment(
 export async function createAdminPaymentRefund(
   paymentId: string,
   input: { amountToman: number; reason: string },
+  idempotencyKey: string = createAdminIdempotencyKey("refund"),
 ): Promise<{
   paymentId: string;
   paymentStatus: string;
@@ -142,7 +143,7 @@ export async function createAdminPaymentRefund(
     };
   }>(`/payments/${paymentId}/refunds`, input, {
     headers: {
-      [ADMIN_IDEMPOTENCY_HEADER]: createAdminIdempotencyKey("refund"),
+      [ADMIN_IDEMPOTENCY_HEADER]: idempotencyKey,
     },
   });
   return result.data;

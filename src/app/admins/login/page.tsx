@@ -5,9 +5,11 @@ import { AdminLoginForm } from "@/components/admin-panel/auth/admin-login-form";
 export default async function AdminLoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string | string[] }>;
 }) {
   const params = await searchParams;
+  // `?next=a&next=b` arrives as an array; take the first value.
+  const next = Array.isArray(params.next) ? params.next[0] : params.next;
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-[var(--admin-canvas)] px-4 py-10">
@@ -24,7 +26,7 @@ export default async function AdminLoginPage({
           </div>
         </div>
 
-        <AdminLoginForm nextPath={params.next ?? "/admins"} />
+        <AdminLoginForm nextPath={next ?? "/admins"} />
       </div>
     </div>
   );

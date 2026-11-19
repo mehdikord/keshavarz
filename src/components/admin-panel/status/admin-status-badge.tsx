@@ -30,7 +30,40 @@ const STATUS_TONES: Record<string, { label: string; variant: BadgeVariant }> = {
   processing: { label: "در حال پردازش", variant: "default" },
   succeeded: { label: "موفق", variant: "success" },
   failed: { label: "ناموفق", variant: "destructive" },
+  // Notification deliveries & export jobs
+  queued: { label: "در صف", variant: "outline" },
+  delivered: { label: "تحویل‌شده", variant: "success" },
+  skipped: { label: "ردشده (نادیده)", variant: "secondary" },
+  ready: { label: "آماده", variant: "success" },
+  // Recipients & actors
+  user: { label: "کاربر", variant: "outline" },
+  admin: { label: "مدیر", variant: "outline" },
+  consumer: { label: "خدمات‌گیرنده", variant: "outline" },
+  provider: { label: "خدمات‌دهنده", variant: "outline" },
+  system: { label: "سیستم", variant: "secondary" },
+  // Moderation
+  suspend: { label: "تعلیق", variant: "outline" },
+  ban: { label: "مسدودسازی", variant: "destructive" },
+  unban: { label: "رفع مسدودی", variant: "success" },
+  activate: { label: "فعال‌سازی", variant: "success" },
+  deactivate: { label: "غیرفعال‌سازی", variant: "secondary" },
+  warn: { label: "اخطار", variant: "accent" },
+  warning: { label: "اخطار", variant: "accent" },
+  // Subscription sources
+  admin_grant: { label: "اعطای مدیر", variant: "accent" },
+  purchase: { label: "خرید", variant: "outline" },
+  promotion: { label: "پیشنهاد ویژه", variant: "accent" },
+  // Provider-link removal reasons
+  admin_removed: { label: "حذف توسط مدیر", variant: "secondary" },
+  accepted_by_other: { label: "پذیرش توسط دیگری", variant: "secondary" },
+  request_cancelled: { label: "لغو درخواست", variant: "secondary" },
 };
+
+/** Persian label for a backend status/enum code (falls back to the code). */
+export function adminStatusLabel(status: string | null | undefined): string {
+  if (!status) return "—";
+  return STATUS_TONES[status]?.label ?? status;
+}
 
 interface AdminStatusBadgeProps {
   status: string;

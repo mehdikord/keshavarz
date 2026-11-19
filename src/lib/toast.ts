@@ -43,3 +43,21 @@ export const toast = {
     dismissAfter(id, TOAST_DURATION_MS);
   },
 };
+
+/*
+ * The <Toaster> mounts only after app bootstrap (inside AppProvider), and sonner
+ * drops toasts raised before it subscribes. Early callers (service-worker
+ * updates) queue through `whenToasterReady` instead.
+ */
+let toasterMounted = false;
+const pendingToasts: Array<() => void> = [];
+
+export function setToasterMounted(mounted: boolean) {
+  toasterMounted = mounted;
+  if (mounted) for (const show of pendingToasts.splice(0)) show();
+}
+
+export function whenToasterReady(show: () => void) {
+  if (toasterMounted) show();
+  else pendingToasts.push(show);
+}

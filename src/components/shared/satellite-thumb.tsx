@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 
-import { resolveParsimapLayer } from "@/lib/maps/parsimap";
+import { resolveSatelliteImagery } from "@/lib/maps/satellite-imagery";
 import { cn } from "@/lib/utils";
 
 const TILE = 256;
+const OFFSETS = [-1, 0, 1] as const;
 
 /** Web-Mercator world pixel for a coordinate at a zoom level. */
 function worldPixel(lat: number, lng: number, zoom: number) {
@@ -27,8 +28,9 @@ interface SatelliteThumbProps {
 }
 
 /**
- * A static satellite preview built from a 3×3 block of map tiles centred on the
- * point — far lighter than mounting an interactive map for every list item.
+ * A static satellite preview built from a 3×3 block of imagery tiles centred on
+ * the point — far lighter than mounting a WebGL map for every list item. Tapping
+ * the preview opens the full Neshan map, which has the place names.
  */
 export function SatelliteThumb({ lat, lng, zoom = 16, className, fallback }: SatelliteThumbProps) {
   const [template, setTemplate] = useState<string | null>(null);
@@ -36,8 +38,8 @@ export function SatelliteThumb({ lat, lng, zoom = 16, className, fallback }: Sat
 
   useEffect(() => {
     let cancelled = false;
-    void resolveParsimapLayer("satellite").then((layer) => {
-      if (!cancelled) setTemplate(layer.tileUrl);
+    void resolveSatelliteImagery().then((imagery) => {
+      if (!cancelled) setTemplate(imagery.tileUrl);
     });
     return () => {
       cancelled = true;
@@ -59,8 +61,8 @@ export function SatelliteThumb({ lat, lng, zoom = 16, className, fallback }: Sat
           className="absolute grid grid-cols-3"
           style={{ left: `calc(50% - ${offsetX}px)`, top: `calc(50% - ${offsetY}px)`, width: TILE * 3 }}
         >
-          {[-1, 0, 1].flatMap((dy) =>
-            [-1, 0, 1].map((dx) => (
+          {OFFSETS.flatMap((dy) =>
+            OFFSETS.map((dx) => (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 key={`${dx}:${dy}`}

@@ -6,6 +6,8 @@ import { createJSONStorage, persist } from "zustand/middleware";
 interface AdminShellState {
   sidebarCollapsed: boolean;
   mobileNavOpen: boolean;
+  commandPaletteOpen: boolean;
+  setCommandPaletteOpen: (open: boolean) => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   toggleSidebarCollapsed: () => void;
   setMobileNavOpen: (open: boolean) => void;
@@ -17,6 +19,8 @@ export const useAdminShellStore = create<AdminShellState>()(
     (set, get) => ({
       sidebarCollapsed: false,
       mobileNavOpen: false,
+      commandPaletteOpen: false,
+      setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
       toggleSidebarCollapsed: () =>
         set({ sidebarCollapsed: !get().sidebarCollapsed }),

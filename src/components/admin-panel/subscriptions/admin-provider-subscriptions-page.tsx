@@ -15,6 +15,7 @@ import {
   AdminPageHeader,
   AdminStatusBadge,
   type AdminDataTableColumn,
+  adminStatusLabel,
 } from "@/components/admin-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -113,7 +114,7 @@ export function AdminProviderSubscriptionsPage() {
       });
 
     return () => controller.abort();
-  }, [canView, list.cursor, list.limit, providerId, reloadKey, status]);
+  }, [canView, list.cursor, list.limit, providerId, list.refreshToken, reloadKey, status]);
 
   const chips: AdminFilterChip[] = useMemo(() => {
     const next: AdminFilterChip[] = [];
@@ -173,7 +174,9 @@ export function AdminProviderSubscriptionsPage() {
     {
       id: "source",
       header: "منبع",
-      cell: (row) => <span className="text-xs">{row.source}</span>,
+      cell: (row) => (
+        <span className="text-xs">{adminStatusLabel(row.source)}</span>
+      ),
     },
     {
       id: "endsAt",

@@ -448,6 +448,15 @@ export async function getProviderServiceRequest(
     link.status === "removed" &&
     request.assignedProviderProfileId !== profile.id
   ) {
+    // Lost the race: say so explicitly (the UI shows a dedicated screen), but
+    // still disclose nothing about the request, the farmer or the land.
+    if (link.removedReason === "accepted_by_other") {
+      throw new ApiError(
+        409,
+        API_ERROR_CODES.requestAlreadyAccepted,
+        "این درخواست توسط خدمات‌دهنده دیگری قبول شد.",
+      );
+    }
     throw new ApiError(403, API_ERROR_CODES.forbidden, "دسترسی به این درخواست مجاز نیست.");
   }
 

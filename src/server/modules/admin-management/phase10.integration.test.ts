@@ -313,7 +313,7 @@ describe.sequential("phase 10 admin management", () => {
     );
 
     const other = await createManagedAdmin({
-      actorAdminId,
+      actor: { internalAdminId: actorAdminId, isSuperAdmin: true },
       isSuperAdmin: false,
       name: "phase10 admin b",
       password: "SecureMgrPass!7744",
@@ -326,7 +326,7 @@ describe.sequential("phase 10 admin management", () => {
 
     await expect(
       setManagedAdminStatus({
-        actorAdminId,
+        actor: { internalAdminId: actorAdminId, isSuperAdmin: true },
         adminId: actor.publicId,
         isActive: false,
       }),

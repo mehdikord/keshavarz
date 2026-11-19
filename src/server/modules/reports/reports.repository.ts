@@ -2,6 +2,18 @@ import { Prisma } from "@/generated/prisma/client";
 
 import { prisma } from "@/server/db/prisma";
 
+
+/**
+ * A payment stays "collected" after a refund: refunds move it to
+ * partially_refunded/refunded, and are reported separately. Filtering on
+ * "paid" alone would drop the whole payment and double-count the refund.
+ */
+const GROSS_PAID_STATUSES: Array<"paid" | "partially_refunded" | "refunded"> = [
+  "paid",
+  "partially_refunded",
+  "refunded",
+];
+
 export async function findOwnedLandIdByPublicId(
   userId: bigint,
   landPublicId: string,
@@ -348,7 +360,7 @@ export async function sumPaidSubscriptionRevenue(input: {
   const result = await prisma.subscriptionPayment.aggregate({
     where: {
       paidAt: { gte: input.from, lt: input.to },
-      status: "paid",
+      status: { in: GROSS_PAID_STATUSES },
     },
     _sum: { amountToman: true },
   });
@@ -385,7 +397,7 @@ export async function countPaidPayments(input: { from: Date; to: Date }) {
   return prisma.subscriptionPayment.count({
     where: {
       paidAt: { gte: input.from, lt: input.to },
-      status: "paid",
+      status: { in: GROSS_PAID_STATUSES },
     },
   });
 }

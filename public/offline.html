@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f3324" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="robots" content="noindex" />
+    <title>کشاورز — اتصال برقرار نیست</title>
+    <link rel="icon" href="/icons/icon-192.png" />
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overscroll-behavior: none;
+        -webkit-tap-highlight-color: transparent;
+        -webkit-text-size-adjust: 100%;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100dvh;
+        padding: calc(env(safe-area-inset-top, 0px) + 24px) 24px calc(env(safe-area-inset-bottom, 0px) + 24px);
+        background: radial-gradient(120% 80% at 50% 30%, #1f5a40 0%, #0f3324 55%, #071d14 100%) fixed;
+        color: #fff;
+        font-family: "Vazirmatn Variable", Vazirmatn, Tahoma, system-ui, -apple-system, "Segoe UI", sans-serif;
+        text-align: center;
+      }
+      main {
+        width: 100%;
+        max-width: 360px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .mark {
+        position: relative;
+        display: grid;
+        place-items: center;
+        width: 128px;
+        height: 128px;
+        border-radius: 36px;
+        background: rgba(255, 255, 255, 0.06);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+      }
+      .mark > svg {
+        width: 96px;
+        height: 96px;
+      }
+      .badge {
+        position: absolute;
+        bottom: -6px;
+        left: -6px;
+        display: grid;
+        place-items: center;
+        width: 40px;
+        height: 40px;
+        border-radius: 14px;
+        background: #f4a261;
+        color: #3d2914;
+        box-shadow: 0 10px 24px -10px rgba(0, 0, 0, 0.6);
+      }
+      h1 {
+        margin: 28px 0 0;
+        font-size: 22px;
+        font-weight: 900;
+        line-height: 1.6;
+      }
+      p {
+        margin: 8px 0 0;
+        font-size: 14px;
+        line-height: 1.9;
+        color: #b7e4c7;
+      }
+      button {
+        margin-top: 28px;
+        width: 100%;
+        min-height: 52px;
+        border: 0;
+        border-radius: 18px;
+        background: #d8f3dc;
+        color: #0f3324;
+        font: inherit;
+        font-size: 15px;
+        font-weight: 900;
+        cursor: pointer;
+        touch-action: manipulation;
+        -webkit-user-select: none;
+        user-select: none;
+        transition: transform 120ms ease-out, opacity 120ms ease-out;
+      }
+      button:active {
+        transform: scale(0.97);
+      }
+      button[aria-busy="true"] {
+        opacity: 0.7;
+      }
+      .status {
+        margin-top: 14px;
+        min-height: 1.9em;
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.55);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        button {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark" aria-hidden="true">
+        <svg viewBox="0 0 120 120">
+          <ellipse cx="60" cy="94" rx="30" ry="5" fill="rgba(216,243,220,0.25)" />
+          <path d="M60 92 C 60 78 59 66 60 48" fill="none" stroke="#d8f3dc" stroke-width="5" stroke-linecap="round" />
+          <path d="M59.5 68 C 46 67 37 57 38 44 C 51 45 59.5 54 59.5 68Z" fill="#74c69d" />
+          <path d="M60.5 58 C 74 57 83 46 82 32 C 69 34 60.5 43 60.5 58Z" fill="#b7e4c7" />
+        </svg>
+        <span class="badge">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 20h.01" />
+            <path d="M8.5 16.43a5 5 0 0 1 7 0" />
+            <path d="M5 12.86a10 10 0 0 1 5.17-2.69" />
+            <path d="M19 12.86a10 10 0 0 0-2-1.43" />
+            <path d="M2 8.82a15 15 0 0 1 4.18-2.65" />
+            <path d="M22 8.82a15 15 0 0 0-11.29-3.76" />
+            <path d="m2 2 20 20" />
+          </svg>
+        </span>
+      </div>
+
+      <h1>اتصال اینترنت برقرار نیست</h1>
+      <p>برای دیدن اطلاعات به‌روز مزرعه و درخواست‌ها به اینترنت نیاز داریم. اتصال گوشی را بررسی کنید؛ به‌محض وصل شدن، صفحه خودش باز می‌شود.</p>
+
+      <button type="button" id="retry">تلاش دوباره</button>
+      <div class="status" id="status" role="status" aria-live="polite"></div>
+    </main>
+
+    <script>
+      (function () {
+        var button = document.getElementById("retry");
+        var status = document.getElementById("status");
+
+        function retry() {
+          button.setAttribute("aria-busy", "true");
+          status.textContent = "در حال اتصال…";
+          // The offline page is served in place of the requested URL, so a reload retries it.
+          window.location.reload();
+        }
+
+        button.addEventListener("click", retry);
+        window.addEventListener("online", retry);
+      })();
+    </script>
+  </body>
+</html>

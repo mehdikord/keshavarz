@@ -24,4 +24,7 @@ export { AdminFilterDrawer } from "@/components/admin-panel/filters/admin-filter
 
 export { AdminCursorPagination } from "@/components/admin-panel/pagination/admin-cursor-pagination";
 export { AdminConfirmDialog } from "@/components/admin-panel/dialogs/admin-confirm-dialog";
-export { AdminStatusBadge } from "@/components/admin-panel/status/admin-status-badge";
+export {
+  AdminStatusBadge,
+  adminStatusLabel,
+} from "@/components/admin-panel/status/admin-status-badge";

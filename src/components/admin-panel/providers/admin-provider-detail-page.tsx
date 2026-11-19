@@ -13,6 +13,7 @@ import {
   AdminSectionCard,
   AdminStatusBadge,
   type AdminDataTableColumn,
+  adminStatusLabel,
 } from "@/components/admin-panel";
 import { AdminGrantSubscriptionDialog } from "@/components/admin-panel/subscriptions/admin-grant-subscription-dialog";
 import { Button } from "@/components/ui/button";
@@ -44,7 +45,7 @@ import {
   type AdminProviderService,
 } from "@/lib/api/admin-providers";
 import { isApiClientError } from "@/lib/api/envelope";
-import { formatPrice, toPersianDigits } from "@/lib/utils/format";
+import { formatPrice, toLatinDigits, toPersianDigits } from "@/lib/utils/format";
 
 const PRICING_UNITS = [
   { value: "fixed", label: "ثابت" },
@@ -65,12 +66,14 @@ export function AdminProviderDetailPage({
   const canView = can("providers.view");
   const canUpdate = can("providers.update");
   const canChangeStatus = can("providers.change_status");
-  const canGrant = can("subscriptions.grant");
+  // The grant dialog lists plans, which needs subscriptions.view too.
+  const canGrant = can("subscriptions.grant") && can("subscriptions.view");
 
   const [provider, setProvider] = useState<AdminProviderDetail | null>(null);
   const [services, setServices] = useState<AdminProviderService[]>([]);
   const [loading, setLoading] = useState(true);
-  const [servicesLoading, setServicesLoading] = useState(false);
+  const [servicesLoading, setServicesLoading] = useState(true);
+  const [servicesError, setServicesError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [servicesReloadKey, setServicesReloadKey] = useState(0);
@@ -137,13 +140,15 @@ export function AdminProviderDetailPage({
       .then((result) => {
         if (controller.signal.aborted) return;
         setServices(result.items);
+        setServicesError(null);
       })
       .catch((cause: unknown) => {
         if (controller.signal.aborted) return;
-        toast.error(
+        setServices([]);
+        setServicesError(
           isApiClientError(cause)
             ? cause.message
-            : "بارگذاری خدمات Provider ناموفق بود.",
+            : "بارگذاری خدمات این خدمات‌دهنده ناموفق بود.",
         );
       })
       .finally(() => {
@@ -267,7 +272,7 @@ export function AdminProviderDetailPage({
               className="h-8"
               disabled={!canUpdate || savingService}
               onClick={async () => {
-                const price = Number(servicePrice);
+                const price = Number(toLatinDigits(servicePrice).replace(/[,٬،]/g, ""));
                 if (!Number.isFinite(price) || price < 1000) {
                   toast.error("قیمت باید حداقل ۱۰۰۰ تومان باشد.");
                   return;
@@ -505,13 +510,16 @@ export function AdminProviderDetailPage({
               onSubmit={async (event) => {
                 event.preventDefault();
                 if (!canUpdate) return;
-                const radius = Number(workRadiusKm);
+                const radius = Number(toLatinDigits(workRadiusKm));
                 if (!Number.isInteger(radius) || radius < 20 || radius > 100) {
                   toast.error("شعاع باید عدد صحیح بین ۲۰ تا ۱۰۰ باشد.");
                   return;
                 }
-                const lat = workLatitude.trim();
-                const lng = workLongitude.trim();
+                // Accept Persian digits and the Persian decimal separator.
+                const toDecimal = (value: string) =>
+                  toLatinDigits(value).replace(/[٫/]/g, ".").trim();
+                const lat = toDecimal(workLatitude);
+                const lng = toDecimal(workLongitude);
                 if ((lat && !lng) || (!lat && lng)) {
                   toast.error("هر دو مختصات یا هیچ‌کدام لازم است.");
                   return;
@@ -589,6 +597,7 @@ export function AdminProviderDetailPage({
             rows={services}
             getRowId={(row) => row.providerServiceId}
             loading={servicesLoading}
+            error={servicesError ? { message: servicesError } : null}
             emptyTitle="خدمتی ثبت نشده"
             emptyDescription="این Provider هنوز خدمتی تعریف نکرده است."
             onRetry={() => {
@@ -609,7 +618,7 @@ export function AdminProviderDetailPage({
                         ? "active"
                         : "pending"
                     }
-                    label={provider.activeSubscription.status}
+                    label={adminStatusLabel(provider.activeSubscription.status)}
                   />
                   <span className="font-medium">
                     {provider.activeSubscription.planName}
@@ -618,7 +627,7 @@ export function AdminProviderDetailPage({
                 <p>
                   مبلغ: {formatPrice(provider.activeSubscription.amountToman)}
                 </p>
-                <p>منبع: {provider.activeSubscription.source}</p>
+                <p>منبع: {adminStatusLabel(provider.activeSubscription.source)}</p>
                 <p>
                   شروع:{" "}
                   {formatAdminDateTime(provider.activeSubscription.startsAt)}

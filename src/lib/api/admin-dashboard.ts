@@ -41,6 +41,8 @@ export const AdminMetricsSchema = z
   .object({
     metrics: z.record(z.string(), z.number()),
     scrapedAt: z.string().min(1),
+    /** Recent request traces; not rendered by the console yet. */
+    traces: z.array(z.unknown()).optional(),
   })
   .strict();
 

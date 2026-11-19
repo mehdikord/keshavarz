@@ -52,7 +52,15 @@ export function AdminReportsFinancialPage() {
   const initialRange = useMemo(() => {
     const fromParam = searchParams.get("from");
     const toParam = searchParams.get("to");
-    if (fromParam && toParam) {
+    // Ignore malformed or inverted ranges from hand-edited links; formatting
+    // an invalid Date would otherwise throw and take the page down.
+    const validRange =
+      fromParam !== null &&
+      toParam !== null &&
+      Number.isFinite(Date.parse(fromParam)) &&
+      Number.isFinite(Date.parse(toParam)) &&
+      Date.parse(fromParam) < Date.parse(toParam);
+    if (fromParam && toParam && validRange) {
       return {
         from: fromParam,
         to: toParam,

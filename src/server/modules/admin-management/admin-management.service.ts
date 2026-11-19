@@ -30,6 +30,13 @@ import {
   updateAdminStatus,
   updateRole,
 } from "@/server/modules/admin-management/admin-management.repository";
+import {
+  assertCanGrantPermissions,
+  assertCanGrantSuperAdmin,
+  assertCanManageAdminTarget,
+  assertNotSelfAccessChange,
+  type AdminActor,
+} from "@/server/modules/admin-rbac/admin-escalation-guards";
 import { invalidateAdminPermissionCache } from "@/server/modules/admin-rbac/permission-cache";
 import {
   assertNotLastSuperAdminRemoval,
@@ -107,13 +114,14 @@ export async function listManagedAdmins(input: {
 }
 
 export async function createManagedAdmin(input: {
-  actorAdminId: bigint;
+  actor: AdminActor;
   email?: string | null;
   isSuperAdmin: boolean;
   name: string;
   password: string;
   phone: string;
 }) {
+  if (input.isSuperAdmin) assertCanGrantSuperAdmin(input.actor);
   assertAdminPasswordPolicy(input.password, {
     name: input.name,
     phone: input.phone,
@@ -122,7 +130,7 @@ export async function createManagedAdmin(input: {
   const passwordHash = await hashPassword(input.password);
   const admin = await wrapPrisma(() =>
     createAdmin({
-      createdByAdminId: input.actorAdminId,
+      createdByAdminId: input.actor.internalAdminId,
       email: input.email,
       isSuperAdmin: input.isSuperAdmin,
       name: input.name,
@@ -144,6 +152,7 @@ export async function getManagedAdmin(adminId: string) {
 }
 
 export async function updateManagedAdmin(
+  actor: AdminActor,
   adminId: string,
   input: {
     email?: string | null;
@@ -152,21 +161,22 @@ export async function updateManagedAdmin(
   },
 ) {
   const admin = await requireAdminByPublicId(adminId);
-  const updated = await wrapPrisma(() =>
-    updateAdminProfile(admin.id, input),
-  );
-  return mapAdminSummary(updated);
+  assertCanManageAdminTarget(actor, admin);
+  await wrapPrisma(() => updateAdminProfile(admin.id, input));
+  // Detail shape, so the console can replace its record without refetching.
+  return getManagedAdmin(admin.publicId);
 }
 
 export async function setManagedAdminStatus(input: {
-  actorAdminId: bigint;
+  actor: AdminActor;
   adminId: string;
   isActive: boolean;
 }) {
   const admin = await requireAdminByPublicId(input.adminId);
+  assertCanManageAdminTarget(input.actor, admin);
 
   assertNotSelfDeactivation(
-    input.actorAdminId,
+    input.actor.internalAdminId,
     admin.id,
     input.isActive,
   );
@@ -177,21 +187,30 @@ export async function setManagedAdminStatus(input: {
     false,
   );
 
-  const updated = await updateAdminStatus(admin.id, input.isActive);
+  await updateAdminStatus(admin.id, input.isActive);
 
   if (!input.isActive) {
     await revokeAllAdminSessions(admin.id, systemClock.now());
     invalidateAdminPermissionCache(admin.id);
   }
 
-  return mapAdminSummary(updated);
+  return getManagedAdmin(admin.publicId);
 }
 
 export async function resetManagedAdminPassword(input: {
+  actor: AdminActor;
   adminId: string;
   newPassword: string;
 }) {
   const admin = await requireAdminByPublicId(input.adminId);
+  assertCanManageAdminTarget(input.actor, admin);
+  if (input.actor.internalAdminId === admin.id) {
+    throw new ApiError(
+      403,
+      API_ERROR_CODES.forbidden,
+      "برای حساب خودتان از «تغییر رمز» با رمز فعلی استفاده کنید.",
+    );
+  }
   assertAdminPasswordPolicy(input.newPassword, {
     name: admin.name,
     phone: admin.phone,
@@ -210,15 +229,25 @@ export async function resetManagedAdminPassword(input: {
 }
 
 export async function replaceManagedAdminRoles(input: {
-  actorAdminId: bigint;
+  actor: AdminActor;
   adminId: string;
   roleIds: string[];
 }) {
   const admin = await requireAdminByPublicId(input.adminId);
-  const uniqueCodes = [...new Set(input.roleIds)];
-  const roles = await findRolesByCodes(uniqueCodes);
+  assertCanManageAdminTarget(input.actor, admin);
+  assertNotSelfAccessChange(input.actor, admin.id);
 
-  if (roles.length !== uniqueCodes.length) {
+  const current = await getManagedAdmin(admin.publicId);
+  const assignedCodes = new Set(current.roles.map((role) => role.roleId));
+  const uniqueCodes = [...new Set(input.roleIds)];
+  // Inactive roles can be kept if already assigned (so the form can still be
+  // saved), but not newly assigned.
+  const roles = await findRolesByCodes(uniqueCodes, { includeInactive: true });
+  const invalid =
+    roles.length !== uniqueCodes.length ||
+    roles.some((role) => !role.isActive && !assignedCodes.has(role.code));
+
+  if (invalid) {
     throw new ApiError(
       400,
       API_ERROR_CODES.validationFailed,
@@ -226,9 +255,15 @@ export async function replaceManagedAdminRoles(input: {
     );
   }
 
+  const addedRoles = roles.filter((role) => !assignedCodes.has(role.code));
+  const addedPermissionCodes = (
+    await Promise.all(addedRoles.map((role) => listRolePermissionCodes(role.id)))
+  ).flat();
+  await assertCanGrantPermissions(input.actor, addedPermissionCodes);
+
   await replaceAdminRoleAssignments({
     adminId: admin.id,
-    assignedByAdminId: input.actorAdminId,
+    assignedByAdminId: input.actor.internalAdminId,
     roleIds: roles.map((role) => role.id),
   });
   invalidateAdminPermissionCache(admin.id);
@@ -237,7 +272,7 @@ export async function replaceManagedAdminRoles(input: {
 }
 
 export async function replaceManagedAdminPermissionOverrides(input: {
-  actorAdminId: bigint;
+  actor: AdminActor;
   adminId: string;
   overrides: Array<{
     effect: "allow" | "deny";
@@ -247,6 +282,25 @@ export async function replaceManagedAdminPermissionOverrides(input: {
   }>;
 }) {
   const admin = await requireAdminByPublicId(input.adminId);
+  assertCanManageAdminTarget(input.actor, admin);
+  assertNotSelfAccessChange(input.actor, admin.id);
+
+  const current = await getManagedAdmin(admin.publicId);
+  const existingAllows = new Set(
+    current.permissionOverrides
+      .filter((override) => override.effect === "allow")
+      .map((override) => override.permissionCode),
+  );
+  await assertCanGrantPermissions(
+    input.actor,
+    input.overrides
+      .filter(
+        (override) =>
+          override.effect === "allow" && !existingAllows.has(override.permissionCode),
+      )
+      .map((override) => override.permissionCode),
+  );
+
   const uniqueCodes = [
     ...new Set(input.overrides.map((item) => item.permissionCode)),
   ];
@@ -274,7 +328,7 @@ export async function replaceManagedAdminPermissionOverrides(input: {
 
   await replaceAdminPermissionOverrides({
     adminId: admin.id,
-    grantedByAdminId: input.actorAdminId,
+    grantedByAdminId: input.actor.internalAdminId,
     overrides: input.overrides.map((override) => {
       const permissionId = permissionIdByCode.get(override.permissionCode);
       if (permissionId === undefined) {
@@ -383,12 +437,17 @@ export async function deleteManagedRole(roleId: string) {
 }
 
 export async function replaceManagedRolePermissions(input: {
-  actorAdminId: bigint;
+  actor: AdminActor;
   permissionCodes: string[];
   roleId: string;
 }) {
   const role = await requireRoleByCode(input.roleId);
   const uniqueCodes = [...new Set(input.permissionCodes)];
+  const existingCodes = new Set(await listRolePermissionCodes(role.id));
+  await assertCanGrantPermissions(
+    input.actor,
+    uniqueCodes.filter((code) => !existingCodes.has(code)),
+  );
   const permissions = await findPermissionsByCodes(uniqueCodes);
 
   if (permissions.length !== uniqueCodes.length) {
@@ -400,7 +459,7 @@ export async function replaceManagedRolePermissions(input: {
   }
 
   await replaceRolePermissions({
-    grantedByAdminId: input.actorAdminId,
+    grantedByAdminId: input.actor.internalAdminId,
     permissionIds: permissions.map((permission) => permission.id),
     roleId: role.id,
   });

@@ -21,6 +21,8 @@ import {
   createAdminSession,
   findAdminByPhoneForLogin,
   getAdminPasswordMaterial,
+  getAdminSessionTiming,
+  listActiveAdminSessions,
   getCurrentAdminProfile,
   lockAdminForAuth,
   lockAdminSessionForRotation,
@@ -249,8 +251,95 @@ export async function logoutCurrentAdminSession(
   await revokeAdminSession(sessionId, adminId, systemClock.now());
 }
 
-export async function logoutAllAdminSessions(adminId: bigint): Promise<number> {
-  return revokeAllAdminSessions(adminId, systemClock.now());
+export async function logoutAllAdminSessions(
+  adminId: bigint,
+  exceptSessionId?: bigint,
+): Promise<number> {
+  return revokeAllAdminSessions(adminId, systemClock.now(), exceptSessionId);
+}
+
+function isAdminSessionIdle(lastActivityAt: Date, now: Date): boolean {
+  return (
+    now.getTime() - lastActivityAt.getTime() >
+    ADMIN_SESSION_POLICY.idleTimeoutSeconds * 1000
+  );
+}
+
+/**
+ * Timing of the caller's own session so the console can refresh it before the
+ * absolute expiry and warn before the idle timeout.
+ */
+export async function getCurrentAdminSessionInfo(sessionId: bigint) {
+  const session = await getAdminSessionTiming(sessionId);
+  if (!session) {
+    throw new ApiError(401, API_ERROR_CODES.invalidSession, "نشست معتبر نیست.");
+  }
+
+  return {
+    absoluteLifetimeSeconds: ADMIN_SESSION_POLICY.absoluteLifetimeSeconds,
+    createdAt: session.createdAt.toISOString(),
+    expiresAt: session.expiresAt.toISOString(),
+    idleTimeoutSeconds: ADMIN_SESSION_POLICY.idleTimeoutSeconds,
+    lastActivityAt: session.lastActivityAt.toISOString(),
+    refreshWindowSeconds: ADMIN_SESSION_POLICY.refreshWindowSeconds,
+    serverTime: systemClock.now().toISOString(),
+  };
+}
+
+export async function listCurrentAdminSessions(
+  adminId: bigint,
+  currentSessionId: bigint,
+) {
+  const now = systemClock.now();
+  const sessions = await listActiveAdminSessions(adminId, now);
+
+  return sessions
+    .filter(
+      (session) =>
+        session.id === currentSessionId ||
+        !isAdminSessionIdle(session.lastActivityAt, now),
+    )
+    .map((session) => ({
+      createdAt: session.createdAt.toISOString(),
+      current: session.id === currentSessionId,
+      expiresAt: session.expiresAt.toISOString(),
+      ipAddress: session.ipAddress,
+      lastActivityAt: session.lastActivityAt.toISOString(),
+      sessionId: session.id.toString(),
+      userAgent: session.userAgent,
+    }));
+}
+
+export async function revokeOwnAdminSession(input: {
+  adminId: bigint;
+  currentSessionId: bigint;
+  request: NextRequest;
+  sessionId: bigint;
+}): Promise<void> {
+  if (input.sessionId === input.currentSessionId) {
+    throw new ApiError(
+      409,
+      API_ERROR_CODES.conflict,
+      "برای پایان نشست جاری از گزینه خروج استفاده کنید.",
+    );
+  }
+
+  const revoked = await revokeAdminSession(
+    input.sessionId,
+    input.adminId,
+    systemClock.now(),
+  );
+  if (revoked === 0) {
+    throw new ApiError(404, API_ERROR_CODES.notFound, "نشست یافت نشد.");
+  }
+
+  await writeAdminAuditLog({
+    action: "revoke_session",
+    adminId: input.adminId,
+    module: "admins",
+    metadata: { sessionId: input.sessionId.toString() },
+    request: input.request,
+  });
 }
 
 export async function requireCurrentAdminProfile(adminId: bigint) {

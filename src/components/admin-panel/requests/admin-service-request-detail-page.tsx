@@ -13,12 +13,17 @@ import {
   AdminSectionCard,
   AdminStatusBadge,
   type AdminDataTableColumn,
+  adminStatusLabel,
 } from "@/components/admin-panel";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAdminPermissions } from "@/hooks/admin/use-admin-permissions";
-import { copyPublicId, formatAdminDateTime } from "@/lib/admin/format";
+import {
+  copyPublicId,
+  formatAdminDate,
+  formatAdminDateTime,
+} from "@/lib/admin/format";
 import {
   cancelAdminServiceRequest,
   fetchAdminServiceRequest,
@@ -29,7 +34,7 @@ import {
   type AdminRequestProviderLink,
 } from "@/lib/api/admin-requests";
 import { isApiClientError } from "@/lib/api/envelope";
-import { formatPrice, toPersianDigits } from "@/lib/utils/format";
+import { formatDistance, formatPrice, toPersianDigits } from "@/lib/utils/format";
 
 interface AdminServiceRequestDetailPageProps {
   requestId: string;
@@ -58,14 +63,19 @@ export function AdminServiceRequestDetailPage({
     if (!canView) return;
     const controller = new AbortController();
 
-    void Promise.all([
-      fetchAdminServiceRequest(requestId, controller.signal),
-      fetchAdminServiceRequestHistories(requestId, controller.signal),
-    ])
-      .then(([request, history]) => {
+    // Histories are secondary: a failure there must not hide the request.
+    void fetchAdminServiceRequestHistories(requestId, controller.signal)
+      .then((history) => {
+        if (!controller.signal.aborted) setHistories(history);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setHistories(null);
+      });
+
+    void fetchAdminServiceRequest(requestId, controller.signal)
+      .then((request) => {
         if (controller.signal.aborted) return;
         setDetail(request);
-        setHistories(history);
         setError(null);
       })
       .catch((cause: unknown) => {
@@ -96,8 +106,20 @@ export function AdminServiceRequestDetailPage({
 
   if (error || !detail) {
     return (
-      <AdminSectionCard className="text-center text-sm text-destructive">
+      <AdminSectionCard className="flex flex-col items-center gap-3 text-center text-sm text-destructive">
         {error ?? "درخواست یافت نشد."}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setLoading(true);
+            setError(null);
+            setReloadKey((value) => value + 1);
+          }}
+        >
+          تلاش مجدد
+        </Button>
       </AdminSectionCard>
     );
   }
@@ -140,7 +162,7 @@ export function AdminServiceRequestDetailPage({
       id: "distance",
       header: "فاصله",
       cell: (row) => (
-        <span className="text-xs">{toPersianDigits(row.distanceKm)} km</span>
+        <span className="text-xs">{formatDistance(row.distanceKm)}</span>
       ),
     },
     {
@@ -170,7 +192,7 @@ export function AdminServiceRequestDetailPage({
           </Button>
         ) : row.rejectionReason || row.removedReason ? (
           <span className="max-w-40 truncate text-xs text-muted-foreground">
-            {row.rejectionReason ?? row.removedReason}
+            {row.rejectionReason ?? adminStatusLabel(row.removedReason)}
           </span>
         ) : (
           <span className="text-xs text-muted-foreground">—</span>
@@ -296,7 +318,12 @@ export function AdminServiceRequestDetailPage({
                 </div>
                 <div className="flex justify-between gap-3">
                   <dt className="text-muted-foreground">مساحت</dt>
-                  <dd dir="ltr">{detail.land.areaSquareMeters} m²</dd>
+                  <dd>
+                    {new Intl.NumberFormat("fa-IR").format(
+                      Number(detail.land.areaSquareMeters),
+                    )}{" "}
+                    متر مربع
+                  </dd>
                 </div>
                 <div className="flex justify-between gap-3">
                   <dt className="text-muted-foreground">مختصات</dt>
@@ -308,7 +335,7 @@ export function AdminServiceRequestDetailPage({
                   <dt className="text-muted-foreground">تاریخ‌های درخواستی</dt>
                   <dd className="max-w-xs text-left text-xs">
                     {detail.dates.length > 0
-                      ? detail.dates.map((date) => formatAdminDateTime(date)).join(" · ")
+                      ? detail.dates.map((date) => formatAdminDate(date)).join(" · ")
                       : "—"}
                   </dd>
                 </div>
@@ -337,7 +364,7 @@ export function AdminServiceRequestDetailPage({
               </div>
               {detail.cancelReason ? (
                 <p className="mt-3 rounded-lg border border-[var(--admin-border)] bg-[var(--admin-canvas)]/50 px-3 py-2 text-sm">
-                  دلیل لغو ({detail.cancelledBy ?? "—"}): {detail.cancelReason}
+                  دلیل لغو (توسط {adminStatusLabel(detail.cancelledBy)}): {detail.cancelReason}
                 </p>
               ) : null}
             </AdminSectionCard>
@@ -376,7 +403,7 @@ export function AdminServiceRequestDetailPage({
                         {formatAdminDateTime(item.createdAt)}
                       </span>
                       <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px]">
-                        {item.actorType}
+                        {adminStatusLabel(item.actorType)}
                       </span>
                     </div>
                     {item.reason ? (
@@ -409,7 +436,7 @@ export function AdminServiceRequestDetailPage({
                         {formatAdminDateTime(item.createdAt)}
                       </span>
                       <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px]">
-                        {item.actorType}
+                        {adminStatusLabel(item.actorType)}
                       </span>
                     </div>
                     {item.reason ? (
@@ -442,6 +469,14 @@ export function AdminServiceRequestDetailPage({
             setLoading(true);
             setReloadKey((value) => value + 1);
           } catch (cause) {
+            if (isApiClientError(cause) && cause.status === 409) {
+              // Someone else changed the request; reload so the next attempt
+              // uses the current version and status.
+              toast.error("درخواست در این فاصله تغییر کرده است. اطلاعات تازه بارگذاری شد.");
+              setCancelOpen(false);
+              setReloadKey((value) => value + 1);
+              return;
+            }
             toast.error(
               isApiClientError(cause)
                 ? cause.message

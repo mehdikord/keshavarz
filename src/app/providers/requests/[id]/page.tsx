@@ -25,6 +25,7 @@ import {
   type RequestAction,
 } from "@/components/providers-panel/requests/request-action-sheet";
 import { TONE_PILL } from "@/components/providers-panel/requests/request-card";
+import { RequestTakenState } from "@/components/providers-panel/requests/request-taken-state";
 import { MapPicker } from "@/components/shared/map-picker";
 import { Skeleton } from "@/components/ui/skeleton";
 import { canShowPhone } from "@/lib/contact-privacy";
@@ -56,6 +57,11 @@ const STAMP = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
   hour: "2-digit",
   minute: "2-digit",
 });
+
+/** Another provider accepted first; the API withholds the request entirely. */
+function isTakenByOther(cause: unknown) {
+  return isApiClientError(cause) && cause.code === "REQUEST_ALREADY_ACCEPTED";
+}
 
 function landToLocation(land: AppProviderRequestDetail["land"]): GeoLocation | null {
   if (!land.latitude || !land.longitude) return null;
@@ -108,7 +114,7 @@ export default function ProviderRequestDetailPage() {
   const params = useParams<{ id: string }>();
 
   const [detail, setDetail] = useState<AppProviderRequestDetail | null>(null);
-  const [loadState, setLoadState] = useState<"loading" | "ready" | "not_found">("loading");
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "not_found" | "taken">("loading");
   const [action, setAction] = useState<RequestAction>("accept");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetKey, setSheetKey] = useState(0);
@@ -145,6 +151,10 @@ export default function ProviderRequestDetailPage() {
       } catch (cause: unknown) {
         if (cancelled || controller.signal.aborted) return;
 
+        if (isTakenByOther(cause)) {
+          setLoadState("taken");
+          return;
+        }
         if (!(isApiClientError(cause) && cause.status === 404)) {
           toast.error(
             isApiClientError(cause) ? cause.message : "بارگذاری جزئیات درخواست ناموفق بود.",
@@ -190,8 +200,18 @@ export default function ProviderRequestDetailPage() {
       }
       return true;
     } catch (cause: unknown) {
+      try {
+        setDetail(await reloadDetail());
+      } catch (reloadCause: unknown) {
+        // Lost the race while the page was open: switch to the "taken" screen.
+        if (isTakenByOther(reloadCause)) {
+          setSheetOpen(false);
+          setDetail(null);
+          setLoadState("taken");
+          return false;
+        }
+      }
       toast.error(isApiClientError(cause) ? cause.message : "انجام عملیات ناموفق بود.");
-      void reloadDetail().then(setDetail).catch(() => undefined);
       return false;
     }
   };
@@ -204,6 +224,17 @@ export default function ProviderRequestDetailPage() {
           <Skeleton className="h-32 rounded-[24px]" />
           <Skeleton className="h-24 rounded-[24px]" />
           <Skeleton className="h-64 rounded-[24px]" />
+        </div>
+      </PageContainer>
+    );
+  }
+
+  if (loadState === "taken") {
+    return (
+      <PageContainer withDock className="px-0 pt-0">
+        <ProviderPageHero title="جزئیات درخواست" backHref="/providers/requests" />
+        <div className="relative z-10 -mt-4 px-4">
+          <RequestTakenState backHref="/providers/requests" />
         </div>
       </PageContainer>
     );

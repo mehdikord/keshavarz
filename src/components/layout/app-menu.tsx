@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ClipboardList,
   CreditCard,
+  Download,
   House,
   Inbox,
   LandPlot,
@@ -33,6 +34,7 @@ import { toPersianDigits } from "@/lib/utils/format";
 import { formatPhoneDisplay } from "@/lib/utils/phone";
 import { useAppMenuStore } from "@/stores/app-menu-store";
 import { useAuthStore } from "@/stores/auth-store";
+import { selectCanOfferInstall, usePwaStore } from "@/stores/pwa-store";
 
 type Panel = "provider" | "consumer";
 
@@ -102,6 +104,8 @@ export function AppMenu() {
   const image = useAuthStore((state) => state.image);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const logout = useAuthStore((state) => state.logout);
+  const canOfferInstall = usePwaStore(selectCanOfferInstall);
+  const openInstallSheet = usePwaStore((state) => state.openInstallSheet);
 
   const panel = currentPanel(pathname);
   const panelLinks = panel ? PANEL_LINKS[panel] : [];
@@ -325,6 +329,26 @@ export function AppMenu() {
                 })}
               </ul>
             </div>
+
+            {canOfferInstall ? (
+              <button
+                type="button"
+                onClick={() => {
+                  close();
+                  openInstallSheet();
+                }}
+                className="flex w-full items-center gap-3 rounded-[22px] bg-[linear-gradient(150deg,#123d2b_0%,#2d7a55_100%)] px-3.5 py-3 text-right text-white shadow-[0_14px_28px_-16px_rgba(18,61,43,0.8)] transition active:scale-[0.98]"
+              >
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-white/15">
+                  <Download className="size-[18px]" strokeWidth={2} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13.5px] font-black">نصب اپلیکیشن</span>
+                  <span className="block text-[11px] text-white/70">دسترسی سریع از صفحه اصلی گوشی</span>
+                </span>
+                <ChevronLeft className="size-4 text-white/60" />
+              </button>
+            ) : null}
           </nav>
 
           <div className="shrink-0 border-t border-[#e3ebe3] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
