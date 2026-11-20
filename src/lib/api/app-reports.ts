@@ -4,6 +4,7 @@ import { appApi } from "@/lib/api/app-client";
 
 const TopNamedSchema = z
   .object({
+    image: z.string().nullable().optional(),
     name: z.string(),
     serviceId: z.string().optional(),
     totalToman: z.number().int(),

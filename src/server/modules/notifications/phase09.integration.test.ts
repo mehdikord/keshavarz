@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { prisma } from "@/server/db/prisma";
-import { ApiError } from "@/server/errors";
 import { createPublicId } from "@/server/identifiers/ulid";
 import { runNotificationDeliveryJob } from "@/server/modules/notifications/notification.delivery";
 import {
@@ -10,14 +9,12 @@ import {
   listCurrentUserNotifications,
   markCurrentUserNotificationRead,
   markCurrentUserNotificationsReadAll,
-  sendAdminNotifications,
 } from "@/server/modules/notifications/notification.service";
 import { buildRequestNotification } from "@/server/modules/notifications/notification.templates";
 import { NOTIFICATION_TYPES } from "@/server/modules/notifications/notification.types";
 import { sanitizeNotificationDeepLink } from "@/server/modules/notifications/notification.deeplink";
 
 const phones = ["09997000001", "09997000002", "09997000003"];
-const adminPhone = "09997000999";
 
 async function createUser(phone: string, name: string) {
   return prisma.user.create({
@@ -27,25 +24,11 @@ async function createUser(phone: string, name: string) {
 
 async function cleanup() {
   await prisma.notificationDelivery.deleteMany({
-    where: {
-      OR: [
-        { notification: { user: { phone: { in: phones } } } },
-        { notification: { admin: { phone: adminPhone } } },
-      ],
-    },
+    where: { notification: { user: { phone: { in: phones } } } },
   });
   await prisma.notification.deleteMany({
-    where: {
-      OR: [
-        { user: { phone: { in: phones } } },
-        { admin: { phone: adminPhone } },
-      ],
-    },
+    where: { user: { phone: { in: phones } } },
   });
-  await prisma.adminAuditLog.deleteMany({
-    where: { admin: { phone: adminPhone } },
-  });
-  await prisma.admin.deleteMany({ where: { phone: adminPhone } });
   await prisma.user.deleteMany({ where: { phone: { in: phones } } });
 }
 
@@ -203,53 +186,6 @@ describe.sequential("phase 09 notifications", () => {
     );
     expect(byChannel.in_app).toBe("delivered");
     expect(byChannel.sms).toBe("skipped");
-  });
-
-  it("allows admin targeted send with batch recipients", async () => {
-    const user = await prisma.user.findFirstOrThrow({
-      where: { phone: phones[0]! },
-    });
-    const admin = await prisma.admin.create({
-      data: {
-        isSuperAdmin: 1,
-        name: "n9-admin",
-        password: "x".repeat(60),
-        phone: adminPhone,
-        publicId: createPublicId(),
-      },
-    });
-
-    const sent = await sendAdminNotifications({
-      adminId: admin.id,
-      body: "پیام مدیریتی",
-      channels: ["in_app"],
-      deepLink: "/users/search",
-      title: "اعلان ادمین",
-      type: NOTIFICATION_TYPES.adminBroadcast,
-      userIds: [user.publicId],
-    });
-
-    expect(sent.createdCount).toBe(1);
-    expect(sent.notificationIds).toHaveLength(1);
-
-    const listed = await listCurrentUserNotifications(user.id, {
-      limit: 50,
-      readStatus: "all",
-    });
-    expect(
-      listed.items.some((item) => item.type === NOTIFICATION_TYPES.adminBroadcast),
-    ).toBe(true);
-
-    await expect(
-      sendAdminNotifications({
-        adminId: admin.id,
-        body: "بدون گیرنده",
-        channels: ["in_app"],
-        title: "bad",
-        type: NOTIFICATION_TYPES.adminBroadcast,
-        userIds: [createPublicId()],
-      }),
-    ).rejects.toBeInstanceOf(ApiError);
   });
 
   it("marks exhausted failures as dead-letter observable", async () => {

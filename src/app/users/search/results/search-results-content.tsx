@@ -28,6 +28,7 @@ import {
 } from "@/components/consumer-panel/provider-result-card";
 import { SearchLoading } from "@/components/consumer-panel/search-loading";
 import { PageContainer } from "@/components/layout/page-container";
+import { ServiceThumb } from "@/components/shared/service-thumb";
 import {
   fetchRequestCandidates,
   sendAppRequestToProviders,
@@ -81,16 +82,19 @@ function SearchSummary({ context }: { context: AppCandidateRequestContext }) {
   return (
     <div className="mt-5 rounded-[22px] bg-white/55 p-4 ring-1 ring-white/80 backdrop-blur-md">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="flex items-center gap-1.5 text-[11px] font-bold text-[#a0561a]">
-            <Wrench className="size-3.5" />
-            {context.categoryName}
-          </p>
-          <p className="mt-0.5 truncate text-[17px] font-black">{context.serviceName}</p>
-          <p className="mt-1 flex items-center gap-1 truncate text-[12px] text-[#6b4a26]">
-            <LandPlot className="size-3.5 shrink-0" />
-            {context.landTitle}
-          </p>
+        <div className="flex min-w-0 items-center gap-3">
+          <ServiceThumb className="size-14 rounded-2xl ring-white" fallback={null} image={context.serviceImage} name={context.serviceName} />
+          <div className="min-w-0">
+            <p className="flex items-center gap-1.5 text-[11px] font-bold text-[#a0561a]">
+              <Wrench className="size-3.5" />
+              {context.categoryName}
+            </p>
+            <p className="mt-0.5 truncate text-[17px] font-black">{context.serviceName}</p>
+            <p className="mt-1 flex items-center gap-1 truncate text-[12px] text-[#6b4a26]">
+              <LandPlot className="size-3.5 shrink-0" />
+              {context.landTitle}
+            </p>
+          </div>
         </div>
         <Link
           href={`/users/search?landId=${encodeURIComponent(context.landId)}`}

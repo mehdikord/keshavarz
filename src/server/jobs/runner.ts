@@ -1,7 +1,5 @@
 import { runAppAuthCleanupJob } from "@/server/jobs/app-auth-cleanup";
-import { runExportCleanupJob } from "@/server/jobs/cleanup-exports";
 import { runNotificationJobs } from "@/server/jobs/notification-deliveries";
-import { runRbacExpiryJobSafe } from "@/server/jobs/rbac-expiry";
 import {
   runPaymentDeadLetterDrainJob,
   runPaymentReconciliationJob,
@@ -19,8 +17,6 @@ export const JOB_NAMES = [
   "payment-reconciliation",
   "payment-dead-letter-drain",
   "notification-deliveries",
-  "export-cleanup",
-  "rbac-expiry",
   "all",
 ] as const;
 
@@ -154,10 +150,6 @@ async function runNamedJob(name: Exclude<JobName, "all">) {
       return runPaymentDeadLetterDrainJob();
     case "notification-deliveries":
       return runNotificationJobs();
-    case "export-cleanup":
-      return runExportCleanupJob();
-    case "rbac-expiry":
-      return runRbacExpiryJobSafe();
   }
 }
 

@@ -45,6 +45,7 @@ export function mapCandidateRequestContext(request: {
   landAreaSquareMetersSnapshot: { toString(): string };
   landTitleSnapshot: string;
   publicId: string;
+  service: { image: string | null } | null;
   serviceCategoryNameSnapshot: string;
   serviceNameSnapshot: string;
   status: string;
@@ -60,6 +61,7 @@ export function mapCandidateRequestContext(request: {
     landId: request.land.publicId,
     landTitle: request.landTitleSnapshot,
     requestId: request.publicId,
+    serviceImage: request.service?.image ?? null,
     serviceName: request.serviceNameSnapshot,
     status: request.status,
     version: request.version,

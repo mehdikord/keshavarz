@@ -1,91 +1,29 @@
 import type { NextRequest } from "next/server";
 
-import { requireAdminSession } from "@/server/auth";
-import { getAllowedOrigins } from "@/server/config/env";
-import {
-  apiSuccess,
-  parseJsonBody,
-  parseWithSchema,
-  withApiHandler,
-} from "@/server/http";
-import { writeAdminAuditLog } from "@/server/modules/admin-audit/admin-audit.service";
-import {
-  AdminCategoryParamsSchema,
-  AdminCategoryUpdateSchema,
-} from "@/server/modules/admin-catalog/admin-catalog.schemas";
-import {
-  deleteCategoryForAdmin,
-  updateCategoryForAdmin,
-} from "@/server/modules/admin-catalog/admin-catalog.service";
-import { requireAdminPermission } from "@/server/modules/admin-rbac/require-admin-permission";
-import { assertMutationProtection } from "@/server/security";
+import { ADMIN_PERMISSIONS } from "@/lib/admin/permissions";
+import { apiSuccess, parseJsonBody, parseWithSchema, withApiHandler } from "@/server/http";
+import { requireAdminActor } from "@/server/modules/admin/access/admin-access.service";
+import { segmentAfter } from "@/server/modules/admin/admin-route-params";
+import { CategoryIdParamsSchema, CategoryUpdateSchema } from "@/server/modules/admin/catalog/catalog-admin.schemas";
+import { deleteAdminCategory, updateAdminCategory } from "@/server/modules/admin/catalog/catalog-admin.service";
 
 export const runtime = "nodejs";
 
-function categoryIdFromPath(request: NextRequest): string | undefined {
-  return request.nextUrl.pathname.split("/").at(-1);
+function params(request: NextRequest) {
+  return parseWithSchema(CategoryIdParamsSchema, { categoryId: segmentAfter(request, "categories") });
 }
 
 export const PATCH = withApiHandler(async (request: NextRequest, context) => {
-  assertMutationProtection(
-    request,
-    "admins",
-    getAllowedOrigins("admin"),
-  );
-  const auth = await requireAdminSession(request);
-  await requireAdminPermission(auth, "catalog.manage", request);
-  const params = parseWithSchema(AdminCategoryParamsSchema, {
-    categoryId: categoryIdFromPath(request),
-  });
-  const input = await parseJsonBody(request, AdminCategoryUpdateSchema);
-  const result = await updateCategoryForAdmin(
-    params.categoryId,
-    auth.internalAdminId,
-    input,
-  );
-
-  await writeAdminAuditLog({
-    action: "catalog_category_update",
-    adminId: auth.internalAdminId,
-    auditableId: result.categoryId,
-    auditableType: "ServiceCategory",
-    httpMethod: request.method,
-    module: "catalog",
-    newValues: result.newValues,
-    oldValues: result.oldValues,
-    request,
-  });
-
-  return apiSuccess(result.newValues, context.requestId);
+  const { auth } = await requireAdminActor(request, ADMIN_PERMISSIONS.catalogManage);
+  const { categoryId } = params(request);
+  const input = await parseJsonBody(request, CategoryUpdateSchema);
+  await updateAdminCategory({ adminId: auth.internalAdminId, request }, categoryId, input);
+  return apiSuccess({ updated: true }, context.requestId);
 });
 
 export const DELETE = withApiHandler(async (request: NextRequest, context) => {
-  assertMutationProtection(
-    request,
-    "admins",
-    getAllowedOrigins("admin"),
-  );
-  const auth = await requireAdminSession(request);
-  await requireAdminPermission(auth, "catalog.manage", request);
-  const params = parseWithSchema(AdminCategoryParamsSchema, {
-    categoryId: categoryIdFromPath(request),
-  });
-  const result = await deleteCategoryForAdmin(
-    params.categoryId,
-    auth.internalAdminId,
-  );
-
-  await writeAdminAuditLog({
-    action: "catalog_category_delete",
-    adminId: auth.internalAdminId,
-    auditableId: result.categoryId,
-    auditableType: "ServiceCategory",
-    httpMethod: request.method,
-    module: "catalog",
-    newValues: result.newValues,
-    oldValues: result.oldValues,
-    request,
-  });
-
+  const { auth } = await requireAdminActor(request, ADMIN_PERMISSIONS.catalogManage);
+  const { categoryId } = params(request);
+  await deleteAdminCategory({ adminId: auth.internalAdminId, request }, categoryId);
   return apiSuccess({ deleted: true }, context.requestId);
 });

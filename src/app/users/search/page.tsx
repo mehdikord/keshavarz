@@ -258,6 +258,7 @@ function ConsumerSearchContent() {
                 title="چه خدمتی لازم دارید؟"
                 hint="ابتدا دسته‌بندی، سپس خدمت را انتخاب کنید"
                 summary={selectedService?.name ?? null}
+                summaryImage={selectedService?.image ?? null}
                 done={Boolean(selectedService)}
                 open={openStep === "service"}
                 error={errors.serviceId ?? errors.categoryId}

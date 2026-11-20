@@ -28,37 +28,3 @@ export function mapNotification(item: {
     type: item.type,
   };
 }
-
-export function mapAdminNotification(item: {
-  adminPublicId: string | null;
-  body: string;
-  createdAt: Date;
-  data: unknown;
-  deliveries: Array<{
-    attemptsCount: number;
-    channel: string;
-    errorMessage: string | null;
-    status: string;
-  }>;
-  publicId: string;
-  readAt: Date | null;
-  recipientType: string;
-  title: string;
-  type: string;
-  userPublicId: string | null;
-}) {
-  return {
-    ...mapNotification(item),
-    deliveries: item.deliveries.map((delivery) => ({
-      attemptsCount: delivery.attemptsCount,
-      channel: delivery.channel,
-      errorMessage: delivery.errorMessage,
-      status: delivery.status,
-    })),
-    recipient: {
-      adminId: item.adminPublicId,
-      type: item.recipientType,
-      userId: item.userPublicId,
-    },
-  };
-}

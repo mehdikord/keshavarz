@@ -101,6 +101,7 @@ export async function listProviderServices(input: {
       pricingUnit: true,
       service: {
         select: {
+          image: true,
           name: true,
           slug: true,
         },
@@ -146,7 +147,7 @@ export async function createProviderService(
       isActive: true,
       priceToman: true,
       pricingUnit: true,
-      service: { select: { name: true, slug: true } },
+      service: { select: { image: true, name: true, slug: true } },
       updatedAt: true,
     },
   });
@@ -187,7 +188,7 @@ export async function findProviderServiceByServiceSlug(
       isActive: true,
       priceToman: true,
       pricingUnit: true,
-      service: { select: { name: true, slug: true } },
+      service: { select: { image: true, name: true, slug: true } },
       updatedAt: true,
     },
   });
@@ -212,7 +213,7 @@ export async function updateProviderServiceInTransaction(
       isActive: true,
       priceToman: true,
       pricingUnit: true,
-      service: { select: { name: true, slug: true } },
+      service: { select: { image: true, name: true, slug: true } },
       updatedAt: true,
     },
   });

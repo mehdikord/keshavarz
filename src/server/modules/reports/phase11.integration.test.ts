@@ -2,21 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { prisma } from "@/server/db/prisma";
 import { createPublicId } from "@/server/identifiers/ulid";
-import { toCsv } from "@/server/modules/exports/exports.csv";
 import {
-  cleanupExpiredExports,
-  createAdminExport,
-  getAdminExport,
-  processExportJob,
-} from "@/server/modules/exports/exports.service";
-import {
-  clearExportStoreForTests,
-  getExportJob,
-  updateExportJob,
-} from "@/server/modules/exports/exports.store";
-import {
-  getAdminFinancialReport,
-  getAdminReportsOverview,
   getConsumerFinancialSummary,
   getConsumerMonthlyCosts,
   getProviderFinancialSummary,
@@ -28,7 +14,6 @@ const landLat = 35.7;
 const landLng = 51.4;
 
 async function cleanup() {
-  clearExportStoreForTests();
   await prisma.serviceRequestProviderHistory.deleteMany({
     where: {
       requestProvider: {
@@ -63,7 +48,7 @@ async function cleanup() {
   await prisma.user.deleteMany({ where: { phone: { in: phones } } });
 }
 
-describe.sequential("phase 11 reports and exports", () => {
+describe.sequential("phase 11 reports", () => {
   let consumerId: bigint;
   let providerUserId: bigint;
   let landPublicId: string;
@@ -184,12 +169,6 @@ describe.sequential("phase 11 reports and exports", () => {
     await prisma.$disconnect();
   }, 60_000);
 
-  it("protects CSV cells from formula injection", () => {
-    const csv = toCsv([{ note: "=1+1", title: "ok" }]);
-    expect(csv).toContain("'=1+1");
-    expect(csv).toContain("ok");
-  });
-
   it("reports consumer costs only from completed requests", async () => {
     const summary = await getConsumerFinancialSummary(consumerId, {});
     expect(summary.timezone).toBe("Asia/Tehran");
@@ -216,59 +195,5 @@ describe.sequential("phase 11 reports and exports", () => {
     expect(
       monthly.months.reduce((sum, row) => sum + row.totalToman, 0),
     ).toBe(350_000);
-  });
-
-  it("returns admin overview and financial reports", async () => {
-    const overview = await getAdminReportsOverview({});
-    expect(overview.timezone).toBe("Asia/Tehran");
-    expect(overview.gmvToman).toBeGreaterThanOrEqual(350_000);
-    expect(overview.funnel).toBeTruthy();
-
-    const financial = await getAdminFinancialReport({});
-    expect(financial.completedCount).toBeGreaterThanOrEqual(1);
-    expect(financial.gmvToman).toBeGreaterThanOrEqual(350_000);
-    expect(Array.isArray(financial.topServices)).toBe(true);
-  });
-
-  it("creates async export and becomes ready without blocking create", async () => {
-    const ownerPublicId = createPublicId();
-    const created = await createAdminExport({
-      adminId: BigInt(1),
-      adminPublicId: ownerPublicId,
-      domain: "reports",
-      filters: {},
-    });
-    expect(created.status).toBe("queued");
-    expect(created.exportId).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
-
-    await processExportJob(created.exportId);
-
-    // Another admin must not be able to read (or mint a download link for)
-    // someone else's export.
-    await expect(
-      getAdminExport({
-        adminPublicId: createPublicId(),
-        exportId: created.exportId,
-      }),
-    ).rejects.toMatchObject({ status: 404 });
-
-    const status = await getAdminExport({
-      adminPublicId: ownerPublicId,
-      exportId: created.exportId,
-    });
-    expect(status.status).toBe("ready");
-    expect(status.rowCount).toBeGreaterThanOrEqual(1);
-    if (status.status === "ready") {
-      expect("downloadUrl" in status && status.downloadUrl).toContain(
-        "downloadToken=",
-      );
-    }
-
-    const job = getExportJob(created.exportId);
-    expect(job?.filePath).toBeTruthy();
-
-    updateExportJob(created.exportId, { status: "expired" });
-    const cleanup = await cleanupExpiredExports();
-    expect(cleanup.expiredJobs).toBeGreaterThanOrEqual(1);
   });
 });

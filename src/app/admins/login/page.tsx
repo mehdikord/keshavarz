@@ -1,33 +1,23 @@
-import { Sprout } from "lucide-react";
+import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
-import { AdminLoginForm } from "@/components/admin-panel/auth/admin-login-form";
+import { AdminLoginScreen } from "@/components/admin/auth/login-screen";
+import { safeAdminNext } from "@/lib/admin/next-path";
+import { getAdminPageSession } from "@/server/modules/admin/auth/admin-viewer";
+
+export const metadata: Metadata = { title: "ورود" };
 
 export default async function AdminLoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string | string[] }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  // `?next=a&next=b` arrives as an array; take the first value.
-  const next = Array.isArray(params.next) ? params.next[0] : params.next;
+  const next = safeAdminNext(typeof params.next === "string" ? params.next : null);
 
-  return (
-    <div className="flex min-h-dvh items-center justify-center bg-[var(--admin-canvas)] px-4 py-10">
-      <div className="w-full max-w-md space-y-6 animate-fade-in">
-        <div className="flex flex-col items-center gap-3 text-center">
-          <span className="flex size-12 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-md">
-            <Sprout className="size-6" />
-          </span>
-          <div className="space-y-1">
-            <h1 className="text-2xl font-bold tracking-tight">ورود مدیران</h1>
-            <p className="text-sm text-muted-foreground">
-              با شماره موبایل و رمز عبور وارد پنل مدیریت شوید.
-            </p>
-          </div>
-        </div>
+  if (await getAdminPageSession()) {
+    redirect(next);
+  }
 
-        <AdminLoginForm nextPath={next ?? "/admins"} />
-      </div>
-    </div>
-  );
+  return <AdminLoginScreen expired={params.expired === "1"} next={next} />;
 }

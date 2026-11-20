@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import {
   findActiveAdminSession,
   findUserSessionByTokenHash,
+  touchAdminSession,
 } from "@/server/auth/session.repository";
 import { systemClock } from "@/server/clock/clock";
 import type { Clock } from "@/server/clock/clock";
@@ -13,7 +14,6 @@ import {
   API_ERROR_CODES,
   ApiError,
 } from "@/server/errors";
-import { touchAdminSession } from "@/server/modules/admin-auth/admin-auth.repository";
 import {
   hasRotatedSessionSuccessor,
   revokeSessionFamily,
@@ -36,6 +36,7 @@ export interface AdminAuthContext {
   internalAdminId: bigint;
   isSuperAdmin: boolean;
   sessionId: bigint;
+  sessionPublicId: string | null;
 }
 
 function requireSessionToken(
@@ -108,14 +109,35 @@ export async function requireAdminSession(
   request: NextRequest,
 ): Promise<AdminAuthContext> {
   const token = requireSessionToken(request, "admins");
-  const session = await findActiveAdminSessionForToken(token, systemClock);
+  const context = await resolveAdminSessionToken(token);
 
-  if (!session) {
+  if (!context) {
     throw new ApiError(
       401,
       API_ERROR_CODES.invalidSession,
       "نشست معتبر نیست یا منقضی شده است.",
     );
+  }
+
+  return context;
+}
+
+/**
+ * Resolves a raw admin session token (from the request cookie or from
+ * `cookies()` in a server component) and slides its idle window.
+ * Returns `null` for a missing, expired, revoked or disabled session.
+ */
+export async function resolveAdminSessionToken(
+  token: string | undefined,
+): Promise<AdminAuthContext | null> {
+  if (!token) {
+    return null;
+  }
+
+  const session = await findActiveAdminSessionForToken(token, systemClock);
+
+  if (!session) {
+    return null;
   }
 
   await touchAdminSession(session.sessionId, systemClock.now());
@@ -125,6 +147,7 @@ export async function requireAdminSession(
     internalAdminId: session.actorId,
     isSuperAdmin: session.isSuperAdmin,
     sessionId: session.sessionId,
+    sessionPublicId: session.sessionPublicId,
   };
 }
 

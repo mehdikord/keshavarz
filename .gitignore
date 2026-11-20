@@ -52,3 +52,7 @@ next-env.d.ts
 # local env overrides: never commit, they override .env on the server
 .env.local
 .env*.local
+
+# user uploads (profile photos, provider galleries, catalog images): local object storage, never commit
+/storage/
+/next/storage/

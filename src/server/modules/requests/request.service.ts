@@ -15,9 +15,6 @@ import {
   type NotificationType,
 } from "@/server/modules/notifications/notification.types";
 import {
-  mapAdminRequestDetail,
-  mapAdminRequestHistories,
-  mapAdminRequestSummary,
   mapConsumerRequestDetail,
   mapConsumerRequestSummary,
   mapProviderRequestDetail,
@@ -28,31 +25,22 @@ import {
   addProvidersToRequest,
   cancelServiceRequest,
   completeServiceRequest,
-  findAdminRequestByPublicId,
   findExistingProviderLinks,
-  findProviderLinkById,
   findProviderLinkForRequest,
   findProviderProfileIdByUserId,
   findProviderUserIdByProfileId,
   findRequestByPublicId,
-  findUserIdByPublicId,
   findUserSnapshot,
-  listAdminRequestProviderLinks,
-  listAdminServiceRequests,
   listConsumerRequests,
   listProviderInbox,
   listRequestDates,
-  listRequestProviderHistories,
   listRequestProviderLinks,
-  listRequestStatusHistories,
   listSentLinkProviderUserIds,
   lockProviderLink,
-  lockProviderLinkById,
   lockServiceRequestByPublicId,
   markProviderLinkViewed,
   markRequestPendingProvider,
   rejectProviderLink,
-  removeProviderLinkByAdmin,
   type ConsumerRequestStatus,
 } from "@/server/modules/requests/request.repository";
 import {
@@ -74,7 +62,7 @@ function assertExpectedVersion(
   }
 }
 
-async function notifyUser(input: {
+export async function notifyUser(input: {
   body: string;
   relatedServiceRequestId: bigint;
   requestPublicId: string;
@@ -310,6 +298,7 @@ export async function listConsumerServiceRequests(
         providersFound: row._count.serviceRequestCandidates,
         providersSent: row._count.serviceRequestProviders,
         publicId: row.publicId,
+        serviceImage: row.service.image,
         serviceNameSnapshot: row.serviceNameSnapshot,
         status: row.status,
         version: row.version,
@@ -408,6 +397,7 @@ export async function listProviderServiceRequests(
         priceToman: row.servicePriceSnapshotToman,
         publicId: row.request.publicId,
         sentAt: row.sentAt,
+        serviceImage: row.request.service.image,
         serviceNameSnapshot: row.request.serviceNameSnapshot,
         status: row.request.status,
         version: row.request.version,
@@ -706,6 +696,13 @@ async function cancelRequestCore(input: {
   actorUserId?: bigint | null;
   cancelledBy: "consumer" | "provider" | "admin";
   expectedVersion?: number;
+  /** Overrides the default notification text sent to every party. */
+  notificationBody?: string;
+  /** Runs inside the cancel transaction, e.g. to write an admin audit row. */
+  onCancelled?: (
+    transaction: TransactionClient,
+    locked: { fromStatus: string; id: bigint; publicId: string },
+  ) => Promise<void>;
   reason: string | null;
   requestId: string;
   requireAssignedProviderId?: bigint;
@@ -805,7 +802,7 @@ async function cancelRequestCore(input: {
     for (const target of notifyTargets) {
       const targetId = BigInt(target);
       await notifyUser({
-        body: "درخواست خدمت لغو شد",
+        body: input.notificationBody ?? "درخواست خدمت لغو شد",
         relatedServiceRequestId: locked.id,
         requestPublicId: locked.publicId,
         title: "درخواست لغو شد",
@@ -817,10 +814,38 @@ async function cancelRequestCore(input: {
       });
     }
 
+    await input.onCancelled?.(transaction, {
+      fromStatus: locked.status,
+      id: locked.id,
+      publicId: locked.publicId,
+    });
+
     return {
       requestId: locked.publicId,
       status: "cancelled" as const,
     };
+  });
+}
+
+/** Support cancels any open request; the reason is always required and shown to both sides. */
+export async function cancelAdminServiceRequest(
+  adminId: bigint,
+  requestId: string,
+  input: {
+    expectedVersion?: number;
+    onCancelled?: Parameters<typeof cancelRequestCore>[0]["onCancelled"];
+    reason: string;
+  },
+) {
+  return cancelRequestCore({
+    actorAdminId: adminId,
+    actorType: "admin",
+    cancelledBy: "admin",
+    expectedVersion: input.expectedVersion,
+    notificationBody: `درخواست توسط پشتیبانی لغو شد: ${input.reason}`,
+    onCancelled: input.onCancelled,
+    reason: input.reason,
+    requestId,
   });
 }
 
@@ -866,224 +891,6 @@ export async function cancelProviderServiceRequest(
     reason: input.reason,
     requestId,
     requireAssignedProviderId: profile.id,
-  });
-}
-
-export async function cancelAdminServiceRequest(
-  adminId: bigint,
-  requestId: string,
-  input: { expectedVersion?: number; reason: string },
-) {
-  return cancelRequestCore({
-    actorAdminId: adminId,
-    actorType: "admin",
-    cancelledBy: "admin",
-    expectedVersion: input.expectedVersion,
-    reason: input.reason,
-    requestId,
-  });
-}
-
-export async function listAdminManagedServiceRequests(query: {
-  consumerUserId?: string;
-  cursor?: string;
-  limit: number;
-  q?: string;
-  status?: ConsumerRequestStatus;
-}) {
-  let cursorId: bigint | undefined;
-  if (query.cursor) {
-    const cursor = await findRequestByPublicId(query.cursor);
-    if (!cursor) {
-      throw new ApiError(
-        400,
-        API_ERROR_CODES.validationFailed,
-        "cursor معتبر نیست.",
-      );
-    }
-    cursorId = cursor.id;
-  }
-
-  let consumerUserId: bigint | undefined;
-  if (query.consumerUserId) {
-    const consumer = await findUserIdByPublicId(query.consumerUserId);
-    if (!consumer) {
-      throw new ApiError(404, API_ERROR_CODES.notFound, "کاربر یافت نشد.");
-    }
-    consumerUserId = consumer.id;
-  }
-
-  const rows = await listAdminServiceRequests({
-    consumerUserId,
-    cursorId,
-    limit: query.limit,
-    publicId: query.q,
-    status: query.status,
-  });
-  const hasMore = rows.length > query.limit;
-  const page = hasMore ? rows.slice(0, query.limit) : rows;
-  const last = page.at(-1);
-
-  return {
-    items: page.map((row) =>
-      mapAdminRequestSummary({
-        agreedPriceToman: row.agreedPriceToman,
-        assignedProviderNameSnapshot: row.assignedProviderNameSnapshot,
-        consumerPublicId: row.consumer.publicId,
-        createdAt: row.createdAt,
-        landTitleSnapshot: row.landTitleSnapshot,
-        publicId: row.publicId,
-        searchId: row.searchPublicId ?? null,
-        serviceNameSnapshot: row.serviceNameSnapshot,
-        status: row.status,
-        version: row.version,
-      }),
-    ),
-    meta: {
-      hasMore,
-      limit: query.limit,
-      nextCursor: hasMore && last ? last.publicId : null,
-    },
-  };
-}
-
-export async function getAdminManagedServiceRequest(requestId: string) {
-  const request = await findAdminRequestByPublicId(requestId);
-  if (!request) {
-    throw new ApiError(404, API_ERROR_CODES.notFound, "درخواست یافت نشد.");
-  }
-
-  const [dates, links] = await Promise.all([
-    listRequestDates(request.id),
-    listAdminRequestProviderLinks(request.id),
-  ]);
-
-  let assignedProviderPublicId: string | null = null;
-  if (request.assignedProviderProfileId) {
-    const assigned = await findProviderUserIdByProfileId(
-      request.assignedProviderProfileId,
-    );
-    assignedProviderPublicId = assigned?.user.publicId ?? null;
-  }
-
-  return mapAdminRequestDetail({
-    assignedProviderPublicId,
-    consumerPublicId: request.consumer.publicId,
-    dates,
-    links: links.map((link) => ({
-      distanceKm: link.distanceKm,
-      id: link.id,
-      phone: link.providerProfile.user.phone,
-      providerNameSnapshot: link.providerNameSnapshot,
-      providerPublicId: link.providerProfile.user.publicId,
-      rejectionReason: link.rejectionReason,
-      removedReason: link.removedReason,
-      respondedAt: link.respondedAt,
-      sentAt: link.sentAt,
-      servicePriceSnapshotToman: link.servicePriceSnapshotToman,
-      status: link.status,
-      viewedAt: link.viewedAt,
-    })),
-    request,
-  });
-}
-
-export async function getAdminManagedServiceRequestHistories(
-  requestId: string,
-) {
-  const request = await findRequestByPublicId(requestId);
-  if (!request) {
-    throw new ApiError(404, API_ERROR_CODES.notFound, "درخواست یافت نشد.");
-  }
-
-  const [statusHistories, providerLinkHistories] = await Promise.all([
-    listRequestStatusHistories(request.id),
-    listRequestProviderHistories(request.id),
-  ]);
-
-  return mapAdminRequestHistories({
-    providerLinkHistories,
-    statusHistories,
-  });
-}
-
-export async function removeAdminServiceRequestProvider(
-  adminId: bigint,
-  linkId: string,
-  input: { reason?: string },
-) {
-  const parsedLinkId = BigInt(linkId);
-  const existing = await findProviderLinkById(parsedLinkId);
-  if (!existing) {
-    throw new ApiError(404, API_ERROR_CODES.notFound, "لینک Provider یافت نشد.");
-  }
-
-  if (existing.status === "accepted" && existing.request.status === "in_progress") {
-    throw new ApiError(
-      409,
-      API_ERROR_CODES.conflict,
-      "برای Provider پذیرفته‌شده در درخواست در حال انجام باید از لغو درخواست استفاده شود.",
-    );
-  }
-
-  if (existing.status !== "sent") {
-    throw new ApiError(
-      409,
-      API_ERROR_CODES.conflict,
-      "فقط لینک با وضعیت sent قابل حذف است.",
-    );
-  }
-
-  const now = systemClock.now();
-
-  return runInTransaction(async (transaction) => {
-    const locked = await lockProviderLinkById(transaction, parsedLinkId);
-    if (!locked) {
-      throw new ApiError(
-        404,
-        API_ERROR_CODES.notFound,
-        "لینک Provider یافت نشد.",
-      );
-    }
-
-    if (locked.status === "accepted" && locked.requestStatus === "in_progress") {
-      throw new ApiError(
-        409,
-        API_ERROR_CODES.conflict,
-        "برای Provider پذیرفته‌شده در درخواست در حال انجام باید از لغو درخواست استفاده شود.",
-      );
-    }
-
-    if (locked.status !== "sent") {
-      throw new ApiError(
-        409,
-        API_ERROR_CODES.conflict,
-        "فقط لینک با وضعیت sent قابل حذف است.",
-      );
-    }
-
-    const removed = await removeProviderLinkByAdmin(transaction, {
-      adminId,
-      fromStatus: "sent",
-      linkId: locked.id,
-      now,
-      reason: input.reason ?? null,
-    });
-
-    if (!removed.ok) {
-      throw new ApiError(
-        409,
-        API_ERROR_CODES.conflict,
-        "حذف لینک Provider ممکن نبود.",
-      );
-    }
-
-    return {
-      linkId: locked.id.toString(),
-      removedReason: "admin_removed" as const,
-      requestId: locked.requestPublicId,
-      status: "removed" as const,
-    };
   });
 }
 

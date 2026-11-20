@@ -38,17 +38,6 @@ export async function findProviderProfileIdByUserId(userId: bigint) {
   });
 }
 
-export async function findProviderProfileByUserPublicId(publicId: string) {
-  return prisma.providerProfile.findFirst({
-    where: { user: { publicId, deletedAt: null } },
-    select: {
-      id: true,
-      userId: true,
-      user: { select: { publicId: true } },
-    },
-  });
-}
-
 export async function findActiveSubscriptionForProvider(
   providerProfileId: bigint,
   now: Date,
@@ -480,21 +469,6 @@ export async function cancelPendingSubscription(
   });
 }
 
-export async function sumRefundedAmountToman(
-  paymentId: bigint,
-  transaction: TransactionClient = prisma,
-): Promise<bigint> {
-  const result = await transaction.paymentRefund.aggregate({
-    where: {
-      status: { in: ["requested", "processing", "succeeded"] },
-      subscriptionPaymentId: paymentId,
-    },
-    _sum: { amountToman: true },
-  });
-  return result._sum.amountToman ?? BigInt(0);
-}
-
-
 export async function getPlanDurationMonths(
   planId: bigint,
   transaction: TransactionClient = prisma,
@@ -532,149 +506,5 @@ export async function listStalePendingPayments(cutoff: Date) {
       publicId: true,
       status: true,
     },
-  });
-}
-
-export async function createGrantedSubscription(
-  transaction: TransactionClient,
-  input: {
-    adminId: bigint;
-    amountToman: bigint;
-    durationMonths: number;
-    now: Date;
-    planId: bigint;
-    planName: string;
-    providerProfileId: bigint;
-    publicId: string;
-  },
-) {
-  const startsAt = input.now;
-  const endsAt = new Date(input.now);
-  endsAt.setUTCMonth(endsAt.getUTCMonth() + input.durationMonths);
-
-  await expireActiveSubscriptionsForProvider(
-    transaction,
-    input.providerProfileId,
-    input.now,
-  );
-
-  return transaction.providerSubscription.create({
-    data: {
-      activatedAt: input.now,
-      amountToman: input.amountToman,
-      endsAt,
-      grantedByAdminId: input.adminId,
-      planNameSnapshot: input.planName,
-      providerProfileId: input.providerProfileId,
-      publicId: input.publicId,
-      source: "admin_grant",
-      startsAt,
-      status: "active",
-      subscriptionPlanId: input.planId,
-    },
-    select: {
-      endsAt: true,
-      planNameSnapshot: true,
-      publicId: true,
-      startsAt: true,
-      status: true,
-    },
-  });
-}
-
-export async function findSubscriptionByPublicId(publicId: string) {
-  return prisma.providerSubscription.findUnique({
-    where: { publicId },
-    select: {
-      id: true,
-      providerProfileId: true,
-      publicId: true,
-      status: true,
-    },
-  });
-}
-
-export async function cancelSubscription(
-  subscriptionId: bigint,
-  now: Date,
-  reason: string,
-) {
-  return prisma.providerSubscription.update({
-    where: { id: subscriptionId },
-    data: {
-      cancellationReason: reason,
-      cancelledAt: now,
-      status: "cancelled",
-    },
-    select: {
-      publicId: true,
-      status: true,
-    },
-  });
-}
-
-export async function findPaymentByPublicId(publicId: string) {
-  return prisma.subscriptionPayment.findUnique({
-    where: { publicId },
-    select: {
-      amountToman: true,
-      id: true,
-      publicId: true,
-      status: true,
-      paymentRefunds: {
-        where: { status: { in: ["requested", "processing", "succeeded"] } },
-        select: { amountToman: true, status: true },
-      },
-    },
-  });
-}
-
-export async function createRefund(
-  transaction: TransactionClient,
-  input: {
-    adminId: bigint;
-    amountToman: bigint;
-    paymentId: bigint;
-    reason: string;
-  },
-) {
-  return transaction.paymentRefund.create({
-    data: {
-      amountToman: input.amountToman,
-      reason: input.reason,
-      requestedByAdminId: input.adminId,
-      status: "requested",
-      subscriptionPaymentId: input.paymentId,
-    },
-    select: {
-      amountToman: true,
-      createdAt: true,
-      id: true,
-      reason: true,
-      status: true,
-    },
-  });
-}
-
-export async function processRefundSuccess(
-  transaction: TransactionClient,
-  input: {
-    now: Date;
-    paymentId: bigint;
-    paymentStatus: "partially_refunded" | "refunded";
-    refundId: bigint;
-  },
-) {
-  await transaction.paymentRefund.update({
-    where: { id: input.refundId },
-    data: {
-      processedAt: input.now,
-      status: "succeeded",
-      gatewayReference: `refund_${input.refundId.toString()}`,
-    },
-  });
-  await transaction.subscriptionPayment.update({
-    where: { id: input.paymentId },
-    data: { status: input.paymentStatus },
   });
 }

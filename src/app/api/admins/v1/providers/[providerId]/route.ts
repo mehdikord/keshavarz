@@ -1,66 +1,31 @@
 import type { NextRequest } from "next/server";
 
-import { requireAdminSession } from "@/server/auth";
-import { getAllowedOrigins } from "@/server/config/env";
-import {
-  apiSuccess,
-  parseJsonBody,
-  parseWithSchema,
-  withApiHandler,
-} from "@/server/http";
-import { writeAdminAuditLog } from "@/server/modules/admin-audit/admin-audit.service";
-import { requireAdminPermission } from "@/server/modules/admin-rbac/require-admin-permission";
-import {
-  AdminProviderParamsSchema,
-  AdminProviderUpdateSchema,
-} from "@/server/modules/admin-providers/admin-providers.schemas";
-import {
-  getProviderForAdmin,
-  updateProviderForAdmin,
-} from "@/server/modules/admin-providers/admin-providers.service";
-import { assertMutationProtection } from "@/server/security";
+import { ADMIN_PERMISSIONS } from "@/lib/admin/permissions";
+import { API_ERROR_CODES, ApiError } from "@/server/errors";
+import { apiSuccess, parseJsonBody, parseWithSchema, withApiHandler } from "@/server/http";
+import { requireAdminActor } from "@/server/modules/admin/access/admin-access.service";
+import { segmentAfter } from "@/server/modules/admin/admin-route-params";
+import { ProviderParamsSchema, ProviderProfileUpdateSchema } from "@/server/modules/admin/providers/providers-admin.schemas";
+import { getAdminProviderDetail, updateAdminProviderProfile } from "@/server/modules/admin/providers/providers-admin.service";
 
 export const runtime = "nodejs";
 
-function providerIdFromPath(request: NextRequest): string | undefined {
-  return request.nextUrl.pathname.split("/").at(-1);
+function params(request: NextRequest) {
+  return parseWithSchema(ProviderParamsSchema, { providerId: segmentAfter(request, "providers") });
 }
 
 export const GET = withApiHandler(async (request: NextRequest, context) => {
-  const auth = await requireAdminSession(request);
-  await requireAdminPermission(auth, "providers.view", request);
-  const params = parseWithSchema(AdminProviderParamsSchema, {
-    providerId: providerIdFromPath(request),
-  });
-  const provider = await getProviderForAdmin(params.providerId);
-  return apiSuccess(provider, context.requestId);
+  await requireAdminActor(request, ADMIN_PERMISSIONS.providersView);
+  const detail = await getAdminProviderDetail(params(request).providerId);
+  if (!detail) throw new ApiError(404, API_ERROR_CODES.notFound, "خدمات‌دهنده پیدا نشد.");
+  return apiSuccess(detail, context.requestId);
 });
 
+/** Bio and availability. */
 export const PATCH = withApiHandler(async (request: NextRequest, context) => {
-  assertMutationProtection(
-    request,
-    "admins",
-    getAllowedOrigins("admin"),
-  );
-  const auth = await requireAdminSession(request);
-  await requireAdminPermission(auth, "providers.update", request);
-  const params = parseWithSchema(AdminProviderParamsSchema, {
-    providerId: providerIdFromPath(request),
-  });
-  const input = await parseJsonBody(request, AdminProviderUpdateSchema);
-  const result = await updateProviderForAdmin(params.providerId, input);
-
-  await writeAdminAuditLog({
-    action: "provider_update",
-    adminId: auth.internalAdminId,
-    auditableId: result.profileId,
-    auditableType: "ProviderProfile",
-    httpMethod: request.method,
-    module: "providers",
-    newValues: result.newValues,
-    oldValues: result.oldValues,
-    request,
-  });
-
-  return apiSuccess(result.newValues, context.requestId);
+  const { auth } = await requireAdminActor(request, ADMIN_PERMISSIONS.providersUpdate);
+  const { providerId } = params(request);
+  const input = await parseJsonBody(request, ProviderProfileUpdateSchema);
+  await updateAdminProviderProfile({ adminId: auth.internalAdminId, request }, providerId, input);
+  return apiSuccess({ updated: true }, context.requestId);
 });

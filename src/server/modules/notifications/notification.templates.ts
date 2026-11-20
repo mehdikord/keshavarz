@@ -72,25 +72,3 @@ export function buildSubscriptionNotification(input: {
     type: input.type,
   };
 }
-
-export function buildAdminBroadcastNotification(input: {
-  body: string;
-  deepLink?: string | null;
-  eventKey: string;
-  title: string;
-}): {
-  body: string;
-  data: NotificationPayloadData;
-  title: string;
-  type: NotificationType;
-} {
-  return {
-    body: input.body,
-    data: buildNotificationData({
-      deepLink: input.deepLink,
-      eventKey: input.eventKey,
-    }),
-    title: input.title,
-    type: NOTIFICATION_TYPES.adminBroadcast,
-  };
-}

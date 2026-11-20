@@ -33,11 +33,6 @@ export interface ProviderSeed {
   priceToman?: number;
 }
 
-export interface AdminSessionSeed {
-  context: import("@playwright/test").BrowserContext;
-  phone: string;
-}
-
 const COOKIE_BASE_URL = new URL(
   process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3000",
 );
@@ -155,31 +150,23 @@ export async function seedProviderForPurchase(
   return tokens;
 }
 
-export async function seedAdminSession(
-  input: AdminSessionSeed,
-): Promise<SeededTokens> {
-  const tokens = runSeedForTokens(["seed-admin", "--phone", input.phone]);
-  await installCookies(input.context, { realm: "admins", ...tokens });
-  return tokens;
-}
-
 async function installCookies(
   context: import("@playwright/test").BrowserContext,
   input: {
     csrfToken: string;
-    realm: "admins" | "app";
+    realm: "app";
     sessionToken: string;
   },
 ): Promise<void> {
   const domain = COOKIE_BASE_URL.hostname;
-  const prefix = input.realm === "admins" ? "admin" : "app";
+  const prefix = input.realm;
 
   await context.addCookies([
     {
       domain,
       httpOnly: true,
       name: `__Secure-keshavarz_${prefix}_session`,
-      path: `/api/${prefix === "admin" ? "admins" : "app"}/v1`,
+      path: `/api/${prefix}/v1`,
       sameSite: "Lax",
       secure: true,
       value: input.sessionToken,

@@ -1,0 +1,28 @@
+/*
+ * Chart palette for the reports section. Categorical slots in fixed order,
+ * validated with the dataviz palette checker against each theme's card surface:
+ *   light #ffffff — #2f8a55, #d9951a, #2b7fb8 (amber < 3:1, so every chart has a legend + table)
+ *   dark  #131d17 — #3f9d68, #bf7a26, #4a8fd0
+ */
+.reports-viz {
+  --viz-1: #2f8a55;
+  --viz-2: #d9951a;
+  --viz-3: #2b7fb8;
+  --viz-grid: var(--a-line);
+  --viz-axis: var(--muted-foreground);
+  --viz-surface: var(--card);
+}
+
+[data-admin-theme="dark"] .reports-viz {
+  --viz-1: #3f9d68;
+  --viz-2: #bf7a26;
+  --viz-3: #4a8fd0;
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-admin-theme="system"] .reports-viz {
+    --viz-1: #3f9d68;
+    --viz-2: #bf7a26;
+    --viz-3: #4a8fd0;
+  }
+}

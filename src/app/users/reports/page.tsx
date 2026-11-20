@@ -30,6 +30,7 @@ import { isApiClientError } from "@/lib/api/envelope";
 import { useAuthStore } from "@/stores/auth-store";
 import { cn } from "@/lib/utils";
 import { formatAreaSqm, toPersianDigits } from "@/lib/utils/format";
+import { ServiceThumb } from "@/components/shared/service-thumb";
 
 const DAY_MS = 86_400_000;
 /** The per-land breakdown issues one request per land, so keep it bounded. */
@@ -378,7 +379,10 @@ export default function ConsumerReportsPage() {
                                 <Trophy className="size-3.5" />
                                 پرهزینه‌ترین خدمت
                               </p>
-                              <p className="mt-1.5 truncate text-[13.5px] font-black text-[#3b2410]">{current?.topService?.name ?? "—"}</p>
+                              <p className="mt-1.5 flex min-w-0 items-center gap-1.5 text-[13.5px] font-black text-[#3b2410]">
+                                <ServiceThumb className="size-6 rounded-md" fallback={null} image={current?.topService?.image} />
+                                <span className="truncate">{current?.topService?.name ?? "—"}</span>
+                              </p>
                               {current?.topService ? (
                                 <p className="mt-0.5 text-[11px] tabular-nums text-[#8a6a48]">
                                   {FULL.format(current.topService.totalToman)} تومان

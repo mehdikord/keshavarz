@@ -34,6 +34,7 @@ import {
 import { isApiClientError } from "@/lib/api/envelope";
 import { cn } from "@/lib/utils";
 import { toPersianDigits } from "@/lib/utils/format";
+import { ServiceThumb } from "@/components/shared/service-thumb";
 
 const DAY_MS = 86_400_000;
 /** Per-service breakdown issues one request per service, so keep it bounded. */
@@ -128,6 +129,7 @@ export default function ProviderReportsPage() {
           }).then((summary) => ({
             serviceId: service.serviceId,
             name: service.serviceName,
+            image: service.serviceImage,
             totalToman: summary.totalRevenueToman,
             completedCount: summary.completedCount,
           })),
@@ -332,8 +334,9 @@ export default function ProviderReportsPage() {
                           <Trophy className="size-3.5" />
                           پردرآمدترین خدمت
                         </p>
-                        <p className="mt-1.5 truncate text-[13.5px] font-black text-foreground">
-                          {current?.topService?.name ?? "—"}
+                        <p className="mt-1.5 flex min-w-0 items-center gap-1.5 text-[13.5px] font-black text-foreground">
+                          <ServiceThumb className="size-6 rounded-md" fallback={null} image={current?.topService?.image} />
+                          <span className="truncate">{current?.topService?.name ?? "—"}</span>
                         </p>
                         {current?.topService ? (
                           <p className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">

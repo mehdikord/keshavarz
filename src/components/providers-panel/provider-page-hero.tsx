@@ -6,6 +6,7 @@ import { ChevronRight } from "lucide-react";
 import { AppMenuTrigger } from "@/components/layout/app-menu-trigger";
 import { FieldHills } from "@/components/shared/field-hills";
 import { cn } from "@/lib/utils";
+import { ServiceThumb } from "@/components/shared/service-thumb";
 
 export interface ProviderHeroStat {
   icon: React.ComponentType<{ className?: string }>;
@@ -17,6 +18,8 @@ export interface ProviderHeroStat {
 interface ProviderPageHeroProps {
   eyebrow?: string;
   title: string;
+  /** Picture shown before the title, e.g. the requested service's image. */
+  titleImage?: string | null;
   subtitle?: string;
   backHref?: string;
   /** Extra controls rendered before the menu button. */
@@ -29,6 +32,7 @@ interface ProviderPageHeroProps {
 export function ProviderPageHero({
   eyebrow = "پنل خدمات‌دهنده",
   title,
+  titleImage,
   subtitle,
   backHref,
   actions,
@@ -55,6 +59,12 @@ export function ProviderPageHero({
                 <ChevronRight className="size-5" />
               </Link>
             ) : null}
+            <ServiceThumb
+              className="mt-1 size-12 rounded-2xl ring-2 ring-white/20"
+              fallback={null}
+              image={titleImage}
+              name={title}
+            />
             <div className="min-w-0">
               <p className="text-[11px] font-semibold text-[#95d5b2]">{eyebrow}</p>
               <h1 className="mt-0.5 text-[26px] font-black leading-tight tracking-tight">{title}</h1>

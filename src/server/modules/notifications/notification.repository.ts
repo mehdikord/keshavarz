@@ -153,73 +153,6 @@ export async function markAllNotificationsReadUntil(input: {
   return result.count;
 }
 
-export async function findUsersByPublicIds(publicIds: string[]) {
-  return prisma.user.findMany({
-    where: {
-      deletedAt: null,
-      isActive: 1,
-      publicId: { in: publicIds },
-    },
-    select: { id: true, publicId: true },
-  });
-}
-
-export async function findAdminsByPublicIds(publicIds: string[]) {
-  return prisma.admin.findMany({
-    where: {
-      deletedAt: null,
-      isActive: 1,
-      publicId: { in: publicIds },
-    },
-    select: { id: true, publicId: true },
-  });
-}
-
-export async function listAdminNotifications(input: {
-  cursorId?: bigint;
-  limit: number;
-  recipientType?: "user" | "admin";
-  type?: string;
-}) {
-  return prisma.notification.findMany({
-    where: {
-      ...(input.recipientType ? { recipientType: input.recipientType } : {}),
-      ...(input.type ? { type: input.type } : {}),
-      ...(input.cursorId ? { id: { lt: input.cursorId } } : {}),
-    },
-    orderBy: { id: "desc" },
-    take: input.limit + 1,
-    select: {
-      body: true,
-      createdAt: true,
-      data: true,
-      id: true,
-      publicId: true,
-      readAt: true,
-      recipientType: true,
-      title: true,
-      type: true,
-      admin: { select: { publicId: true } },
-      user: { select: { publicId: true } },
-      notificationDeliveries: {
-        select: {
-          attemptsCount: true,
-          channel: true,
-          errorMessage: true,
-          status: true,
-        },
-      },
-    },
-  });
-}
-
-export async function findNotificationByPublicId(publicId: string) {
-  return prisma.notification.findUnique({
-    where: { publicId },
-    select: { id: true, publicId: true },
-  });
-}
-
 export async function listQueuedDeliveries(limit: number) {
   return prisma.notificationDelivery.findMany({
     where: {
@@ -338,23 +271,6 @@ export async function listDeadLetterDeliveries(limit = 100) {
         },
       },
       updatedAt: true,
-    },
-  });
-}
-
-export async function requeueDeadLetterDelivery(deliveryId: bigint) {
-  return prisma.notificationDelivery.updateMany({
-    where: {
-      attemptsCount: { gte: MAX_DELIVERY_ATTEMPTS },
-      id: deliveryId,
-      status: "failed",
-    },
-    data: {
-      attemptsCount: 0,
-      errorMessage: null,
-      failedAt: null,
-      status: "queued",
-      updatedAt: new Date(),
     },
   });
 }

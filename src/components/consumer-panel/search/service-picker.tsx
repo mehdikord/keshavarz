@@ -3,6 +3,7 @@
 import { useId } from "react";
 import { LayoutGrid, Sprout } from "lucide-react";
 
+import { ServiceThumb } from "@/components/shared/service-thumb";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { AppCategory, AppService } from "@/lib/api/app-catalog";
 import { cn } from "@/lib/utils";
@@ -21,7 +22,7 @@ const TRIGGER =
   "h-12 w-full rounded-2xl border-0 bg-[#fcf7ee] pe-3 ps-3.5 text-[13px] font-bold text-[#3b2410] shadow-none ring-1 ring-[#efe0c8] transition focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-[#e3b97f] data-[state=open]:bg-white data-[state=open]:ring-2 data-[state=open]:ring-[#e3b97f] data-[placeholder]:font-medium data-[placeholder]:text-[#b8a189] disabled:opacity-60 [&>svg]:text-[#a08463] [&>svg]:opacity-100";
 const CONTENT = "max-h-72 rounded-2xl border-[#efe0c8] bg-white p-1 shadow-[0_20px_40px_-20px_rgba(160,86,26,0.55)]";
 const ITEM =
-  "rounded-xl py-2.5 pe-2 ps-8 text-[13px] font-bold text-[#3b2410] focus:bg-[#fff1df] focus:text-[#3b2410] data-[state=checked]:text-[#b9531f] [&_[data-slot=select-item-indicator]_svg]:text-[#b9531f]";
+  "rounded-xl py-2 pe-2 ps-8 text-[13px] font-bold text-[#3b2410] focus:bg-[#fff1df] focus:text-[#3b2410] data-[state=checked]:text-[#b9531f] [&_[data-slot=select-item-indicator]_svg]:text-[#b9531f]";
 
 /** Two linked selects: the category narrows the second select to its services. */
 export function ServicePicker({ catalog, categoryId, serviceId, onCategoryChange, onServiceChange }: ServicePickerProps) {
@@ -46,7 +47,15 @@ export function ServicePicker({ catalog, categoryId, serviceId, onCategoryChange
           <SelectContent position="popper" className={CONTENT}>
             {categories.map((category) => (
               <SelectItem key={category.categoryId} value={category.categoryId} className={ITEM}>
-                {category.name}
+                <ServiceThumb
+                  fallback={
+                    <span aria-hidden className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-[#f6ece0] text-[#a08463]">
+                      <LayoutGrid className="size-3.5 text-current" />
+                    </span>
+                  }
+                  image={category.image}
+                />
+                <span className="truncate">{category.name}</span>
               </SelectItem>
             ))}
           </SelectContent>
@@ -76,7 +85,9 @@ export function ServicePicker({ catalog, categoryId, serviceId, onCategoryChange
           <SelectContent position="popper" className={CONTENT}>
             {services.map((service) => (
               <SelectItem key={service.serviceId} value={service.serviceId} className={ITEM}>
-                {service.name}
+                {/* Inside the item text, so the picked service shows its picture in the trigger too. */}
+                <ServiceThumb image={service.image} />
+                <span className="truncate">{service.name}</span>
               </SelectItem>
             ))}
           </SelectContent>

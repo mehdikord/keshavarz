@@ -7,6 +7,10 @@ const ALLOWED_DEEP_LINKS: RegExp[] = [
   /^\/users\/payments$/,
   /^\/users\/search$/,
   /^\/provider\/dashboard$/,
+  // Section landing pages an admin broadcast may point to (see ADMIN_BROADCAST_LINKS).
+  /^\/users\/(home|requests|lands|reports)$/,
+  /^\/provider\/(home|requests|services|subscription|reports)$/,
+  /^\/profile$/,
 ];
 
 export function sanitizeNotificationDeepLink(

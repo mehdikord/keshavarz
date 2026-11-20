@@ -19,13 +19,8 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/app/v1/provider/services",
   "POST /api/app/v1/provider/subscriptions/purchase",
   "POST /api/app/v1/service-searches",
-  "POST /api/admins/v1/catalog/categories",
-  "POST /api/admins/v1/catalog/services",
-  "POST /api/admins/v1/subscription-plans",
-  "POST /api/admins/v1/admins",
-  "POST /api/admins/v1/roles",
-  "POST /api/admins/v1/notifications",
-  "POST /api/admins/v1/payments/{paymentId}/refunds",
+  "POST /api/admins/v1/users/{userId}/moderation",
+  "POST /api/admins/v1/users/{userId}/notes",
 ]);
 
 function extractEndpoints(markdown) {
@@ -201,9 +196,6 @@ function getSuccessResponse(method, path) {
   if (method === "DELETE") {
     return { "204": { $ref: "#/components/responses/NoContent" } };
   }
-  if (key === "POST /api/admins/v1/exports") {
-    return { "202": { $ref: "#/components/responses/Accepted" } };
-  }
   if (CREATED_OPERATIONS.has(key)) {
     return { "201": { $ref: "#/components/responses/Created" } };
   }
@@ -334,7 +326,7 @@ function createDocument(endpoints) {
           type: "apiKey",
           in: "cookie",
           name: "__Secure-keshavarz_admin_session",
-          description: "Opaque admin session; Path=/api/admins/v1",
+          description: "Opaque admin session; Path=/ (read by the server-rendered console)",
         },
         GatewaySignature: {
           type: "apiKey",

@@ -36,44 +36,6 @@ export function enqueuePaymentCallbackDeadLetter(input: {
   });
 }
 
-export function listPaymentCallbackDeadLetters(): DeadLetterEntry[] {
-  return [...queue];
-}
-
-export function clearPaymentCallbackDeadLettersForTests(): void {
-  queue.length = 0;
-  sequence = 0;
-}
-
-export async function replayPaymentCallbackDeadLetter(
-  id: string,
-  handler: (payload: unknown) => Promise<void>,
-): Promise<{ id: string; status: "replayed" | "requeued" | "dropped" }> {
-  const index = queue.findIndex((entry) => entry.id === id);
-  if (index < 0) {
-    throw new Error("dead_letter_not_found");
-  }
-  const [entry] = queue.splice(index, 1);
-  if (!entry) {
-    throw new Error("dead_letter_not_found");
-  }
-
-  try {
-    await handler(entry.payload);
-    return { id, status: "replayed" };
-  } catch (error) {
-    if (entry.attempts < MAX_ATTEMPTS) {
-      queue.push({
-        ...entry,
-        attempts: entry.attempts + 1,
-        lastError: error instanceof Error ? error.message : "unknown_error",
-      });
-      return { id, status: "requeued" };
-    }
-    return { id, status: "dropped" };
-  }
-}
-
 export function drainPaymentCallbackDeadLetters(
   handler: (payload: unknown) => Promise<void>,
 ): Promise<{ failed: number; processed: number }> {

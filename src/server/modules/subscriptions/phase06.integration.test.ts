@@ -2,13 +2,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { getSecurityEnvironment } from "@/server/config/env";
 import { prisma } from "@/server/db/prisma";
-import { ApiError } from "@/server/errors";
 import { createPublicId } from "@/server/identifiers/ulid";
 import { createMockPaymentProvider } from "@/server/integrations/mock-payment-provider";
 import {
   handlePaymentGatewayCallback,
   purchaseProviderSubscription,
-  refundPaymentByAdmin,
   setPaymentProviderForTests,
   verifyCurrentUserPayment,
 } from "@/server/modules/subscriptions/subscriptions.service";
@@ -18,7 +16,6 @@ const phones = [
   "09994000002",
   "09994000003",
   "09994000004",
-  "09994000005",
 ];
 const planCode = "basic-monthly";
 
@@ -32,11 +29,6 @@ async function createUser(phone: string) {
 }
 
 async function cleanup() {
-  await prisma.paymentRefund.deleteMany({
-    where: {
-      payment: { user: { phone: { in: phones } } },
-    },
-  });
   await prisma.subscriptionPayment.deleteMany({
     where: { user: { phone: { in: phones } } },
   });
@@ -216,60 +208,5 @@ describe.sequential("phase 06 subscriptions/payments", () => {
       },
     });
     expect(paid).toBe(2);
-  });
-
-  it("rejects refund above remaining amount", async () => {
-    const user = await createUser(phones[4]!);
-    await prisma.providerProfile.create({ data: { userId: user.id } });
-
-    const purchase = await purchaseProviderSubscription(
-      user.id,
-      { planCode },
-      `idem-refund-${createPublicId()}`,
-    );
-    const payment = await prisma.subscriptionPayment.findUniqueOrThrow({
-      where: { publicId: purchase.paymentId },
-    });
-    const amount = Number(payment.amountToman);
-    await handlePaymentGatewayCallback("mock", {
-      amountToman: amount,
-      authority: purchase.authority,
-      signature: provider.signCallback(purchase.authority, amount),
-    });
-
-    const admin = await prisma.admin.create({
-      data: {
-        isSuperAdmin: 1,
-        name: "admin phase6",
-        password: "x".repeat(60),
-        phone: "09994000999",
-        publicId: createPublicId(),
-      },
-    });
-
-    try {
-      await refundPaymentByAdmin({
-        adminId: admin.id,
-        amountToman: amount,
-        idempotencyKey: `idem-ref-ok-${createPublicId()}`,
-        paymentId: purchase.paymentId,
-        reason: "full refund",
-      });
-
-      await expect(
-        refundPaymentByAdmin({
-          adminId: admin.id,
-          amountToman: 1,
-          idempotencyKey: `idem-ref-over-${createPublicId()}`,
-          paymentId: purchase.paymentId,
-          reason: "over refund",
-        }),
-      ).rejects.toBeInstanceOf(ApiError);
-    } finally {
-      await prisma.paymentRefund.deleteMany({
-        where: { requestedByAdminId: admin.id },
-      });
-      await prisma.admin.delete({ where: { id: admin.id } });
-    }
   });
 });

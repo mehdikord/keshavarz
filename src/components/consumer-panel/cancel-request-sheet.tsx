@@ -6,6 +6,7 @@ import { Ban, LoaderCircle, X } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { ServiceThumb } from "@/components/shared/service-thumb";
 
 const REASONS = [
   "دیگر به این خدمت نیاز ندارم",
@@ -22,6 +23,7 @@ interface CancelRequestSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   serviceName: string;
+  serviceImage?: string | null;
   /** In-progress jobs have an assigned provider, so a reason is mandatory. */
   reasonRequired: boolean;
   formKey: number;
@@ -32,6 +34,7 @@ export function CancelRequestSheet({
   open,
   onOpenChange,
   serviceName,
+  serviceImage,
   reasonRequired,
   formKey,
   onConfirm,
@@ -51,7 +54,10 @@ export function CancelRequestSheet({
             </span>
             <div className="min-w-0 flex-1 text-right">
               <SheetTitle className="text-base font-black text-[#3b2410]">لغو درخواست</SheetTitle>
-              <SheetDescription className="mt-0.5 truncate text-[11.5px] text-[#8a6a48]">{serviceName}</SheetDescription>
+              <SheetDescription className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11.5px] text-[#8a6a48]">
+                <ServiceThumb className="size-4 rounded" fallback={null} image={serviceImage} />
+                <span className="truncate">{serviceName}</span>
+              </SheetDescription>
             </div>
             <button
               type="button"

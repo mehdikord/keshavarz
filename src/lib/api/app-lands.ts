@@ -1,6 +1,6 @@
 import * as z from "zod";
 
-import type { AdminCursorMeta, AdminListLimit } from "@/lib/admin/search-params";
+import type { CursorListLimit, CursorMeta } from "@/lib/api/pagination";
 import { appApi } from "@/lib/api/app-client";
 import type { Land } from "@/types";
 
@@ -30,7 +30,7 @@ const CursorMetaSchema = z
 function parseMeta(
   meta: Record<string, unknown> | undefined,
   fallbackLimit: number,
-): AdminCursorMeta {
+): CursorMeta {
   return CursorMetaSchema.parse(
     meta ?? { hasMore: false, limit: fallbackLimit, nextCursor: null },
   );
@@ -53,9 +53,9 @@ export function mapAppLandToUi(land: AppLand, userId = ""): Land {
 
 export async function fetchAppLands(input?: {
   cursor?: string | null;
-  limit?: AdminListLimit;
+  limit?: CursorListLimit;
   signal?: AbortSignal;
-}): Promise<{ items: AppLand[]; meta: AdminCursorMeta }> {
+}): Promise<{ items: AppLand[]; meta: CursorMeta }> {
   const limit = input?.limit ?? 50;
   const result = await appApi.get<unknown>("/lands", {
     query: {

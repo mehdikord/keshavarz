@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, ChevronDown } from "lucide-react";
 
+import { ServiceThumb } from "@/components/shared/service-thumb";
 import { cn } from "@/lib/utils";
 import { toPersianDigits } from "@/lib/utils/format";
 
@@ -11,6 +12,8 @@ interface SearchStepProps {
   title: string;
   /** Shown in the header once the step has a value. */
   summary?: string | null;
+  /** Picture shown before the summary (e.g. the picked service's image). */
+  summaryImage?: string | null;
   hint: string;
   done: boolean;
   open: boolean;
@@ -25,6 +28,7 @@ export function SearchStep({
   index,
   title,
   summary,
+  summaryImage,
   hint,
   done,
   open,
@@ -68,11 +72,14 @@ export function SearchStep({
           </span>
           <span
             className={cn(
-              "mt-0.5 block truncate text-[11.5px]",
+              "mt-0.5 flex min-w-0 items-center gap-1.5 text-[11.5px]",
               error && !open ? "font-bold text-[#b23a1f]" : done ? "font-bold text-[#2f6a35]" : "text-[#8a6a48]",
             )}
           >
-            {error && !open ? error : (summary ?? hint)}
+            {summaryImage && summary && !(error && !open) ? (
+              <ServiceThumb className="size-5 rounded-md" fallback={null} image={summaryImage} />
+            ) : null}
+            <span className="truncate">{error && !open ? error : (summary ?? hint)}</span>
           </span>
         </span>
         <ChevronDown

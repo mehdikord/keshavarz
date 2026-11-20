@@ -6,10 +6,12 @@ import { Ban, Check, CircleCheck, LoaderCircle, PhoneCall, Lock, X } from "lucid
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { ServiceThumb } from "@/components/shared/service-thumb";
 
 export type RequestAction = "accept" | "reject" | "cancel";
 
 export interface RequestActionTarget {
+  serviceImage?: string | null;
   serviceName: string;
   landTitle: string;
   priceToman: number;
@@ -139,8 +141,13 @@ function ActionForm({
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-5 pb-5 pt-3">
         {target ? (
           <div className="rounded-[20px] bg-surface p-4 ring-1 ring-border/60">
-            <p className="text-[14px] font-black text-foreground">{target.serviceName}</p>
-            <p className="mt-0.5 text-[11.5px] text-muted-foreground">{target.landTitle}</p>
+            <div className="flex items-center gap-3">
+              <ServiceThumb className="size-11 rounded-xl" fallback={null} image={target.serviceImage} />
+              <div className="min-w-0">
+                <p className="truncate text-[14px] font-black text-foreground">{target.serviceName}</p>
+                <p className="mt-0.5 truncate text-[11.5px] text-muted-foreground">{target.landTitle}</p>
+              </div>
+            </div>
             {target.priceToman > 0 ? (
               <p className="mt-2 text-[13px] font-black text-primary">
                 {new Intl.NumberFormat("fa-IR").format(target.priceToman)} تومان

@@ -3,10 +3,12 @@
 import { Sprout } from "lucide-react";
 
 import { toPersianDigits } from "@/lib/utils/format";
+import { ServiceThumb } from "@/components/shared/service-thumb";
 
 export interface ServiceRevenueRow {
   serviceId: string;
   name: string;
+  image: string | null;
   totalToman: number;
   completedCount: number;
 }
@@ -46,7 +48,7 @@ export function ServiceBreakdown({ rows, loading }: { rows: ServiceRevenueRow[];
               <li key={row.serviceId}>
                 <div className="flex items-center gap-2.5">
                   <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-[#d8f3dc] text-[#2d6a4f]">
-                    <Sprout className="size-4" />
+                    <ServiceThumb className="size-8 rounded-lg" fallback={<Sprout className="size-4" />} image={row.image} />
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-2">

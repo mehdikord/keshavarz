@@ -35,6 +35,7 @@ import { formatPhoneDisplay } from "@/lib/utils/phone";
 import { useAppMenuStore } from "@/stores/app-menu-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { selectCanOfferInstall, usePwaStore } from "@/stores/pwa-store";
+import { SupportContact } from "@/components/layout/support-contact";
 
 type Panel = "provider" | "consumer";
 
@@ -329,6 +330,8 @@ export function AppMenu() {
                 })}
               </ul>
             </div>
+
+            <SupportContact />
 
             {canOfferInstall ? (
               <button

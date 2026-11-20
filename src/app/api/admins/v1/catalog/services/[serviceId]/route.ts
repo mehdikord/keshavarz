@@ -1,91 +1,29 @@
 import type { NextRequest } from "next/server";
 
-import { requireAdminSession } from "@/server/auth";
-import { getAllowedOrigins } from "@/server/config/env";
-import {
-  apiSuccess,
-  parseJsonBody,
-  parseWithSchema,
-  withApiHandler,
-} from "@/server/http";
-import { writeAdminAuditLog } from "@/server/modules/admin-audit/admin-audit.service";
-import {
-  AdminServiceParamsSchema,
-  AdminServiceUpdateSchema,
-} from "@/server/modules/admin-catalog/admin-catalog.schemas";
-import {
-  deleteServiceForAdmin,
-  updateServiceForAdmin,
-} from "@/server/modules/admin-catalog/admin-catalog.service";
-import { requireAdminPermission } from "@/server/modules/admin-rbac/require-admin-permission";
-import { assertMutationProtection } from "@/server/security";
+import { ADMIN_PERMISSIONS } from "@/lib/admin/permissions";
+import { apiSuccess, parseJsonBody, parseWithSchema, withApiHandler } from "@/server/http";
+import { requireAdminActor } from "@/server/modules/admin/access/admin-access.service";
+import { segmentAfter } from "@/server/modules/admin/admin-route-params";
+import { ServiceIdParamsSchema, ServiceUpdateSchema } from "@/server/modules/admin/catalog/catalog-admin.schemas";
+import { deleteAdminService, updateAdminService } from "@/server/modules/admin/catalog/catalog-admin.service";
 
 export const runtime = "nodejs";
 
-function serviceIdFromPath(request: NextRequest): string | undefined {
-  return request.nextUrl.pathname.split("/").at(-1);
+function params(request: NextRequest) {
+  return parseWithSchema(ServiceIdParamsSchema, { serviceId: segmentAfter(request, "services") });
 }
 
 export const PATCH = withApiHandler(async (request: NextRequest, context) => {
-  assertMutationProtection(
-    request,
-    "admins",
-    getAllowedOrigins("admin"),
-  );
-  const auth = await requireAdminSession(request);
-  await requireAdminPermission(auth, "catalog.manage", request);
-  const params = parseWithSchema(AdminServiceParamsSchema, {
-    serviceId: serviceIdFromPath(request),
-  });
-  const input = await parseJsonBody(request, AdminServiceUpdateSchema);
-  const result = await updateServiceForAdmin(
-    params.serviceId,
-    auth.internalAdminId,
-    input,
-  );
-
-  await writeAdminAuditLog({
-    action: "catalog_service_update",
-    adminId: auth.internalAdminId,
-    auditableId: result.serviceId,
-    auditableType: "Service",
-    httpMethod: request.method,
-    module: "catalog",
-    newValues: result.newValues,
-    oldValues: result.oldValues,
-    request,
-  });
-
-  return apiSuccess(result.newValues, context.requestId);
+  const { auth } = await requireAdminActor(request, ADMIN_PERMISSIONS.catalogManage);
+  const { serviceId } = params(request);
+  const input = await parseJsonBody(request, ServiceUpdateSchema);
+  await updateAdminService({ adminId: auth.internalAdminId, request }, serviceId, input);
+  return apiSuccess({ updated: true }, context.requestId);
 });
 
 export const DELETE = withApiHandler(async (request: NextRequest, context) => {
-  assertMutationProtection(
-    request,
-    "admins",
-    getAllowedOrigins("admin"),
-  );
-  const auth = await requireAdminSession(request);
-  await requireAdminPermission(auth, "catalog.manage", request);
-  const params = parseWithSchema(AdminServiceParamsSchema, {
-    serviceId: serviceIdFromPath(request),
-  });
-  const result = await deleteServiceForAdmin(
-    params.serviceId,
-    auth.internalAdminId,
-  );
-
-  await writeAdminAuditLog({
-    action: "catalog_service_delete",
-    adminId: auth.internalAdminId,
-    auditableId: result.serviceId,
-    auditableType: "Service",
-    httpMethod: request.method,
-    module: "catalog",
-    newValues: result.newValues,
-    oldValues: result.oldValues,
-    request,
-  });
-
+  const { auth } = await requireAdminActor(request, ADMIN_PERMISSIONS.catalogManage);
+  const { serviceId } = params(request);
+  await deleteAdminService({ adminId: auth.internalAdminId, request }, serviceId);
   return apiSuccess({ deleted: true }, context.requestId);
 });

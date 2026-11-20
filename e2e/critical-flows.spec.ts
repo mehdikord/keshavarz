@@ -9,7 +9,6 @@ import {
 
 import {
   cleanupUsers,
-  seedAdminSession,
   seedAppSession,
   seedEligibleProvider,
   seedProviderForPurchase,
@@ -18,13 +17,10 @@ import {
 
 const APP_ORIGIN =
   process.env.APP_ORIGIN ?? process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3000";
-const ADMIN_ORIGIN =
-  process.env.ADMIN_ORIGIN ?? process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3000";
 
 const CONSUMER_PHONE = "09999800001";
 const PROVIDER_PHONES = ["09999800002", "09999800003", "09999800004"];
 const PURCHASER_PHONE = "09999800006";
-const ADMIN_PHONE = "09999800005";
 const LAND_LAT = "35.7000000";
 const LAND_LNG = "51.4000000";
 
@@ -45,11 +41,10 @@ async function mutation(
   path: string,
   body?: unknown,
   key?: string,
-  origin?: string,
 ): Promise<{ status: number; data: unknown }> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "Origin": origin ?? APP_ORIGIN,
+    "Origin": APP_ORIGIN,
     "X-CSRF-Token": tokens.csrfToken,
   };
   if (key) {
@@ -145,12 +140,10 @@ test.describe.serial("critical business flows (E2E)", () => {
   let consumerTokens: SeededTokens;
   let providerContexts: BrowserContext[];
   let providerTokens: SeededTokens[];
-  let adminContext: BrowserContext;
-  let adminTokens: SeededTokens;
   let consumerLandId: string;
 
   test.beforeAll(async ({ browser }) => {
-    await cleanupUsers([CONSUMER_PHONE, ADMIN_PHONE, PURCHASER_PHONE, ...PROVIDER_PHONES]);
+    await cleanupUsers([CONSUMER_PHONE, PURCHASER_PHONE, ...PROVIDER_PHONES]);
 
     consumerContext = await browser.newContext();
     providerContexts = [];
@@ -158,7 +151,6 @@ test.describe.serial("critical business flows (E2E)", () => {
     for (const phone of PROVIDER_PHONES) {
       providerContexts.push(await browser.newContext());
     }
-    adminContext = await browser.newContext();
 
     const seeded = await seedAppSession({
       context: consumerContext,
@@ -185,20 +177,14 @@ test.describe.serial("critical business flows (E2E)", () => {
         }),
       );
     }
-
-    adminTokens = await seedAdminSession({
-      context: adminContext,
-      phone: ADMIN_PHONE,
-    });
   });
 
   test.afterAll(async () => {
     await Promise.all([
       ...providerContexts.map((context) => context.close()),
       consumerContext?.close(),
-      adminContext?.close(),
     ]);
-    await cleanupUsers([CONSUMER_PHONE, ADMIN_PHONE, PURCHASER_PHONE, ...PROVIDER_PHONES]);
+    await cleanupUsers([CONSUMER_PHONE, PURCHASER_PHONE, ...PROVIDER_PHONES]);
   });
 
   test("UI: authenticated consumer sees the land and search page renders", async () => {
@@ -420,33 +406,5 @@ test.describe.serial("critical business flows (E2E)", () => {
     } finally {
       await purchaserContext.close();
     }
-  });
-
-  test("admin refunds the paid payment and the audit trail records it", async () => {
-    const { data: paymentsData } = await getData(
-      adminContext,
-      "/api/admins/v1/payments?status=paid&limit=5",
-    );
-    const payments = (paymentsData as { payments: Array<{ paymentId: string; amountToman: number }> }).payments;
-    expect(payments.length).toBeGreaterThan(0);
-    const payment = payments[0]!;
-
-    const refunded = await mutation(
-      adminContext,
-      adminTokens,
-      "post",
-      `/api/admins/v1/payments/${payment.paymentId}/refunds`,
-      { amountToman: payment.amountToman, reason: "بازگشت وجه آزمایش E2E" },
-      idempotencyKey("e2e-refund"),
-      ADMIN_ORIGIN,
-    );
-    expect(refunded.status).toBe(201);
-
-    const { data: auditData } = await getData(
-      adminContext,
-      "/api/admins/v1/audit-logs?module=payments&limit=10",
-    );
-    const auditItems = (auditData as { items: Array<{ action: string }> }).items;
-    expect(auditItems.some((item) => item.action === "payment_refund")).toBe(true);
   });
 });

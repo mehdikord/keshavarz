@@ -1,15 +1,10 @@
 import { Prisma, type ProviderServicePricingUnit } from "@/generated/prisma/client";
 
 import { prisma } from "@/server/db/prisma";
+import { getSetting } from "@/server/modules/system/settings.service";
 
 /** Request statuses that can still be sent to more providers. */
 export const OPEN_REQUEST_STATUSES = ["awaiting_send", "pending_provider"] as const;
-
-/**
- * Upper bound on providers matched for one request. Each provider has one
- * work center, so this only matters in very dense areas; the closest ones win.
- */
-export const SEARCH_CANDIDATE_LIMIT = 300;
 
 export async function findActiveOwnedLand(input: {
   landPublicId: string;
@@ -89,6 +84,9 @@ export async function queryEligibleProviders(input: {
 
   const lat = input.landLatitude;
   const lng = input.landLongitude;
+  // Upper bound on providers matched for one request (admin setting, default 300).
+  // Each provider has one work center, so this only matters in very dense areas; the closest ones win.
+  const candidateLimit = await getSetting("search.candidate_limit");
   const providerFilter = input.providerPublicIds
     ? Prisma.sql`AND v.provider_public_id IN (${Prisma.join(input.providerPublicIds)})`
     : Prisma.empty;
@@ -137,7 +135,7 @@ export async function queryEligibleProviders(input: {
     ) matched
     WHERE matched.distance_km <= matched.work_radius_km
     ORDER BY matched.distance_km ASC, matched.provider_profile_id ASC
-    LIMIT ${SEARCH_CANDIDATE_LIMIT}
+    LIMIT ${candidateLimit}
   `;
 
   return rows.map((row) => ({
@@ -191,6 +189,7 @@ export async function findRequestForCandidates(publicId: string) {
       landLongitudeSnapshot: true,
       landTitleSnapshot: true,
       publicId: true,
+      service: { select: { image: true } },
       serviceCategoryNameSnapshot: true,
       serviceId: true,
       serviceNameSnapshot: true,

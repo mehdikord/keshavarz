@@ -214,6 +214,7 @@ function ConsumerRequestDetailContent() {
         <ConsumerPageHero
           eyebrow={request.serviceCategoryName}
           title={request.serviceName}
+          titleImage={request.serviceImage}
           backHref={`/users/requests${backTab}`}
         >
           <div className="mt-5 rounded-[22px] bg-white/55 p-4 ring-1 ring-white/80 backdrop-blur-md">
@@ -498,6 +499,7 @@ function ConsumerRequestDetailContent() {
           open={cancelOpen}
           onOpenChange={setCancelOpen}
           serviceName={request.serviceName}
+          serviceImage={request.serviceImage}
           reasonRequired={request.status === "in_progress"}
           formKey={cancelKey}
           onConfirm={handleCancel}

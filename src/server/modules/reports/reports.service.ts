@@ -1,27 +1,16 @@
 import { systemClock } from "@/server/clock/clock";
 import { API_ERROR_CODES, ApiError } from "@/server/errors";
 import {
-  countActiveApprovedProviders,
-  countActiveUsersInRange,
-  countNotificationDeliveries,
-  countPaidPayments,
-  countRequestsCreatedByStatus,
   findConsumerTopLand,
   findConsumerTopService,
   findOwnedLandIdByPublicId,
   findProviderProfileIdByUserId,
   findProviderTopService,
   findServiceIdBySlug,
-  listAdminMonthlyGmv,
-  listAdminTopServicesByGmv,
   listConsumerMonthlyCosts,
   listProviderMonthlyRevenue,
-  sumAdminGmv,
   sumConsumerCompletedCosts,
-  sumFailedPayments,
-  sumPaidSubscriptionRevenue,
   sumProviderCompletedRevenue,
-  sumSucceededRefunds,
 } from "@/server/modules/reports/reports.repository";
 import { REPORTS_TIMEZONE } from "@/server/modules/reports/reports.schemas";
 
@@ -50,13 +39,6 @@ function tehranYear(now: Date): number {
       year: "numeric",
     }).format(now),
   );
-}
-
-function rate(numerator: number, denominator: number): number {
-  if (denominator <= 0) {
-    return 0;
-  }
-  return Math.round((numerator / denominator) * 10_000) / 10_000;
 }
 
 export async function getConsumerFinancialSummary(
@@ -238,95 +220,5 @@ export async function getProviderMonthlyRevenue(
     months,
     timezone: REPORTS_TIMEZONE,
     to: to.toISOString(),
-  };
-}
-
-export async function getAdminReportsOverview(query: {
-  from?: string;
-  to?: string;
-}) {
-  const { from, to } = resolveRange(query);
-  const [
-    gmv,
-    subscriptionRevenuePaidToman,
-    refundsSucceededToman,
-    funnelRaw,
-    activeUsers,
-    activeProviders,
-    paidCount,
-    failedPayments,
-    deliveries,
-  ] = await Promise.all([
-    sumAdminGmv({ from, to }),
-    sumPaidSubscriptionRevenue({ from, to }),
-    sumSucceededRefunds({ from, to }),
-    countRequestsCreatedByStatus({ from, to }),
-    countActiveUsersInRange({ from, to }),
-    countActiveApprovedProviders(),
-    countPaidPayments({ from, to }),
-    sumFailedPayments({ from, to }),
-    countNotificationDeliveries({ from, to }),
-  ]);
-
-  return {
-    activeProviders,
-    activeUsers,
-    from: from.toISOString(),
-    funnel: {
-      awaiting_send: funnelRaw.awaiting_send ?? 0,
-      cancelled: funnelRaw.cancelled ?? 0,
-      completed: funnelRaw.completed ?? 0,
-      in_progress: funnelRaw.in_progress ?? 0,
-      pending_provider: funnelRaw.pending_provider ?? 0,
-    },
-    gmvToman: gmv.gmvToman,
-    notificationDeliveryFailureRate: rate(deliveries.failed, deliveries.total),
-    paymentFailureRate: rate(failedPayments.count, failedPayments.count + paidCount),
-    refundsSucceededToman,
-    subscriptionRevenuePaidToman,
-    timezone: REPORTS_TIMEZONE,
-    to: to.toISOString(),
-  };
-}
-
-export async function getAdminFinancialReport(query: {
-  from?: string;
-  to?: string;
-}) {
-  const { from, to } = resolveRange(query);
-  const [
-    gmv,
-    subscriptionRevenuePaidToman,
-    failedPayments,
-    refundsSucceededToman,
-    topServices,
-    monthlyGmv,
-  ] = await Promise.all([
-    sumAdminGmv({ from, to }),
-    sumPaidSubscriptionRevenue({ from, to }),
-    sumFailedPayments({ from, to }),
-    sumSucceededRefunds({ from, to }),
-    listAdminTopServicesByGmv({ from, limit: 10, to }),
-    listAdminMonthlyGmv({ from, to }),
-  ]);
-
-  return {
-    averageTicketToman:
-      gmv.completedCount > 0
-        ? Math.round(gmv.gmvToman / gmv.completedCount)
-        : 0,
-    completedCount: gmv.completedCount,
-    from: from.toISOString(),
-    gmvToman: gmv.gmvToman,
-    monthlyGmv,
-    payments: {
-      failedAmountToman: failedPayments.amountToman,
-      failedCount: failedPayments.count,
-      paidAmountToman: subscriptionRevenuePaidToman,
-      refundedAmountToman: refundsSucceededToman,
-    },
-    timezone: REPORTS_TIMEZONE,
-    to: to.toISOString(),
-    topServices,
   };
 }

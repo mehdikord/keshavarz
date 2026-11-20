@@ -277,7 +277,12 @@ export default function ProviderRequestDetailPage() {
   return (
     <MotionConfig reducedMotion="user">
       <PageContainer withDock className="px-0 pt-0">
-        <ProviderPageHero eyebrow={detail.serviceCategoryName} title={detail.serviceName} backHref={backHref}>
+        <ProviderPageHero
+          eyebrow={detail.serviceCategoryName}
+          title={detail.serviceName}
+          titleImage={detail.serviceImage}
+          backHref={backHref}
+        >
           <div className="mt-5 rounded-[24px] bg-white/[0.08] p-4 ring-1 ring-white/12 backdrop-blur-xl">
             <div className="flex items-center justify-between gap-2">
               <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-black", TONE_PILL[state.tone])}>
@@ -498,7 +503,12 @@ export default function ProviderRequestDetailPage() {
           open={sheetOpen}
           onOpenChange={setSheetOpen}
           action={action}
-          target={{ serviceName: detail.serviceName, landTitle: detail.land.title, priceToman: price }}
+          target={{
+            serviceImage: detail.serviceImage,
+            serviceName: detail.serviceName,
+            landTitle: detail.land.title,
+            priceToman: price,
+          }}
           formKey={sheetKey}
           onConfirm={handleConfirm}
         />

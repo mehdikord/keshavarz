@@ -5,6 +5,7 @@ import { ChevronRight } from "lucide-react";
 
 import { AppMenuTrigger } from "@/components/layout/app-menu-trigger";
 import { cn } from "@/lib/utils";
+import { ServiceThumb } from "@/components/shared/service-thumb";
 
 /** Glass button styling for controls placed on the golden hero. */
 export const HARVEST_GLASS_BUTTON =
@@ -54,6 +55,8 @@ export function ConsumerHeroShell({ children, className }: { children: React.Rea
 interface ConsumerPageHeroProps {
   eyebrow?: string;
   title: string;
+  /** Picture shown before the title, e.g. the requested service's image. */
+  titleImage?: string | null;
   subtitle?: string;
   backHref?: string;
   actions?: React.ReactNode;
@@ -63,6 +66,7 @@ interface ConsumerPageHeroProps {
 export function ConsumerPageHero({
   eyebrow = "پنل خدمات‌گیرنده",
   title,
+  titleImage,
   subtitle,
   backHref,
   actions,
@@ -77,6 +81,12 @@ export function ConsumerPageHero({
               <ChevronRight className="size-5" />
             </Link>
           ) : null}
+          <ServiceThumb
+            className="mt-1 size-12 rounded-2xl ring-2 ring-white/80"
+            fallback={null}
+            image={titleImage}
+            name={title}
+          />
           <div className="min-w-0">
             <p className="text-[11px] font-bold text-[#a0561a]">{eyebrow}</p>
             <h1 className="mt-0.5 text-[26px] font-black leading-tight tracking-tight">{title}</h1>

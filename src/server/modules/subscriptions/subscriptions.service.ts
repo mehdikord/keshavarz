@@ -20,26 +20,19 @@ import {
   mapPaymentDetail,
   mapPaymentSummary,
   mapPurchaseResult,
-  mapRefund,
   mapSubscriptionHistoryItem,
   mapSubscriptionPlan,
 } from "@/server/modules/subscriptions/subscriptions.mapper";
 import {
   activateSubscriptionAndPayment,
   cancelPendingSubscription,
-  cancelSubscription,
-  createGrantedSubscription,
   createPendingPurchase,
-  createRefund,
   findActivePlanByCode,
   findActiveSubscriptionForProvider,
   findPaymentByAuthority,
-  findPaymentByPublicId,
   findPaymentByPublicIdForUser,
   findPaymentActivationPreview,
-  findProviderProfileByUserPublicId,
   findProviderProfileIdByUserId,
-  findSubscriptionByPublicId,
   findSubscriptionByPublicIdForProvider,
   getPlanDurationMonths,
   listActiveSubscriptionPlans,
@@ -50,9 +43,8 @@ import {
   lockSubscriptionForActivation,
   markPaymentFailed,
   markPaymentPendingWithAuthority,
-  processRefundSuccess,
-  sumRefundedAmountToman,
 } from "@/server/modules/subscriptions/subscriptions.repository";
+import { getSetting } from "@/server/modules/system/settings.service";
 
 let paymentProviderSingleton: MockPaymentProvider | undefined;
 
@@ -149,6 +141,13 @@ export async function purchaseProviderSubscription(
   idempotencyKey: string,
 ) {
   const profile = await requireProviderProfile(userId);
+  if (!(await getSetting("subscriptions.purchase_enabled"))) {
+    throw new ApiError(
+      409,
+      API_ERROR_CODES.conflict,
+      "خرید اشتراک موقتاً غیرفعال است؛ کمی بعد دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.",
+    );
+  }
   const idempotency = getAppIdempotencyService();
 
   return idempotency.execute(
@@ -643,240 +642,4 @@ async function handlePaymentGatewayCallbackCore(
     paymentId: payment.publicId,
     status: "paid" as const,
   };
-}
-
-export async function grantProviderSubscription(input: {
-  adminId: bigint;
-  durationMonths?: number;
-  idempotencyKey: string;
-  planCode: string;
-  providerPublicId: string;
-  reason?: string;
-}) {
-  const idempotency = getAppIdempotencyService();
-
-  return idempotency.execute(
-    {
-      actorId: input.adminId.toString(),
-      key: input.idempotencyKey,
-      operationId: "admin.subscription.grant",
-      realm: "admins",
-    },
-    {
-      durationMonths: input.durationMonths ?? null,
-      planCode: input.planCode,
-      providerPublicId: input.providerPublicId,
-      reason: input.reason ?? null,
-    },
-    async () => {
-      const profile = await findProviderProfileByUserPublicId(
-        input.providerPublicId,
-      );
-      if (!profile) {
-        throw new ApiError(
-          404,
-          API_ERROR_CODES.notFound,
-          "Provider یافت نشد.",
-        );
-      }
-
-      const plan = await findActivePlanByCode(input.planCode);
-      if (!plan) {
-        throw new ApiError(404, API_ERROR_CODES.notFound, "پلن یافت نشد.");
-      }
-
-      const durationMonths = input.durationMonths ?? plan.durationMonths;
-      const now = systemClock.now();
-
-      try {
-        const subscription = await runInTransaction(async (transaction) => {
-          const lockedProfile = await lockProviderProfileForActivation(
-            transaction,
-            profile.id,
-          );
-          if (!lockedProfile) {
-            throw new ApiError(
-              404,
-              API_ERROR_CODES.notFound,
-              "Provider یافت نشد.",
-            );
-          }
-
-          return createGrantedSubscription(transaction, {
-            adminId: input.adminId,
-            amountToman: plan.priceToman,
-            durationMonths,
-            now,
-            planId: plan.id,
-            planName: plan.name,
-            providerProfileId: profile.id,
-            publicId: createPublicId(),
-          });
-        });
-
-        return mapActiveSubscription(
-          {
-            amountToman: plan.priceToman,
-            endsAt: subscription.endsAt,
-            planNameSnapshot: subscription.planNameSnapshot,
-            publicId: subscription.publicId,
-            source: "admin_grant",
-            startsAt: subscription.startsAt,
-            status: subscription.status,
-          },
-          now,
-        );
-      } catch (error) {
-        throw (
-          mapPrismaError(error) ??
-          new ApiError(
-            500,
-            API_ERROR_CODES.internalServerError,
-            "اعطای اشتراک ناموفق بود.",
-            { cause: error },
-          )
-        );
-      }
-    },
-  );
-}
-
-export async function cancelProviderSubscriptionByAdmin(input: {
-  reason: string;
-  subscriptionId: string;
-}) {
-  const subscription = await findSubscriptionByPublicId(input.subscriptionId);
-  if (!subscription) {
-    throw new ApiError(404, API_ERROR_CODES.notFound, "اشتراک یافت نشد.");
-  }
-
-  if (
-    subscription.status !== "active" &&
-    subscription.status !== "pending"
-  ) {
-    throw new ApiError(
-      409,
-      API_ERROR_CODES.conflict,
-      "فقط اشتراک فعال یا در انتظار قابل لغو است.",
-    );
-  }
-
-  const result = await cancelSubscription(
-    subscription.id,
-    systemClock.now(),
-    input.reason,
-  );
-
-  return {
-    status: result.status,
-    subscriptionId: result.publicId,
-  };
-}
-
-export async function refundPaymentByAdmin(input: {
-  adminId: bigint;
-  amountToman: number;
-  idempotencyKey: string;
-  paymentId: string;
-  reason: string;
-}) {
-  const idempotency = getAppIdempotencyService();
-
-  return idempotency.execute(
-    {
-      actorId: input.adminId.toString(),
-      key: input.idempotencyKey,
-      operationId: "admin.payment.refund",
-      realm: "admins",
-    },
-    {
-      amountToman: input.amountToman,
-      paymentId: input.paymentId,
-      reason: input.reason,
-    },
-    async () => {
-      const payment = await findPaymentByPublicId(input.paymentId);
-      if (!payment) {
-        throw new ApiError(404, API_ERROR_CODES.notFound, "پرداخت یافت نشد.");
-      }
-
-      if (
-        payment.status !== "paid" &&
-        payment.status !== "partially_refunded"
-      ) {
-        throw new ApiError(
-          409,
-          API_ERROR_CODES.conflict,
-          "وضعیت پرداخت برای refund معتبر نیست.",
-        );
-      }
-
-      const requested = BigInt(input.amountToman);
-      const now = systemClock.now();
-
-      try {
-        const { paymentStatus, refund } = await runInTransaction(async (transaction) => {
-          // Lock the payment row so concurrent refunds serialise and cannot
-          // together exceed the refundable remainder.
-          const locked = await lockPaymentForActivation(transaction, payment.id);
-          if (
-            !locked ||
-            (locked.status !== "paid" && locked.status !== "partially_refunded")
-          ) {
-            throw new ApiError(
-              409,
-              API_ERROR_CODES.conflict,
-              "وضعیت پرداخت برای refund معتبر نیست.",
-            );
-          }
-
-          const refunded = await sumRefundedAmountToman(payment.id, transaction);
-          const remaining = locked.amountToman - refunded;
-          if (requested > remaining) {
-            throw new ApiError(
-              400,
-              API_ERROR_CODES.validationFailed,
-              "مبلغ refund از مانده قابل استرداد بیشتر است.",
-            );
-          }
-
-          const nextStatus =
-            requested === remaining ? "refunded" : "partially_refunded";
-          const created = await createRefund(transaction, {
-            adminId: input.adminId,
-            amountToman: requested,
-            paymentId: payment.id,
-            reason: input.reason,
-          });
-          await processRefundSuccess(transaction, {
-            now,
-            paymentId: payment.id,
-            paymentStatus: nextStatus,
-            refundId: created.id,
-          });
-          return { paymentStatus: nextStatus, refund: created };
-        });
-
-        return {
-          paymentId: payment.publicId,
-          paymentStatus,
-          refund: mapRefund({
-            ...refund,
-            status: "succeeded",
-          }),
-        };
-      } catch (error) {
-        if (error instanceof ApiError) throw error;
-        throw (
-          mapPrismaError(error) ??
-          new ApiError(
-            500,
-            API_ERROR_CODES.internalServerError,
-            "ثبت refund ناموفق بود.",
-            { cause: error },
-          )
-        );
-      }
-    },
-  );
 }

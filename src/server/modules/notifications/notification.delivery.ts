@@ -6,11 +6,8 @@ import {
   markDeliveryProcessing,
   markDeliverySkipped,
   markDeliverySucceeded,
-  requeueDeadLetterDelivery,
 } from "@/server/modules/notifications/notification.repository";
 import { MAX_DELIVERY_ATTEMPTS } from "@/server/modules/notifications/notification.types";
-import { emitAlert } from "@/server/observability/alerts";
-import { API_ERROR_CODES, ApiError } from "@/server/errors";
 
 function backoffMilliseconds(attemptsCount: number): number {
   const capped = Math.min(attemptsCount, 6);
@@ -106,42 +103,4 @@ export async function runNotificationDeliveryJob(limit = 50) {
     processed: queued.length - deferred,
     skipped,
   };
-}
-
-export async function listNotificationDeadLetters(limit = 100) {
-  const rows = await listDeadLetterDeliveries(limit);
-  if (rows.length >= 20) {
-    emitAlert("notification_dead_letter", { count: rows.length });
-  }
-  return rows.map((row) => ({
-    attemptsCount: row.attemptsCount,
-    channel: row.channel,
-    deliveryId: row.id.toString(),
-    errorMessage: row.errorMessage,
-    failedAt: row.failedAt?.toISOString() ?? null,
-    notificationId: row.notification.publicId,
-    title: row.notification.title,
-    type: row.notification.type,
-    updatedAt: row.updatedAt.toISOString(),
-  }));
-}
-
-export async function replayNotificationDeadLetter(deliveryId: string) {
-  let id: bigint;
-  try {
-    id = BigInt(deliveryId);
-  } catch {
-    throw new ApiError(
-      400,
-      API_ERROR_CODES.validationFailed,
-      "شناسه delivery معتبر نیست.",
-    );
-  }
-
-  const result = await requeueDeadLetterDelivery(id);
-  if (result.count === 0) {
-    throw new ApiError(404, API_ERROR_CODES.notFound, "dead-letter یافت نشد.");
-  }
-
-  return { deliveryId, requeued: true };
 }

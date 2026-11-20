@@ -1,66 +1,47 @@
 import type { NextRequest } from "next/server";
 
-import { requireAdminSession } from "@/server/auth";
-import { getAllowedOrigins } from "@/server/config/env";
+import { ADMIN_PERMISSIONS } from "@/lib/admin/permissions";
+import { API_ERROR_CODES, ApiError } from "@/server/errors";
+import { apiSuccess, parseJsonBody, parseWithSchema, withApiHandler } from "@/server/http";
+import { requireAdminActor } from "@/server/modules/admin/access/admin-access.service";
+import { segmentAfter } from "@/server/modules/admin/admin-route-params";
 import {
-  apiSuccess,
-  parseJsonBody,
-  parseWithSchema,
-  withApiHandler,
-} from "@/server/http";
-import { writeAdminAuditLog } from "@/server/modules/admin-audit/admin-audit.service";
-import { requireAdminPermission } from "@/server/modules/admin-rbac/require-admin-permission";
+  UserDeleteSchema,
+  UserParamsSchema,
+  UserUpdateSchema,
+} from "@/server/modules/admin/users/users.schemas";
 import {
-  AdminUserParamsSchema,
-  AdminUserUpdateSchema,
-} from "@/server/modules/admin-users/admin-users.schemas";
-import {
-  getUserForAdmin,
-  updateUserForAdmin,
-} from "@/server/modules/admin-users/admin-users.service";
-import { assertMutationProtection } from "@/server/security";
+  deleteAdminUser,
+  getAdminUserHeader,
+  updateAdminUser,
+} from "@/server/modules/admin/users/users.service";
 
 export const runtime = "nodejs";
 
-function userIdFromPath(request: NextRequest): string | undefined {
-  return request.nextUrl.pathname.split("/").at(-1);
+function params(request: NextRequest) {
+  return parseWithSchema(UserParamsSchema, { userId: segmentAfter(request, "users") });
 }
 
 export const GET = withApiHandler(async (request: NextRequest, context) => {
-  const auth = await requireAdminSession(request);
-  await requireAdminPermission(auth, "users.view", request);
-  const params = parseWithSchema(AdminUserParamsSchema, {
-    userId: userIdFromPath(request),
-  });
-  const user = await getUserForAdmin(params.userId);
-  return apiSuccess(user, context.requestId);
+  await requireAdminActor(request, ADMIN_PERMISSIONS.usersView);
+  const result = await getAdminUserHeader(params(request).userId);
+  if (!result) throw new ApiError(404, API_ERROR_CODES.notFound, "کاربر پیدا نشد.");
+  return apiSuccess(result.header, context.requestId);
 });
 
 export const PATCH = withApiHandler(async (request: NextRequest, context) => {
-  assertMutationProtection(
-    request,
-    "admins",
-    getAllowedOrigins("admin"),
-  );
-  const auth = await requireAdminSession(request);
-  await requireAdminPermission(auth, "users.update", request);
-  const params = parseWithSchema(AdminUserParamsSchema, {
-    userId: userIdFromPath(request),
-  });
-  const input = await parseJsonBody(request, AdminUserUpdateSchema);
-  const result = await updateUserForAdmin(params.userId, input);
+  const { auth } = await requireAdminActor(request, ADMIN_PERMISSIONS.usersUpdate);
+  const { userId } = params(request);
+  const input = await parseJsonBody(request, UserUpdateSchema);
+  await updateAdminUser({ adminId: auth.internalAdminId, request }, userId, input);
+  return apiSuccess({ updated: true }, context.requestId);
+});
 
-  await writeAdminAuditLog({
-    action: "user_update",
-    adminId: auth.internalAdminId,
-    auditableId: result.userId,
-    auditableType: "User",
-    httpMethod: request.method,
-    module: "users",
-    newValues: result.newValues,
-    oldValues: result.oldValues,
-    request,
-  });
-
-  return apiSuccess(result.newValues, context.requestId);
+/** Soft delete: the account keeps its history and can be restored. */
+export const DELETE = withApiHandler(async (request: NextRequest, context) => {
+  const { auth } = await requireAdminActor(request, ADMIN_PERMISSIONS.usersChangeStatus);
+  const { userId } = params(request);
+  const input = await parseJsonBody(request, UserDeleteSchema);
+  await deleteAdminUser({ adminId: auth.internalAdminId, request }, userId, input.reason);
+  return apiSuccess({ deleted: true }, context.requestId);
 });

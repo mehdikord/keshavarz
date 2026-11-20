@@ -9,6 +9,7 @@ import type { ProviderRequestState, ProviderRequestTone } from "@/lib/requests/p
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/utils/date";
 import { formatDistance } from "@/lib/utils/format";
+import { ServiceThumb } from "@/components/shared/service-thumb";
 
 const FRESH_MS = 60 * 60 * 1000;
 
@@ -58,7 +59,11 @@ export function RequestCard({ request, state, busy = false, onAccept, onReject }
 
       <div className="flex items-start gap-3 p-4">
         <span className={cn("relative flex size-12 shrink-0 items-center justify-center rounded-2xl", TONE_ICON[state.tone])}>
-          <Sprout className="size-6" strokeWidth={1.75} />
+          <ServiceThumb
+            className={cn("size-12 rounded-2xl", archived && "opacity-70 grayscale-[0.4]")}
+            fallback={<Sprout className="size-6" strokeWidth={1.75} />}
+            image={request.serviceImage}
+          />
           {fresh ? (
             <span className="absolute -left-1 -top-1 flex size-3.5">
               <span className="absolute inset-0 animate-ping rounded-full bg-[#e8892c]/70" />

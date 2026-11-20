@@ -4,6 +4,7 @@ import { Pencil, Sprout, Trash2 } from "lucide-react";
 
 import { pricingUnitLabel, type AppProviderService } from "@/lib/api/app-provider";
 import { cn } from "@/lib/utils";
+import { ServiceThumb } from "@/components/shared/service-thumb";
 
 interface ServiceCardProps {
   service: AppProviderService;
@@ -32,7 +33,11 @@ export function ServiceCard({ service, onEdit, onDelete }: ServiceCardProps) {
               : "bg-gradient-to-br from-[#d8f3dc] to-[#b7e4c7] text-[#2d6a4f]",
           )}
         >
-          <Sprout className="size-6" strokeWidth={1.75} />
+          <ServiceThumb
+            className={cn("size-12 rounded-2xl", inactive && "opacity-60 grayscale")}
+            fallback={<Sprout className="size-6" strokeWidth={1.75} />}
+            image={service.serviceImage}
+          />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">

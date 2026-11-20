@@ -42,8 +42,8 @@ import {
   updateProviderWorkArea,
   upsertProviderProfile,
 } from "@/server/modules/provider/provider.repository";
+import { getSetting } from "@/server/modules/system/settings.service";
 
-const MAX_GALLERY_IMAGES = 12;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const IMAGE_TYPES = new Map([
   ["image/jpeg", ".jpg"],
@@ -121,19 +121,44 @@ async function buildEligibility(profile: {
     countActiveProviderServices(profile.id),
   ]);
 
-  const missing: string[] = [];
-  if (profile.isActive !== 1) missing.push("active");
-  if (profile.isAvailable !== 1) missing.push("availability");
-  if (profile.workLatitude === null || profile.workLongitude === null) {
-    missing.push("workArea");
-  }
-  if (!subscription) missing.push("subscription");
-  if (activeServices === 0) missing.push("services");
+  const missing = providerEligibilityMissing({
+    activeServices,
+    hasActiveSubscription: Boolean(subscription),
+    isActive: profile.isActive,
+    isAvailable: profile.isAvailable,
+    workLatitude: profile.workLatitude,
+    workLongitude: profile.workLongitude,
+  });
 
   return {
     missing,
     searchable: missing.length === 0,
   };
+}
+
+export type ProviderEligibilityGap = "active" | "availability" | "workArea" | "subscription" | "services";
+
+/**
+ * What keeps a provider out of farmers' search results. Shared by the app and
+ * the admin console so both always agree on who is searchable.
+ */
+export function providerEligibilityMissing(input: {
+  activeServices: number;
+  hasActiveSubscription: boolean;
+  isActive: number;
+  isAvailable: number;
+  workLatitude: unknown;
+  workLongitude: unknown;
+}): ProviderEligibilityGap[] {
+  const missing: ProviderEligibilityGap[] = [];
+  if (input.isActive !== 1) missing.push("active");
+  if (input.isAvailable !== 1) missing.push("availability");
+  if (input.workLatitude === null || input.workLongitude === null) {
+    missing.push("workArea");
+  }
+  if (!input.hasActiveSubscription) missing.push("subscription");
+  if (input.activeServices === 0) missing.push("services");
+  return missing;
 }
 
 export async function getCurrentProviderProfile(userId: bigint) {
@@ -453,10 +478,13 @@ export async function listCurrentProviderGallery(userId: bigint) {
     throw new ApiError(404, API_ERROR_CODES.notFound, "پروفایل Provider یافت نشد.");
   }
 
-  const gallery = await listProviderGalleryImages(profile.id);
+  const [gallery, maxImages] = await Promise.all([
+    listProviderGalleryImages(profile.id),
+    getSetting("providers.max_gallery_images"),
+  ]);
   return {
     gallery: gallery.map(mapProviderGalleryImage),
-    maxImages: MAX_GALLERY_IMAGES,
+    maxImages,
   };
 }
 
@@ -471,12 +499,15 @@ export async function uploadCurrentProviderGalleryImage(
     throw new ApiError(404, API_ERROR_CODES.notFound, "پروفایل Provider یافت نشد.");
   }
 
-  const currentCount = await countProviderGalleryImages(profile.id);
-  if (currentCount >= MAX_GALLERY_IMAGES) {
+  const [currentCount, maxImages] = await Promise.all([
+    countProviderGalleryImages(profile.id),
+    getSetting("providers.max_gallery_images"),
+  ]);
+  if (currentCount >= maxImages) {
     throw new ApiError(
       400,
       API_ERROR_CODES.validationFailed,
-      `حداکثر ${MAX_GALLERY_IMAGES} تصویر در گالری مجاز است.`,
+      `حداکثر ${maxImages} تصویر در گالری مجاز است.`,
     );
   }
 

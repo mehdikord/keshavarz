@@ -197,54 +197,6 @@ async function seedProvider(
   );
 }
 
-async function seedAdmin(args: Record<string, string>): Promise<Tokens> {
-  const phone = args["phone"];
-  if (!phone) throw new Error("--phone is required.");
-
-  const admin = await prisma.admin.upsert({
-    where: { phone },
-    update: {},
-    create: {
-      name: "مدیر تست E2E",
-      password: "e2e-skip-password",
-      phone,
-      publicId: makePublicId(),
-    },
-  });
-
-  const role = await prisma.adminRole.findUnique({
-    where: { code: "platform_admin" },
-  });
-  if (role) {
-    const now = new Date();
-    await prisma.adminRoleAssignment.upsert({
-      where: { adminId_roleId: { adminId: admin.id, roleId: role.id } },
-      update: {},
-      create: {
-        adminId: admin.id,
-        roleId: role.id,
-        expiresAt: new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000),
-      },
-    });
-  }
-
-  const token = makeOpaqueToken();
-  const csrfToken = makeOpaqueToken();
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-  await prisma.adminSession.upsert({
-    where: { tokenHash: hashToken(token) },
-    update: { expiresAt, revokedAt: null },
-    create: {
-      adminId: admin.id,
-      expiresAt,
-      tokenHash: hashToken(token),
-    },
-  });
-
-  return { csrfToken, sessionToken: token };
-}
-
 async function cleanup(args: Record<string, string>): Promise<void> {
   const phones = (args["phones"] ?? "")
     .split(",")
@@ -257,9 +209,6 @@ async function cleanup(args: Record<string, string>): Promise<void> {
 
   await prisma.userSession.deleteMany({
     where: { user: { phone: { in: phones } } },
-  });
-  await prisma.adminSession.deleteMany({
-    where: { admin: { phone: { in: phones } } },
   });
   await prisma.notificationDelivery.deleteMany({
     where: { notification: { user: { phone: { in: phones } } } },
@@ -287,10 +236,6 @@ async function cleanup(args: Record<string, string>): Promise<void> {
   await prisma.providerProfile.deleteMany({
     where: { user: { phone: { in: phones } } },
   });
-  await prisma.adminRoleAssignment.deleteMany({
-    where: { admin: { phone: { in: phones } } },
-  });
-  await prisma.admin.deleteMany({ where: { phone: { in: phones } } });
   await prisma.user.deleteMany({ where: { phone: { in: phones } } });
 }
 
@@ -308,9 +253,6 @@ try {
       break;
     case "seed-purchaser":
       result = await seedProvider(args, false);
-      break;
-    case "seed-admin":
-      result = await seedAdmin(args);
       break;
     case "cleanup":
       await cleanup(args);

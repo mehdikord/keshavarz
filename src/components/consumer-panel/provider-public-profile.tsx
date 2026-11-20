@@ -30,6 +30,7 @@ import { isApiClientError } from "@/lib/api/envelope";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { toPersianDigits } from "@/lib/utils/format";
+import { ServiceThumb } from "@/components/shared/service-thumb";
 
 const FULL = new Intl.NumberFormat("fa-IR");
 
@@ -242,7 +243,7 @@ export function ProviderPublicProfile({
                 >
                   <div className="flex items-start gap-3">
                     <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#e9f3e2] text-[#3f7d45]">
-                      <Sprout className="size-5" />
+                      <ServiceThumb className="size-10 rounded-xl" fallback={<Sprout className="size-5" />} image={service.image} />
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="text-[14px] font-black text-[#3b2410]">{service.serviceName}</p>

@@ -1,6 +1,6 @@
 import * as z from "zod";
 
-import type { AdminCursorMeta, AdminListLimit } from "@/lib/admin/search-params";
+import type { CursorListLimit, CursorMeta } from "@/lib/api/pagination";
 import { appApi } from "@/lib/api/app-client";
 
 export const PRICING_UNITS = [
@@ -54,6 +54,7 @@ export const AppProviderServiceSchema = z
     pricingUnit: z.string(),
     providerServiceId: z.string(),
     serviceId: z.string(),
+    serviceImage: z.string().nullable().default(null),
     serviceName: z.string(),
     updatedAt: z.string(),
   })
@@ -111,9 +112,9 @@ export async function patchAppProviderWorkArea(input: {
 
 export async function fetchAppProviderServices(input?: {
   cursor?: string | null;
-  limit?: AdminListLimit;
+  limit?: CursorListLimit;
   signal?: AbortSignal;
-}): Promise<{ items: AppProviderService[]; meta: AdminCursorMeta }> {
+}): Promise<{ items: AppProviderService[]; meta: CursorMeta }> {
   const limit = input?.limit ?? 50;
   const result = await appApi.get<unknown>("/provider/services", {
     query: {

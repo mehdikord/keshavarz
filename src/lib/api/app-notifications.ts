@@ -1,6 +1,6 @@
 import * as z from "zod";
 
-import type { AdminCursorMeta, AdminListLimit } from "@/lib/admin/search-params";
+import type { CursorListLimit, CursorMeta } from "@/lib/api/pagination";
 import { appApi } from "@/lib/api/app-client";
 
 export const AppNotificationSchema = z
@@ -28,10 +28,10 @@ const CursorMetaSchema = z
 
 export async function fetchAppNotifications(input?: {
   cursor?: string | null;
-  limit?: AdminListLimit;
+  limit?: CursorListLimit;
   readStatus?: "all" | "read" | "unread";
   signal?: AbortSignal;
-}): Promise<{ items: AppNotification[]; meta: AdminCursorMeta }> {
+}): Promise<{ items: AppNotification[]; meta: CursorMeta }> {
   const limit = input?.limit ?? 20;
   const result = await appApi.get<unknown>("/notifications", {
     query: {

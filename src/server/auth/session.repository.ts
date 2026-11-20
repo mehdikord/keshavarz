@@ -115,14 +115,20 @@ export async function findActiveUserSession(
   };
 }
 
+export interface AdminSessionLookup extends SessionLookup {
+  isSuperAdmin: boolean;
+  sessionPublicId: string | null;
+}
+
 export async function findActiveAdminSession(
   tokenHash: string,
   clock: Clock,
-): Promise<(SessionLookup & { isSuperAdmin: boolean }) | null> {
+): Promise<AdminSessionLookup | null> {
   const session = await prisma.adminSession.findUnique({
     where: { tokenHash },
     select: {
       id: true,
+      publicId: true,
       expiresAt: true,
       lastActivityAt: true,
       revokedAt: true,
@@ -158,5 +164,23 @@ export async function findActiveAdminSession(
     actorPublicId: session.admin.publicId,
     isSuperAdmin: session.admin.isSuperAdmin === 1,
     sessionId: session.id,
+    sessionPublicId: session.publicId,
   };
+}
+
+/**
+ * Slides the admin idle window. Writes are throttled to one per minute per
+ * session so page renders and API calls don't each hit the row.
+ */
+export async function touchAdminSession(
+  sessionId: bigint,
+  now: Date,
+): Promise<void> {
+  await prisma.adminSession.updateMany({
+    where: {
+      id: sessionId,
+      lastActivityAt: { lt: new Date(now.getTime() - 60_000) },
+    },
+    data: { lastActivityAt: now },
+  });
 }

@@ -143,19 +143,3 @@ export function mapPurchaseResult(input: {
     subscriptionId: input.subscriptionPublicId,
   };
 }
-
-export function mapRefund(refund: {
-  amountToman: bigint;
-  createdAt: Date;
-  id: bigint;
-  reason: string;
-  status: string;
-}) {
-  return {
-    amountToman: money(refund.amountToman),
-    createdAt: refund.createdAt.toISOString(),
-    reason: refund.reason,
-    refundId: refund.id.toString(),
-    status: refund.status,
-  };
-}

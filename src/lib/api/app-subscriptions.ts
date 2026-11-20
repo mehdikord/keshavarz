@@ -1,6 +1,6 @@
 import * as z from "zod";
 
-import type { AdminCursorMeta, AdminListLimit } from "@/lib/admin/search-params";
+import type { CursorListLimit, CursorMeta } from "@/lib/api/pagination";
 import { appApi } from "@/lib/api/app-client";
 import {
   APP_IDEMPOTENCY_HEADER,
@@ -103,9 +103,9 @@ export async function fetchAppProviderSubscription(
 
 export async function fetchAppProviderSubscriptions(input?: {
   cursor?: string | null;
-  limit?: AdminListLimit;
+  limit?: CursorListLimit;
   signal?: AbortSignal;
-}): Promise<{ items: AppSubscriptionHistoryItem[]; meta: AdminCursorMeta }> {
+}): Promise<{ items: AppSubscriptionHistoryItem[]; meta: CursorMeta }> {
   const limit = input?.limit ?? 20;
   const result = await appApi.get<unknown>("/provider/subscriptions", {
     query: {

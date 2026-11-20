@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { BadgeCheck, MapPin, Tractor, XCircle } from "lucide-react";
 
+import { ServiceThumb } from "@/components/shared/service-thumb";
 import type { AppConsumerRequestSummary } from "@/lib/api/app-requests";
 import { CONSUMER_TONE_PILL, consumerRequestState } from "@/lib/requests/consumer-status";
 import { cn } from "@/lib/utils";
@@ -35,18 +36,18 @@ export function ConsumerRequestCard({ request, href, footer }: ConsumerRequestCa
     >
       <div className="p-4">
         <div className="flex items-start gap-3">
-          <span
-            className={cn(
-              "flex size-11 shrink-0 items-center justify-center rounded-2xl",
+          <LeadingTile
+            icon={Icon}
+            image={request.serviceImage}
+            muted={muted}
+            tone={
               state.tone === "active" || state.tone === "done"
                 ? "bg-gradient-to-br from-[#e1f0dc] to-[#bfe0b4] text-[#2f6a35]"
                 : state.tone === "cancelled"
                   ? "bg-[#f6ece0] text-[#a08463]"
-                  : "bg-gradient-to-br from-[#ffe7c2] to-[#f8c372] text-[#8a4512]",
-            )}
-          >
-            <Icon className="size-5" strokeWidth={1.9} />
-          </span>
+                  : "bg-gradient-to-br from-[#ffe7c2] to-[#f8c372] text-[#8a4512]"
+            }
+          />
           <div className="min-w-0 flex-1">
             <div className="flex items-center justify-between gap-2">
               {/* The stretched link makes the whole card tappable without nesting the footer actions. */}
@@ -107,5 +108,40 @@ export function ConsumerRequestCard({ request, href, footer }: ConsumerRequestCa
 
       {footer ? <div className="relative z-10 border-t border-[#f1e6d6] px-4 py-3">{footer}</div> : null}
     </article>
+  );
+}
+
+/** The service picture when there is one, with the request status as a corner badge; otherwise the status tile. */
+function LeadingTile({
+  icon: Icon,
+  image,
+  muted,
+  tone,
+}: {
+  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
+  image: string | null;
+  muted: boolean;
+  tone: string;
+}) {
+  const statusTile = (
+    <span className={cn("flex size-11 shrink-0 items-center justify-center rounded-2xl", tone)}>
+      <Icon className="size-5" strokeWidth={1.9} />
+    </span>
+  );
+  if (!image) return statusTile;
+  return (
+    <span className="relative shrink-0">
+      <ServiceThumb
+        className={cn("size-11 rounded-2xl", muted && "opacity-70 grayscale-[0.4]")}
+        fallback={statusTile}
+        image={image}
+      />
+      <span
+        aria-hidden
+        className={cn("absolute -bottom-1 -left-1 flex size-5 items-center justify-center rounded-full ring-2 ring-white", tone)}
+      >
+        <Icon className="size-3" strokeWidth={2.2} />
+      </span>
+    </span>
   );
 }

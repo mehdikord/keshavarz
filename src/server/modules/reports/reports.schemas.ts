@@ -27,5 +27,3 @@ export const ProviderFinancialSummaryQuerySchema = ReportRangeQuerySchema.extend
 });
 
 export const ProviderMonthlyRevenueQuerySchema = ReportRangeQuerySchema.strict();
-
-export const AdminReportsQuerySchema = ReportRangeQuerySchema;

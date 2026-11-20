@@ -18,7 +18,6 @@ function run(label, command, args) {
 
 try {
   run("no-mock-imports", "pnpm", ["check:no-mock-imports"]);
-  run("admin-list-perf", "pnpm", ["check:admin-list-perf"]);
   run("frontend-security", "pnpm", ["check:frontend-security"]);
   run("secret-scan", "pnpm", ["check:secret-scan"]);
   run("api-contracts", "pnpm", ["check:api-contracts"]);

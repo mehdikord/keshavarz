@@ -1,6 +1,6 @@
 import * as z from "zod";
 
-import type { AdminCursorMeta, AdminListLimit } from "@/lib/admin/search-params";
+import type { CursorListLimit, CursorMeta } from "@/lib/api/pagination";
 import { appApi } from "@/lib/api/app-client";
 
 export const AppPaymentSummarySchema = z
@@ -38,9 +38,9 @@ const CursorMetaSchema = z
 
 export async function fetchAppPayments(input?: {
   cursor?: string | null;
-  limit?: AdminListLimit;
+  limit?: CursorListLimit;
   signal?: AbortSignal;
-}): Promise<{ items: AppPaymentSummary[]; meta: AdminCursorMeta }> {
+}): Promise<{ items: AppPaymentSummary[]; meta: CursorMeta }> {
   const limit = input?.limit ?? 20;
   const result = await appApi.get<unknown>("/payments", {
     query: {

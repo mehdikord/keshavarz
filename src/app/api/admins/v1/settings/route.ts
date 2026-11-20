@@ -1,17 +1,13 @@
 import type { NextRequest } from "next/server";
 
-import { requireAdminSession } from "@/server/auth";
-import { apiSuccess, parseQuery, withApiHandler } from "@/server/http";
-import { requireAdminPermission } from "@/server/modules/admin-rbac/require-admin-permission";
-import { AdminSettingsQuerySchema } from "@/server/modules/admin-settings/admin-settings.schemas";
-import { listSettingsForAdmin } from "@/server/modules/admin-settings/admin-settings.service";
+import { ADMIN_PERMISSIONS } from "@/lib/admin/permissions";
+import { apiSuccess, withApiHandler } from "@/server/http";
+import { requireAdminActor } from "@/server/modules/admin/access/admin-access.service";
+import { getAdminSettings } from "@/server/modules/admin/settings/settings-admin.service";
 
 export const runtime = "nodejs";
 
 export const GET = withApiHandler(async (request: NextRequest, context) => {
-  const auth = await requireAdminSession(request);
-  await requireAdminPermission(auth, "settings.view", request);
-  const query = parseQuery(request, AdminSettingsQuerySchema);
-  const result = await listSettingsForAdmin({ group: query.group });
-  return apiSuccess(result, context.requestId);
+  await requireAdminActor(request, ADMIN_PERMISSIONS.settingsView);
+  return apiSuccess(await getAdminSettings(), context.requestId);
 });

@@ -2,18 +2,6 @@ import { Prisma } from "@/generated/prisma/client";
 
 import { prisma } from "@/server/db/prisma";
 
-
-/**
- * A payment stays "collected" after a refund: refunds move it to
- * partially_refunded/refunded, and are reported separately. Filtering on
- * "paid" alone would drop the whole payment and double-count the refund.
- */
-const GROSS_PAID_STATUSES: Array<"paid" | "partially_refunded" | "refunded"> = [
-  "paid",
-  "partially_refunded",
-  "refunded",
-];
-
 export async function findOwnedLandIdByPublicId(
   userId: bigint,
   landPublicId: string,
@@ -81,6 +69,7 @@ export async function findConsumerTopService(input: {
 }) {
   const rows = await prisma.$queryRaw<
     Array<{
+      service_image: string | null;
       service_name: string;
       service_slug: string;
       total_toman: bigint;
@@ -89,6 +78,7 @@ export async function findConsumerTopService(input: {
     SELECT
       s.slug AS service_slug,
       s.name AS service_name,
+      s.image AS service_image,
       SUM(v.agreed_price_toman) AS total_toman
     FROM v_completed_service_request_financials v
     INNER JOIN services s ON s.id = v.service_id
@@ -96,7 +86,7 @@ export async function findConsumerTopService(input: {
       AND v.completed_at >= ${input.from}
       AND v.completed_at < ${input.to}
       ${input.landId ? Prisma.sql`AND v.land_id = ${input.landId}` : Prisma.empty}
-    GROUP BY s.id, s.slug, s.name
+    GROUP BY s.id, s.slug, s.name, s.image
     ORDER BY total_toman DESC
     LIMIT 1
   `;
@@ -105,6 +95,7 @@ export async function findConsumerTopService(input: {
     return null;
   }
   return {
+    image: row.service_image,
     name: row.service_name,
     serviceId: row.service_slug,
     totalToman: money(row.total_toman),
@@ -211,6 +202,7 @@ export async function findProviderTopService(input: {
 }) {
   const rows = await prisma.$queryRaw<
     Array<{
+      service_image: string | null;
       service_name: string;
       service_slug: string;
       total_toman: bigint;
@@ -219,6 +211,7 @@ export async function findProviderTopService(input: {
     SELECT
       s.slug AS service_slug,
       s.name AS service_name,
+      s.image AS service_image,
       SUM(v.agreed_price_toman) AS total_toman
     FROM v_completed_service_request_financials v
     INNER JOIN services s ON s.id = v.service_id
@@ -226,7 +219,7 @@ export async function findProviderTopService(input: {
       AND v.completed_at >= ${input.from}
       AND v.completed_at < ${input.to}
       ${input.serviceId ? Prisma.sql`AND v.service_id = ${input.serviceId}` : Prisma.empty}
-    GROUP BY s.id, s.slug, s.name
+    GROUP BY s.id, s.slug, s.name, s.image
     ORDER BY total_toman DESC
     LIMIT 1
   `;
@@ -235,6 +228,7 @@ export async function findProviderTopService(input: {
     return null;
   }
   return {
+    image: row.service_image,
     name: row.service_name,
     serviceId: row.service_slug,
     totalToman: money(row.total_toman),
@@ -274,227 +268,4 @@ export async function listProviderMonthlyRevenue(input: {
     totalToman: money(row.total_toman),
     year: row.year_num,
   }));
-}
-
-export async function sumAdminGmv(input: { from: Date; to: Date }) {
-  const rows = await prisma.$queryRaw<
-    Array<{ completed_count: bigint; gmv: bigint | null }>
-  >`
-    SELECT
-      COUNT(*) AS completed_count,
-      COALESCE(SUM(v.agreed_price_toman), 0) AS gmv
-    FROM v_completed_service_request_financials v
-    WHERE v.completed_at >= ${input.from}
-      AND v.completed_at < ${input.to}
-  `;
-  const row = rows[0];
-  return {
-    completedCount: Number(row?.completed_count ?? 0),
-    gmvToman: money(row?.gmv),
-  };
-}
-
-export async function listAdminTopServicesByGmv(input: {
-  from: Date;
-  limit: number;
-  to: Date;
-}) {
-  const rows = await prisma.$queryRaw<
-    Array<{
-      service_name: string;
-      service_slug: string;
-      total_toman: bigint;
-    }>
-  >`
-    SELECT
-      s.slug AS service_slug,
-      s.name AS service_name,
-      SUM(v.agreed_price_toman) AS total_toman
-    FROM v_completed_service_request_financials v
-    INNER JOIN services s ON s.id = v.service_id
-    WHERE v.completed_at >= ${input.from}
-      AND v.completed_at < ${input.to}
-    GROUP BY s.id, s.slug, s.name
-    ORDER BY total_toman DESC
-    LIMIT ${input.limit}
-  `;
-  return rows.map((row) => ({
-    name: row.service_name,
-    serviceId: row.service_slug,
-    totalToman: money(row.total_toman),
-  }));
-}
-
-export async function listAdminMonthlyGmv(input: { from: Date; to: Date }) {
-  const rows = await prisma.$queryRaw<
-    Array<{
-      month_num: number;
-      row_count: bigint;
-      total_toman: bigint;
-      year_num: number;
-    }>
-  >`
-    SELECT
-      YEAR(v.completed_at) AS year_num,
-      MONTH(v.completed_at) AS month_num,
-      COUNT(*) AS row_count,
-      COALESCE(SUM(v.agreed_price_toman), 0) AS total_toman
-    FROM v_completed_service_request_financials v
-    WHERE v.completed_at >= ${input.from}
-      AND v.completed_at < ${input.to}
-    GROUP BY YEAR(v.completed_at), MONTH(v.completed_at)
-    ORDER BY year_num ASC, month_num ASC
-  `;
-  return rows.map((row) => ({
-    count: Number(row.row_count),
-    month: row.month_num,
-    totalToman: money(row.total_toman),
-    year: row.year_num,
-  }));
-}
-
-export async function sumPaidSubscriptionRevenue(input: {
-  from: Date;
-  to: Date;
-}) {
-  const result = await prisma.subscriptionPayment.aggregate({
-    where: {
-      paidAt: { gte: input.from, lt: input.to },
-      status: { in: GROSS_PAID_STATUSES },
-    },
-    _sum: { amountToman: true },
-  });
-  return money(result._sum.amountToman);
-}
-
-export async function sumSucceededRefunds(input: { from: Date; to: Date }) {
-  const result = await prisma.paymentRefund.aggregate({
-    where: {
-      processedAt: { gte: input.from, lt: input.to },
-      status: "succeeded",
-    },
-    _sum: { amountToman: true },
-  });
-  return money(result._sum.amountToman);
-}
-
-export async function sumFailedPayments(input: { from: Date; to: Date }) {
-  const result = await prisma.subscriptionPayment.aggregate({
-    where: {
-      createdAt: { gte: input.from, lt: input.to },
-      status: "failed",
-    },
-    _sum: { amountToman: true },
-    _count: { _all: true },
-  });
-  return {
-    amountToman: money(result._sum.amountToman),
-    count: result._count._all,
-  };
-}
-
-export async function countPaidPayments(input: { from: Date; to: Date }) {
-  return prisma.subscriptionPayment.count({
-    where: {
-      paidAt: { gte: input.from, lt: input.to },
-      status: { in: GROSS_PAID_STATUSES },
-    },
-  });
-}
-
-export async function countRequestsCreatedByStatus(input: {
-  from: Date;
-  to: Date;
-}) {
-  const rows = await prisma.serviceRequest.groupBy({
-    by: ["status"],
-    where: {
-      createdAt: { gte: input.from, lt: input.to },
-    },
-    _count: { _all: true },
-  });
-  return Object.fromEntries(
-    rows.map((row) => [row.status, row._count._all]),
-  ) as Partial<
-    Record<
-      | "awaiting_send"
-      | "pending_provider"
-      | "in_progress"
-      | "completed"
-      | "cancelled",
-      number
-    >
-  >;
-}
-
-export async function countActiveUsersInRange(input: {
-  from: Date;
-  to: Date;
-}) {
-  return prisma.user.count({
-    where: {
-      deletedAt: null,
-      lastLoginAt: { gte: input.from, lt: input.to },
-    },
-  });
-}
-
-export async function countActiveApprovedProviders() {
-  return prisma.providerProfile.count({
-    where: {
-      approvedAt: { not: null },
-      isActive: 1,
-      isAvailable: 1,
-    },
-  });
-}
-
-export async function countNotificationDeliveries(input: {
-  from: Date;
-  to: Date;
-}) {
-  const [total, failed] = await Promise.all([
-    prisma.notificationDelivery.count({
-      where: { updatedAt: { gte: input.from, lt: input.to } },
-    }),
-    prisma.notificationDelivery.count({
-      where: {
-        status: "failed",
-        updatedAt: { gte: input.from, lt: input.to },
-      },
-    }),
-  ]);
-  return { failed, total };
-}
-
-export async function listCompletedFinancialsForExport(input: {
-  from: Date;
-  limit: number;
-  to: Date;
-}) {
-  return prisma.$queryRaw<
-    Array<{
-      agreed_price_toman: bigint;
-      completed_at: Date;
-      consumer_user_id: bigint;
-      land_id: bigint;
-      provider_user_id: bigint;
-      request_public_id: string;
-      service_id: bigint;
-    }>
-  >`
-    SELECT
-      v.request_public_id,
-      v.consumer_user_id,
-      v.provider_user_id,
-      v.agreed_price_toman,
-      v.completed_at,
-      v.service_id,
-      v.land_id
-    FROM v_completed_service_request_financials v
-    WHERE v.completed_at >= ${input.from}
-      AND v.completed_at < ${input.to}
-    ORDER BY v.completed_at DESC
-    LIMIT ${input.limit}
-  `;
 }

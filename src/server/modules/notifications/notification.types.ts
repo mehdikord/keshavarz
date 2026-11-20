@@ -32,9 +32,4 @@ export interface NotificationPayloadData {
   v: typeof NOTIFICATION_PAYLOAD_VERSION;
 }
 
-export const MAX_ADMIN_NOTIFICATION_RECIPIENTS = 50;
 export const MAX_DELIVERY_ATTEMPTS = 5;
-export const ADMIN_NOTIFICATION_RATE_LIMIT = {
-  limit: 20,
-  windowMs: 60_000,
-} as const;

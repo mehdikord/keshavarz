@@ -40,7 +40,7 @@ export function mapProviderService(service: {
   isActive: number;
   priceToman: bigint;
   pricingUnit: string;
-  service: { name: string; slug: string };
+  service: { image: string | null; name: string; slug: string };
   updatedAt: Date;
 }) {
   return {
@@ -50,6 +50,7 @@ export function mapProviderService(service: {
     pricingUnit: service.pricingUnit,
     providerServiceId: service.service.slug,
     serviceId: service.service.slug,
+    serviceImage: service.service.image,
     serviceName: service.service.name,
     updatedAt: service.updatedAt.toISOString(),
   };

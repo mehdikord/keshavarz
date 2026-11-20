@@ -167,6 +167,7 @@ export async function findRequestByPublicId(publicId: string) {
       landTitleSnapshot: true,
       publicId: true,
       serviceCategoryNameSnapshot: true,
+      service: { select: { image: true } },
       serviceId: true,
       serviceNameSnapshot: true,
       status: true,
@@ -196,6 +197,7 @@ export async function listConsumerRequests(input: {
       id: true,
       landTitleSnapshot: true,
       publicId: true,
+      service: { select: { image: true } },
       serviceNameSnapshot: true,
       status: true,
       version: true,
@@ -313,6 +315,7 @@ export async function listProviderInbox(input: {
         select: {
           landTitleSnapshot: true,
           publicId: true,
+          service: { select: { image: true } },
           serviceNameSnapshot: true,
           status: true,
           version: true,
@@ -631,9 +634,12 @@ export async function cancelServiceRequest(
 export async function completeServiceRequest(
   transaction: TransactionClient,
   input: {
+    /** Set when support closes the job instead of the consumer. */
+    actorAdminId?: bigint;
     consumerUserId: bigint;
     expectedVersion?: number;
     now: Date;
+    reason?: string | null;
     requestId: bigint;
   },
 ) {
@@ -658,13 +664,22 @@ export async function completeServiceRequest(
   }
 
   await transaction.serviceRequestStatusHistory.create({
-    data: {
-      actorType: "consumer",
-      actorUserId: input.consumerUserId,
-      fromStatus: "in_progress",
-      serviceRequestId: input.requestId,
-      toStatus: "completed",
-    },
+    data: input.actorAdminId
+      ? {
+          actorAdminId: input.actorAdminId,
+          actorType: "admin",
+          fromStatus: "in_progress",
+          reason: input.reason ?? null,
+          serviceRequestId: input.requestId,
+          toStatus: "completed",
+        }
+      : {
+          actorType: "consumer",
+          actorUserId: input.consumerUserId,
+          fromStatus: "in_progress",
+          serviceRequestId: input.requestId,
+          toStatus: "completed",
+        },
   });
 
   return { ok: true as const };
@@ -689,219 +704,4 @@ export async function listSentLinkProviderUserIds(requestId: bigint) {
     },
   });
   return links.map((link) => link.providerProfile.userId);
-}
-
-export async function findUserIdByPublicId(publicId: string) {
-  return prisma.user.findUnique({
-    where: { publicId },
-    select: { id: true, publicId: true },
-  });
-}
-
-export async function listAdminServiceRequests(input: {
-  consumerUserId?: bigint;
-  cursorId?: bigint;
-  limit: number;
-  publicId?: string;
-  status?: ConsumerRequestStatus;
-}) {
-  return prisma.serviceRequest.findMany({
-    where: {
-      ...(input.consumerUserId
-        ? { consumerUserId: input.consumerUserId }
-        : {}),
-      ...(input.publicId ? { publicId: input.publicId } : {}),
-      ...(input.status ? { status: input.status } : {}),
-      ...(input.cursorId ? { id: { lt: input.cursorId } } : {}),
-    },
-    orderBy: { id: "desc" },
-    take: input.limit + 1,
-    select: {
-      agreedPriceToman: true,
-      assignedProviderNameSnapshot: true,
-      createdAt: true,
-      id: true,
-      landTitleSnapshot: true,
-      publicId: true,
-      searchPublicId: true,
-      serviceNameSnapshot: true,
-      status: true,
-      version: true,
-      consumer: { select: { publicId: true } },
-    },
-  });
-}
-
-export async function findAdminRequestByPublicId(publicId: string) {
-  return prisma.serviceRequest.findUnique({
-    where: { publicId },
-    select: {
-      acceptedAt: true,
-      agreedPriceToman: true,
-      assignedProviderNameSnapshot: true,
-      assignedProviderProfileId: true,
-      cancelReason: true,
-      cancelledAt: true,
-      cancelledBy: true,
-      completedAt: true,
-      consumerNameSnapshot: true,
-      consumerNote: true,
-      consumerUserId: true,
-      createdAt: true,
-      id: true,
-      landAreaSquareMetersSnapshot: true,
-      landLatitudeSnapshot: true,
-      landLongitudeSnapshot: true,
-      landTitleSnapshot: true,
-      publicId: true,
-      serviceCategoryNameSnapshot: true,
-      serviceNameSnapshot: true,
-      status: true,
-      version: true,
-      consumer: { select: { publicId: true } },
-    },
-  });
-}
-
-export async function listAdminRequestProviderLinks(requestId: bigint) {
-  return prisma.serviceRequestProvider.findMany({
-    where: { serviceRequestId: requestId },
-    orderBy: { id: "asc" },
-    select: {
-      distanceKm: true,
-      id: true,
-      providerNameSnapshot: true,
-      rejectionReason: true,
-      removedReason: true,
-      respondedAt: true,
-      sentAt: true,
-      servicePriceSnapshotToman: true,
-      status: true,
-      viewedAt: true,
-      providerProfile: {
-        select: {
-          user: { select: { phone: true, publicId: true } },
-        },
-      },
-    },
-  });
-}
-
-export async function listRequestStatusHistories(requestId: bigint) {
-  return prisma.serviceRequestStatusHistory.findMany({
-    where: { serviceRequestId: requestId },
-    orderBy: { id: "asc" },
-    select: {
-      actorAdminId: true,
-      actorType: true,
-      actorUserId: true,
-      createdAt: true,
-      fromStatus: true,
-      id: true,
-      reason: true,
-      toStatus: true,
-    },
-  });
-}
-
-export async function listRequestProviderHistories(requestId: bigint) {
-  return prisma.serviceRequestProviderHistory.findMany({
-    where: { requestProvider: { serviceRequestId: requestId } },
-    orderBy: { id: "asc" },
-    select: {
-      actorAdminId: true,
-      actorType: true,
-      actorUserId: true,
-      createdAt: true,
-      fromStatus: true,
-      id: true,
-      reason: true,
-      serviceRequestProviderId: true,
-      toStatus: true,
-    },
-  });
-}
-
-export async function findProviderLinkById(linkId: bigint) {
-  return prisma.serviceRequestProvider.findUnique({
-    where: { id: linkId },
-    select: {
-      id: true,
-      serviceRequestId: true,
-      status: true,
-      request: {
-        select: {
-          publicId: true,
-          status: true,
-        },
-      },
-    },
-  });
-}
-
-export async function lockProviderLinkById(
-  transaction: TransactionClient,
-  linkId: bigint,
-) {
-  const rows = await transaction.$queryRaw<
-    Array<{
-      id: bigint;
-      requestPublicId: string;
-      requestStatus: string;
-      serviceRequestId: bigint;
-      status: string;
-    }>
-  >`
-    SELECT srp.id,
-           srp.service_request_id AS serviceRequestId,
-           srp.status,
-           sr.public_id AS requestPublicId,
-           sr.status AS requestStatus
-    FROM service_request_providers srp
-    INNER JOIN service_requests sr ON sr.id = srp.service_request_id
-    WHERE srp.id = ${linkId}
-    LIMIT 1
-    FOR UPDATE
-  `;
-  return rows[0] ?? null;
-}
-
-export async function removeProviderLinkByAdmin(
-  transaction: TransactionClient,
-  input: {
-    adminId: bigint;
-    fromStatus: "sent";
-    linkId: bigint;
-    now: Date;
-    reason?: string | null;
-  },
-) {
-  const updated = await transaction.serviceRequestProvider.updateMany({
-    where: {
-      id: input.linkId,
-      status: input.fromStatus,
-    },
-    data: {
-      removedReason: "admin_removed",
-      status: "removed",
-      updatedAt: input.now,
-    },
-  });
-
-  if (updated.count !== 1) {
-    return { ok: false as const };
-  }
-
-  await transaction.serviceRequestProviderHistory.create({
-    data: {
-      actorAdminId: input.adminId,
-      actorType: "admin",
-      fromStatus: input.fromStatus,
-      reason: input.reason ?? "admin_removed",
-      serviceRequestProviderId: input.linkId,
-      toStatus: "removed",
-    },
-  });
-
-  return { ok: true as const };
 }

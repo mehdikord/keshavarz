@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { AppProviderRequestSummary } from "@/lib/api/app-requests";
 import { formatRelativeTime } from "@/lib/utils/date";
 import { formatDistance } from "@/lib/utils/format";
+import { ServiceThumb } from "@/components/shared/service-thumb";
 
 interface IncomingRequestsProps {
   loading: boolean;
@@ -53,7 +54,11 @@ export function IncomingRequests({ loading, requests }: IncomingRequestsProps) {
                 className="group flex items-center gap-3 rounded-[24px] bg-surface p-3.5 shadow-[0_14px_30px_-22px_rgba(45,106,79,0.5)] ring-1 ring-border/60 transition-all active:scale-[0.98] hover:ring-primary/25"
               >
                 <span className="relative flex size-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#d8f3dc] to-[#b7e4c7] text-[#2d6a4f]">
-                  <Sprout className="size-6" strokeWidth={1.75} />
+                  <ServiceThumb
+                    className="size-12 rounded-2xl"
+                    fallback={<Sprout className="size-6" strokeWidth={1.75} />}
+                    image={request.serviceImage}
+                  />
                   <span className="absolute -left-0.5 -top-0.5 size-3 rounded-full bg-[#e8892c] ring-2 ring-surface" />
                 </span>
                 <div className="min-w-0 flex-1">

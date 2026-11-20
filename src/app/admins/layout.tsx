@@ -1,24 +1,38 @@
 import type { Metadata, Viewport } from "next";
+import { cookies } from "next/headers";
+
+import { AdminThemeRoot, type AdminTheme } from "@/components/admin/shell/admin-theme";
+import { ADMIN_THEME_COOKIE } from "@/components/admin/shell/constants";
+
+import "./admin-theme.css";
 
 export const metadata: Metadata = {
-  title: "پنل مدیریت کشاورز",
-  description: "سیستم مدیریت پلتفرم خدمات کشاورزی",
-  robots: {
-    index: false,
-    follow: false,
+  description: "کنسول مدیریت پلتفرم خدمات کشاورزی کشاورز",
+  robots: { follow: false, index: false },
+  title: {
+    default: "کنسول مدیریت کشاورز",
+    template: "%s · مدیریت کشاورز",
   },
 };
 
 export const viewport: Viewport = {
-  width: "device-width",
+  colorScheme: "light dark",
   initialScale: 1,
-  themeColor: "#13261a",
+  maximumScale: 5,
+  themeColor: "#13291c",
+  userScalable: true,
+  width: "device-width",
 };
 
-export default function AdminsRootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
-  return children;
+function readTheme(value: string | undefined): AdminTheme {
+  return value === "light" || value === "dark" ? value : "system";
+}
+
+export default async function AdminsLayout({ children }: { children: React.ReactNode }) {
+  const cookieStore = await cookies();
+  return (
+    <AdminThemeRoot initialTheme={readTheme(cookieStore.get(ADMIN_THEME_COOKIE)?.value)}>
+      {children}
+    </AdminThemeRoot>
+  );
 }

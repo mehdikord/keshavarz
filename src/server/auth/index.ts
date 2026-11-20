@@ -1,6 +1,7 @@
 export {
   requireAdminSession,
   requireUserSession,
+  resolveAdminSessionToken,
 } from "@/server/auth/session.service";
 export type {
   AdminAuthContext,

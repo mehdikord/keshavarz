@@ -335,6 +335,7 @@ function ConsumerRequestsContent() {
           open={cancelTarget !== null}
           onOpenChange={(open) => !open && setCancelTarget(null)}
           serviceName={cancelTarget?.serviceName ?? ""}
+          serviceImage={cancelTarget?.serviceImage}
           reasonRequired={cancelTarget?.status === "in_progress"}
           formKey={sheetKey}
           onConfirm={handleCancel}

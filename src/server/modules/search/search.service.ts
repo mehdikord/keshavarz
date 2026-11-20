@@ -28,6 +28,7 @@ import {
   storeCandidates,
   type EligibleProviderRow,
 } from "@/server/modules/search/search.repository";
+import { getSetting } from "@/server/modules/system/settings.service";
 
 const LOCAL_DATE = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit",
@@ -39,6 +40,15 @@ const LOCAL_DATE = new Intl.DateTimeFormat("en-CA", {
 /** "Today" for the farmer, not for UTC — Iran is UTC+03:30. */
 function todayInIran(now: Date): string {
   return LOCAL_DATE.format(now);
+}
+
+/** Admin setting `search.max_request_dates`; the request schema's own cap (31) still applies. */
+async function assertDatesWithinLimit(dates: string[]): Promise<void> {
+  const maxDates = await getSetting("search.max_request_dates");
+  if (new Set(dates).size > maxDates) {
+    const message = `حداکثر ${new Intl.NumberFormat("fa-IR").format(maxDates)} روز در هر درخواست قابل انتخاب است.`;
+    throw new ApiError(400, API_ERROR_CODES.validationFailed, message, { fields: { dates: [message] } });
+  }
 }
 
 function assertDatesNotPast(dates: string[], now: Date): void {
@@ -101,6 +111,7 @@ export async function createServiceSearch(
 
     const now = systemClock.now();
     assertDatesNotPast(input.dates, now);
+    await assertDatesWithinLimit(input.dates);
 
     const result = await getAppIdempotencyService().execute(
       {

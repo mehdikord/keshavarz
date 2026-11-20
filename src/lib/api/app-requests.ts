@@ -1,6 +1,6 @@
 import * as z from "zod";
 
-import type { AdminCursorMeta, AdminListLimit } from "@/lib/admin/search-params";
+import type { CursorListLimit, CursorMeta } from "@/lib/api/pagination";
 import { appApi } from "@/lib/api/app-client";
 import {
   APP_IDEMPOTENCY_HEADER,
@@ -36,6 +36,7 @@ export const AppConsumerRequestSummarySchema = z
     /** Providers the request was sent to (any link status). */
     providersSent: z.number().int(),
     requestId: z.string(),
+    serviceImage: z.string().nullable().default(null),
     serviceName: z.string(),
     status: z.string(),
     version: z.number().int(),
@@ -82,6 +83,7 @@ export const AppConsumerRequestDetailSchema = z
     providers: z.array(AppRequestProviderLinkSchema),
     requestId: z.string(),
     serviceCategoryName: z.string(),
+    serviceImage: z.string().nullable().default(null),
     serviceName: z.string(),
     status: z.string(),
     version: z.number().int(),
@@ -100,6 +102,7 @@ export const AppProviderRequestSummarySchema = z
     priceToman: z.number(),
     requestId: z.string(),
     sentAt: z.string(),
+    serviceImage: z.string().nullable().default(null),
     serviceName: z.string(),
     status: z.string(),
     version: z.number().int(),
@@ -133,6 +136,7 @@ export const AppProviderRequestDetailSchema = z
     priceToman: z.number(),
     requestId: z.string(),
     serviceCategoryName: z.string(),
+    serviceImage: z.string().nullable().default(null),
     serviceName: z.string(),
     status: z.string(),
     version: z.number().int(),
@@ -194,6 +198,7 @@ export const AppCandidateRequestContextSchema = z
     landId: z.string(),
     landTitle: z.string(),
     requestId: z.string(),
+    serviceImage: z.string().nullable().default(null),
     serviceName: z.string(),
     status: z.string(),
     version: z.number().int(),
@@ -266,11 +271,11 @@ export async function sendAppRequestToProviders(input: {
 
 export async function fetchConsumerRequests(input?: {
   cursor?: string | null;
-  limit?: AdminListLimit;
+  limit?: CursorListLimit;
   signal?: AbortSignal;
   /** `open` = awaiting_send + pending_provider. */
   status?: AppRequestStatus | "open";
-}): Promise<{ items: AppConsumerRequestSummary[]; meta: AdminCursorMeta }> {
+}): Promise<{ items: AppConsumerRequestSummary[]; meta: CursorMeta }> {
   const limit = input?.limit ?? 20;
   const result = await appApi.get<unknown>("/consumer/requests", {
     query: {
@@ -325,10 +330,10 @@ export async function completeConsumerRequest(
 
 export async function fetchProviderRequests(input?: {
   cursor?: string | null;
-  limit?: AdminListLimit;
+  limit?: CursorListLimit;
   linkStatus?: AppLinkStatus;
   signal?: AbortSignal;
-}): Promise<{ items: AppProviderRequestSummary[]; meta: AdminCursorMeta }> {
+}): Promise<{ items: AppProviderRequestSummary[]; meta: CursorMeta }> {
   const limit = input?.limit ?? 20;
   const result = await appApi.get<unknown>("/provider/requests", {
     query: {

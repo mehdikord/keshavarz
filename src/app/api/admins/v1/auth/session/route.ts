@@ -1,34 +1,17 @@
 import type { NextRequest } from "next/server";
 
 import { requireAdminSession } from "@/server/auth";
-import { getAllowedOrigins } from "@/server/config/env";
+import { API_ERROR_CODES, ApiError } from "@/server/errors";
 import { apiSuccess, withApiHandler } from "@/server/http";
-import { clearAdminAuthCookies } from "@/server/modules/admin-auth/admin-auth.cookies";
-import {
-  getCurrentAdminSessionInfo,
-  logoutCurrentAdminSession,
-} from "@/server/modules/admin-auth/admin-auth.service";
-import { assertMutationProtection } from "@/server/security";
+import { getAdminViewer } from "@/server/modules/admin/auth/admin-auth.service";
 
 export const runtime = "nodejs";
 
 export const GET = withApiHandler(async (request: NextRequest, context) => {
   const auth = await requireAdminSession(request);
-  return apiSuccess(
-    await getCurrentAdminSessionInfo(auth.sessionId),
-    context.requestId,
-  );
-});
-
-export const DELETE = withApiHandler(async (request: NextRequest, context) => {
-  assertMutationProtection(
-    request,
-    "admins",
-    getAllowedOrigins("admin"),
-  );
-  const auth = await requireAdminSession(request);
-  await logoutCurrentAdminSession(auth.internalAdminId, auth.sessionId);
-  const response = apiSuccess({ loggedOut: true }, context.requestId);
-  clearAdminAuthCookies(response);
-  return response;
+  const viewer = await getAdminViewer(auth.internalAdminId);
+  if (!viewer) {
+    throw new ApiError(401, API_ERROR_CODES.invalidSession, "نشست معتبر نیست یا منقضی شده است.");
+  }
+  return apiSuccess(viewer, context.requestId);
 });

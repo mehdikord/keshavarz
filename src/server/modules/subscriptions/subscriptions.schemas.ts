@@ -54,37 +54,4 @@ export const IdempotencyHeaderSchema = z
   .max(128)
   .regex(/^[A-Za-z0-9._~-]+$/);
 
-export const AdminGrantSubscriptionSchema = z
-  .object({
-    durationMonths: z.number().int().min(1).max(36).optional(),
-    planCode: z.string().min(1).max(100),
-    reason: z.string().trim().min(3).max(500).optional(),
-  })
-  .strict();
-
-export const AdminCancelSubscriptionSchema = z
-  .object({
-    reason: z.string().trim().min(3).max(500),
-  })
-  .strict();
-
-export const AdminRefundSchema = z
-  .object({
-    amountToman: MoneyTomanSchema.positive(),
-    reason: z.string().trim().min(3).max(1000),
-  })
-  .strict();
-
-export const ProviderParamsSchema = z
-  .object({
-    providerId: PublicIdSchema,
-  })
-  .strict();
-
-export const SubscriptionParamsSchema = z
-  .object({
-    subscriptionId: PublicIdSchema,
-  })
-  .strict();
-
 export { IdempotencyKeySchema };

@@ -143,6 +143,7 @@ model AdminRole {
 
 model AdminSession {
   id             BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId       String?   @unique(map: "uq_admin_sessions_public_id") @map("public_id") @db.Char(26)
   adminId        BigInt    @map("admin_id") @db.UnsignedBigInt
   tokenHash      String    @unique(map: "uq_admin_sessions_token") @map("token_hash") @db.Char(64)
   ipAddress      String?   @map("ip_address") @db.VarChar(45)
@@ -206,6 +207,7 @@ model Admin {
   updatedSubscriptionPlans      SubscriptionPlan[]              @relation("SubscriptionPlanUpdater")
   updatedSystemSettings         SystemSetting[]
   moderationActions             UserModerationAction[]
+  userNotes                     UserAdminNote[]
 
   @@index([createdByAdminId], map: "created_by_admin_id")
   @@index([isActive, deletedAt], map: "idx_admins_active_deleted")
@@ -588,6 +590,7 @@ model ServiceRequest {
   @@index([assignedProviderProfileId, status, createdAt], map: "idx_service_requests_provider_status")
   @@index([serviceId, status, createdAt], map: "idx_service_requests_service_status")
   @@index([consumerUserId, landId, serviceId, status], map: "idx_service_requests_consumer_open")
+  @@index([searchPublicId], map: "idx_service_requests_search_public_id")
   @@map("service_requests")
 }
 
@@ -739,6 +742,25 @@ model UserModerationAction {
   @@map("user_moderation_actions")
 }
 
+/// یادداشت‌های داخلی مدیران روی یک کاربر؛ هرگز به خود کاربر نمایش داده نمی‌شود.
+model UserAdminNote {
+  id        BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId  String    @unique(map: "uq_user_admin_notes_public_id") @map("public_id") @db.Char(26)
+  userId    BigInt    @map("user_id") @db.UnsignedBigInt
+  adminId   BigInt?   @map("admin_id") @db.UnsignedBigInt
+  body      String    @db.VarChar(2000)
+  isPinned  Int       @default(0) @map("is_pinned") @db.UnsignedTinyInt
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @default(now()) @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade, map: "user_admin_notes_ibfk_1")
+  admin     Admin?    @relation(fields: [adminId], references: [id], map: "user_admin_notes_ibfk_2")
+
+  @@index([userId, deletedAt, isPinned, createdAt], map: "idx_user_admin_notes_user")
+  @@index([adminId], map: "idx_user_admin_notes_admin")
+  @@map("user_admin_notes")
+}
+
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model UserOtpCode {
   id            BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
@@ -789,7 +811,7 @@ model City {
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @default(now()) @map("updated_at")
   deletedAt  DateTime? @map("deleted_at")
-  province   Province  @relation(fields: [provinceId], references: [id], map: "cities_province_id_foreign")
+  province   Province  @relation(fields: [provinceId], references: [id], onDelete: Cascade, map: "cities_province_id_foreign")
   users      User[]
 
   @@index([deletedAt], map: "idx_cities_deleted")
@@ -844,8 +866,10 @@ model User {
   userModerationActions           UserModerationAction[]
   userOtpCodes                    UserOtpCode[]
   userSessions                    UserSession[]
+  adminNotes                      UserAdminNote[]
 
   @@index([cityId], map: "idx_users_city")
+  @@index([lastLoginAt], map: "idx_users_last_login")
   @@index([isActive, deletedAt], map: "idx_users_active_deleted")
   @@index([createdAt], map: "idx_users_created_at")
   @@index([provinceId], map: "idx_users_province")

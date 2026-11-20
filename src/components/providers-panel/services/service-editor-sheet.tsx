@@ -15,6 +15,7 @@ import {
 } from "@/lib/api/app-provider";
 import { cn } from "@/lib/utils";
 import { toPersianDigits } from "@/lib/utils/format";
+import { ServiceThumb } from "@/components/shared/service-thumb";
 
 const MIN_PRICE = 1000;
 const MAX_DESCRIPTION = 1000;
@@ -72,8 +73,11 @@ export function ServiceEditorSheet({
               <SheetTitle className="text-base font-black">
                 {isEdit ? "ویرایش خدمت" : "افزودن خدمت جدید"}
               </SheetTitle>
-              <SheetDescription className="mt-0.5 truncate text-[11.5px]">
-                {isEdit ? mode.service.serviceName : "خدمت، واحد و قیمت پیشنهادی را مشخص کنید"}
+              <SheetDescription className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11.5px]">
+                {isEdit ? <ServiceThumb className="size-4 rounded" fallback={null} image={mode.service.serviceImage} /> : null}
+                <span className="truncate">
+                  {isEdit ? mode.service.serviceName : "خدمت، واحد و قیمت پیشنهادی را مشخص کنید"}
+                </span>
               </SheetDescription>
             </div>
             <button
@@ -215,11 +219,25 @@ function ServiceEditorForm({
                       >
                         <span
                           className={cn(
-                            "flex size-9 shrink-0 items-center justify-center rounded-xl",
+                            "relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-xl",
                             selected ? "bg-primary text-primary-foreground" : "bg-[#d8f3dc] text-[#2d6a4f]",
                           )}
                         >
-                          {selected ? <Check className="size-4" strokeWidth={2.75} /> : <Sprout className="size-4" />}
+                          <ServiceThumb
+                            className="size-9 rounded-xl"
+                            fallback={selected ? null : <Sprout className="size-4" />}
+                            image={service.image}
+                          />
+                          {selected ? (
+                            <span
+                              className={cn(
+                                "flex items-center justify-center",
+                                service.image && "absolute inset-0 bg-primary/70",
+                              )}
+                            >
+                              <Check className="size-4" strokeWidth={2.75} />
+                            </span>
+                          ) : null}
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-[13px] font-bold text-foreground">{service.name}</span>
