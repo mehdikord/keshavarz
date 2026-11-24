@@ -27,6 +27,7 @@ export function ImageField({
   hint,
   label,
   onChange,
+  required = false,
   value,
 }: {
   current: string | null;
@@ -34,6 +35,8 @@ export function ImageField({
   hint: string;
   label: string;
   onChange: (change: ImageChange) => void;
+  /** The record cannot lose its image (no delete button); the whole picture is shown, as it may be a logo. */
+  required?: boolean;
   value: ImageChange;
 }) {
   const inputId = useId();
@@ -110,7 +113,7 @@ export function ImageField({
         >
           {shown ? (
             // eslint-disable-next-line @next/next/no-img-element -- blob preview or stored upload
-            <img alt="" className="size-full object-cover" src={shown} />
+            <img alt="" className={cn("size-full", required ? "object-contain" : "object-cover")} src={shown} />
           ) : (
             <ImagePlus className="size-7" />
           )}
@@ -139,7 +142,7 @@ export function ImageField({
                 بازگرداندن
               </Button>
             ) : null}
-            {shown && !value.file ? (
+            {shown && !value.file && !required ? (
               <Button onClick={() => change({ file: null, remove: true })} size="sm" type="button" variant="danger-soft">
                 <Trash2 />
                 حذف تصویر

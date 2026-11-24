@@ -83,6 +83,14 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     ],
   },
   {
+    label: "اخبار",
+    module: "news",
+    permissions: [
+      { code: P.newsView, description: "دیدن فهرست اخبار کشاورزی", label: "مشاهده اخبار" },
+      { code: P.newsManage, description: "افزودن، ویرایش، مهم کردن و حذف خبر", label: "مدیریت اخبار" },
+    ],
+  },
+  {
     label: "گزارش‌ها",
     module: "reports",
     permissions: [
@@ -150,6 +158,7 @@ export const AUDIT_MODULE_LABELS: Record<string, string> = {
   auth: "ورود و خروج",
   billing: "اشتراک و پرداخت",
   catalog: "کاتالوگ خدمات",
+  news: "اخبار",
   notifications: "اعلان‌ها",
   providers: "خدمات‌دهندگان",
   reports: "گزارش‌ها",
@@ -163,6 +172,7 @@ export const AUDIT_MODULE_LABELS: Record<string, string> = {
 export const AUDIT_SUBJECT_LABELS: Record<string, string> = {
   admin: "مدیر",
   admin_role: "نقش",
+  news_item: "خبر",
   provider_profile: "خدمات‌دهنده",
   provider_subscription: "اشتراک",
   service: "خدمت",
@@ -200,6 +210,9 @@ const ACTION_LABELS: Record<string, string> = {
   "catalog.categories.reorder": "ترتیب دسته‌ها",
   "catalog.categories.update": "ویرایش دسته",
   "catalog.services.activate": "فعال کردن خدمت",
+  "catalog.services.content_image_upload": "بارگذاری تصویر در توضیحات خدمت",
+  "catalog.services.feature": "ویژه کردن خدمت",
+  "catalog.services.unfeature": "خارج کردن خدمت از ویژه",
   "catalog.services.create": "ساخت خدمت",
   "catalog.services.deactivate": "غیرفعال کردن خدمت",
   "catalog.services.delete": "حذف خدمت",
@@ -207,6 +220,11 @@ const ACTION_LABELS: Record<string, string> = {
   "catalog.services.image_upload": "بارگذاری تصویر خدمت",
   "catalog.services.reorder": "ترتیب خدمات",
   "catalog.services.update": "ویرایش خدمت",
+  "news.create": "افزودن خبر",
+  "news.delete": "حذف خبر",
+  "news.mark_important": "مهم کردن خبر",
+  "news.unmark_important": "خارج کردن خبر از مهم",
+  "news.update": "ویرایش خبر",
   "notifications.broadcast": "ارسال اعلان همگانی",
   "providers.activate": "فعال کردن خدمات‌دهنده",
   "providers.approve": "تأیید خدمات‌دهنده",

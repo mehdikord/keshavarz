@@ -10,6 +10,7 @@ import {
   KeyRound,
   Layers3,
   ListChecks,
+  Newspaper,
   Package,
   Receipt,
   ScrollText,
@@ -133,6 +134,13 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         icon: CreditCard,
         label: "اشتراک و پرداخت",
         permission: ADMIN_PERMISSIONS.subscriptionsView,
+      },
+      {
+        href: "/admins/news",
+        icon: Newspaper,
+        keywords: "اخبار خبر کشاورزی تازه لینک سایت تیتر",
+        label: "اخبار",
+        permission: ADMIN_PERMISSIONS.newsView,
       },
       {
         href: "/admins/notifications",

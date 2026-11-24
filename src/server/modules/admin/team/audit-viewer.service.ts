@@ -58,6 +58,7 @@ export async function mapAuditRows(rows: AuditRowLike[]): Promise<AuditEntry[]> 
   const subscriptions = byId(refs.subscriptions);
   const plans = byId(refs.plans);
   const roles = byId(refs.roles);
+  const news = byId(refs.news);
 
   function subjectOf(type: string, rawId: bigint): AuditSubject {
     const id = rawId.toString();
@@ -106,6 +107,10 @@ export async function mapAuditRows(rows: AuditRowLike[]): Promise<AuditEntry[]> 
         return row
           ? { ...base, href: `/admins/catalog/services?q=${encodeURIComponent(row.name)}`, label: row.name }
           : base;
+      }
+      case "news_item": {
+        const row = news.get(id);
+        return row ? { ...base, href: `/admins/news?q=${encodeURIComponent(row.title.slice(0, 80))}`, label: row.title } : base;
       }
       case "service_category":
       case "ServiceCategory": {

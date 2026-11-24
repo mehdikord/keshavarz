@@ -499,7 +499,8 @@ export async function resolveSubjectRefs(subjects: Array<{ id: bigint; type: str
     const types = Array.isArray(type) ? type : [type];
     return [...new Set(subjects.filter((row) => types.includes(row.type)).map((row) => row.id))];
   };
-  const [users, requests, providers, payments, admins, services, categories, subscriptions, plans, roles] = await Promise.all([
+  const newsIds = ids("news_item");
+  const [users, requests, providers, payments, admins, services, categories, subscriptions, plans, roles, news] = await Promise.all([
     prisma.user.findMany({ select: { id: true, name: true, publicId: true }, where: { id: { in: ids("user") } } }),
     prisma.serviceRequest.findMany({
       select: { id: true, publicId: true, serviceNameSnapshot: true },
@@ -525,6 +526,8 @@ export async function resolveSubjectRefs(subjects: Array<{ id: bigint; type: str
     }),
     prisma.subscriptionPlan.findMany({ select: { id: true, name: true }, where: { id: { in: ids("subscription_plan") } } }),
     prisma.adminRole.findMany({ select: { id: true, name: true }, where: { id: { in: ids("admin_role") } } }),
+    // Skipped without news entries, so the audit log does not depend on the news table.
+    newsIds.length ? prisma.newsItem.findMany({ select: { id: true, title: true }, where: { id: { in: newsIds } } }) : [],
   ]);
-  return { admins, categories, payments, plans, providers, requests, roles, services, subscriptions, users };
+  return { admins, categories, news, payments, plans, providers, requests, roles, services, subscriptions, users };
 }

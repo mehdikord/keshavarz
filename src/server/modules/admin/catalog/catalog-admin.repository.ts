@@ -148,6 +148,7 @@ const SERVICE_SELECT = {
   id: true,
   image: true,
   isActive: true,
+  isSpecial: true,
   name: true,
   serviceCategoryId: true,
   slug: true,
@@ -155,11 +156,14 @@ const SERVICE_SELECT = {
   updatedAt: true,
 } as const;
 
-function serviceFilters(query: Pick<ServicesListQuery, "category" | "q">): Prisma.ServiceWhereInput {
+type ServiceFilterQuery = Pick<ServicesListQuery, "category" | "q" | "special">;
+
+function serviceFilters(query: ServiceFilterQuery): Prisma.ServiceWhereInput {
   return {
     category: { deletedAt: null },
     deletedAt: null,
     ...(query.category ? { serviceCategoryId: BigInt(query.category) } : {}),
+    ...(query.special ? { isSpecial: true } : {}),
     ...(query.q
       ? {
           OR: [
@@ -208,7 +212,7 @@ export async function listServiceRows(query: ServicesListQuery) {
   return { rows, total };
 }
 
-export async function countServicesPerStatus(query: Pick<ServicesListQuery, "category" | "q">) {
+export async function countServicesPerStatus(query: ServiceFilterQuery) {
   const rows = await prisma.service.groupBy({
     _count: { _all: true },
     by: ["isActive"],
@@ -217,6 +221,15 @@ export async function countServicesPerStatus(query: Pick<ServicesListQuery, "cat
   const active = rows.find((row) => row.isActive === 1)?._count._all ?? 0;
   const inactive = rows.find((row) => row.isActive === 0)?._count._all ?? 0;
   return { active, all: active + inactive, inactive };
+}
+
+/** Featured services, regardless of the other list filters (for the filter chip). */
+export async function countSpecialServices() {
+  return prisma.service.count({ where: { category: { deletedAt: null }, deletedAt: null, isSpecial: true } });
+}
+
+export async function findServiceDetails(id: bigint) {
+  return prisma.service.findFirst({ select: { details: true, id: true }, where: { deletedAt: null, id } });
 }
 
 export async function findServiceById(db: Db, id: bigint) {

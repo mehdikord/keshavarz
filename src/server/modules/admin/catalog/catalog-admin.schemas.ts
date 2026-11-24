@@ -1,5 +1,7 @@
 import * as z from "zod";
 
+import { RICH_DOC_MAX_CHARS, RichDocError, sanitizeRichDoc } from "@/lib/rich-content/rich-content";
+
 export const CATALOG_STATUSES = ["all", "active", "inactive"] as const;
 export type CatalogStatusFilter = (typeof CATALOG_STATUSES)[number];
 
@@ -42,6 +44,33 @@ const DescriptionSchema = z
   .nullable()
   .transform((value) => (value ? value : null));
 
+/**
+ * Rich intro-page body (Tiptap JSON). Sanitized here, so the service layer only
+ * ever sees a clean document serialized for storage, or `null` when empty.
+ */
+const DetailsSchema = z
+  .unknown()
+  .transform((value, context) => {
+    // `z.unknown()` also accepts a missing key; that must stay "not sent".
+    if (value === undefined) return undefined;
+    try {
+      const doc = sanitizeRichDoc(value);
+      if (!doc) return null;
+      const serialized = JSON.stringify(doc);
+      if (serialized.length > RICH_DOC_MAX_CHARS) {
+        context.addIssue({ code: "custom", message: "توضیحات کامل بیش از حد طولانی است." });
+        return z.NEVER;
+      }
+      return serialized;
+    } catch (error) {
+      context.addIssue({
+        code: "custom",
+        message: error instanceof RichDocError ? error.message : "قالب توضیحات کامل معتبر نیست.",
+      });
+      return z.NEVER;
+    }
+  });
+
 const SortOrderSchema = z.coerce.number().int("ترتیب باید عدد صحیح باشد.").min(0, "ترتیب نمی‌تواند منفی باشد.").max(65_535);
 
 /** Empty string means "generate one for me". */
@@ -77,7 +106,9 @@ export const ServiceCreateSchema = z
   .object({
     categoryId: RowIdSchema,
     description: DescriptionSchema.optional().default(null),
+    details: DetailsSchema.optional().transform((value) => value ?? null),
     isActive: z.boolean().default(true),
+    isSpecial: z.boolean().default(false),
     name: NameSchema,
     slug: OptionalSlugSchema,
     sortOrder: SortOrderSchema.optional(),
@@ -89,7 +120,9 @@ export const ServiceUpdateSchema = z
   .object({
     categoryId: RowIdSchema.optional(),
     description: DescriptionSchema.optional(),
+    details: DetailsSchema.optional(),
     isActive: z.boolean().optional(),
+    isSpecial: z.boolean().optional(),
     name: NameSchema.optional(),
     slug: CatalogSlugInputSchema.optional(),
     sortOrder: SortOrderSchema.optional(),
@@ -126,6 +159,12 @@ export const ServicesListQuerySchema = z.object({
     .optional()
     .catch(undefined),
   sort: z.enum(SERVICE_LIST_SORTS).catch("order"),
+  /** `1`: only featured (special) services. */
+  special: z
+    .enum(["1"])
+    .optional()
+    .catch(undefined)
+    .transform((value) => value === "1"),
   status: z.enum(CATALOG_STATUSES).catch("all"),
 });
 export type ServicesListQuery = z.infer<typeof ServicesListQuerySchema>;

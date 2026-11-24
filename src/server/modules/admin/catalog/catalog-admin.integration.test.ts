@@ -4,12 +4,18 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/server/db/prisma";
 import { createPublicId } from "@/server/identifiers/ulid";
 import type { ObjectStorage } from "@/server/integrations";
-import { CategoryCreateSchema, ServiceCreateSchema } from "@/server/modules/admin/catalog/catalog-admin.schemas";
+import {
+  CategoryCreateSchema,
+  ServiceCreateSchema,
+  ServicesListQuerySchema,
+  ServiceUpdateSchema,
+} from "@/server/modules/admin/catalog/catalog-admin.schemas";
 import {
   createAdminCategory,
   createAdminService,
   deleteAdminCategory,
   deleteAdminService,
+  getAdminServiceDetails,
   listAdminCategories,
   listAdminServices,
   removeCatalogImage,
@@ -19,7 +25,11 @@ import {
   uploadCatalogImage,
 } from "@/server/modules/admin/catalog/catalog-admin.service";
 import { invalidateCatalogCache } from "@/server/modules/catalog/catalog.cache";
-import { getCatalogCategoryServices } from "@/server/modules/catalog/catalog.service";
+import {
+  drawFeaturedServices,
+  getCatalogCategoryServices,
+  getServiceIntro,
+} from "@/server/modules/catalog/catalog.service";
 
 const ADMIN_PHONE = "09996200001";
 const USER_PHONE = "09996200002";
@@ -156,7 +166,7 @@ describe.sequential("admin catalog", () => {
     expect(appServices.map((service) => service.name)).toEqual(["کاشت گندم آزمون"]);
 
     await reorderAdminServices(actor, categoryId, [barleyId, wheatId]);
-    const list = await listAdminServices({ category: categoryId, page: 1, perPage: 20, sort: "order", status: "all" });
+    const list = await listAdminServices({ category: categoryId, page: 1, perPage: 20, sort: "order", special: false, status: "all" });
     expect(list.items.map((item) => item.id)).toEqual([barleyId, wheatId]);
     expect(list.counts).toEqual({ active: 1, all: 2, inactive: 1 });
 
@@ -166,6 +176,62 @@ describe.sequential("admin catalog", () => {
     expect(audits.map((row) => row.action)).toEqual(
       expect.arrayContaining(["catalog.services.update", "catalog.services.deactivate", "catalog.services.reorder"]),
     );
+  });
+
+  it("stores the sanitized intro text, features special services and serves the intro page", async () => {
+    await updateAdminService(
+      actor,
+      wheatId,
+      ServiceUpdateSchema.parse({
+        details: {
+          content: [
+            { attrs: { level: 2 }, content: [{ text: "مشخصات بذرکار", type: "text" }], type: "heading" },
+            { content: [{ marks: [{ attrs: { href: "javascript:x" }, type: "link" }], text: "متن", type: "text" }], type: "paragraph" },
+          ],
+          type: "doc",
+        },
+        isSpecial: true,
+      }),
+    );
+    await updateAdminService(actor, barleyId, ServiceUpdateSchema.parse({ isSpecial: true }));
+
+    const { details } = await getAdminServiceDetails(wheatId);
+    expect(details?.content.map((node) => node.type)).toEqual(["heading", "paragraph"]);
+    expect(details?.content[1]?.content?.[0]?.marks).toBeUndefined();
+
+    // A PATCH without `details` leaves the text alone.
+    await updateAdminService(actor, wheatId, ServiceUpdateSchema.parse({ isActive: true }));
+    expect((await getAdminServiceDetails(wheatId)).details).not.toBeNull();
+
+    const specials = await listAdminServices(ServicesListQuerySchema.parse({ category: categoryId, special: "1" }));
+    expect(specials.items.map((item) => item.id).sort()).toEqual([barleyId, wheatId].sort());
+    expect(specials.items.every((item) => item.isSpecial)).toBe(true);
+    expect(specials.specialCount).toBeGreaterThanOrEqual(2);
+
+    invalidateCatalogCache();
+    const wheat = await prisma.service.findUniqueOrThrow({ select: { slug: true }, where: { id: BigInt(wheatId) } });
+    const drawn = await drawFeaturedServices(500);
+    // Barley is special but inactive, so it never reaches the home page.
+    expect(drawn.map((service) => service.serviceId)).toContain(wheat.slug);
+    expect(drawn.map((service) => service.serviceId)).not.toContain("test-barley-planting");
+    // Services shown last time are only used to fill up when nothing else is left.
+    if (drawn.length > 1) {
+      const avoided = await drawFeaturedServices(drawn.length - 1, [wheat.slug]);
+      expect(avoided.map((service) => service.serviceId)).not.toContain(wheat.slug);
+    }
+    expect((await drawFeaturedServices(drawn.length, [wheat.slug])).map((service) => service.serviceId)).toContain(wheat.slug);
+
+    const intro = await getServiceIntro(wheat.slug);
+    expect(intro).toMatchObject({ category: { categoryId: categorySlug }, isSpecial: true, name: "کاشت گندم آزمون", related: [] });
+    expect(intro?.details?.content[0]?.type).toBe("heading");
+    expect(await getServiceIntro("test-barley-planting")).toBeNull();
+
+    expect(() => ServiceUpdateSchema.parse({ details: "<p>html</p>" })).toThrow();
+
+    const audits = await prisma.adminAuditLog.findMany({ select: { action: true }, where: { adminId, module: "catalog" } });
+    expect(audits.map((row) => row.action)).toEqual(expect.arrayContaining(["catalog.services.feature"]));
+
+    await updateAdminService(actor, barleyId, { isSpecial: false });
   });
 
   it("keeps used services and non-empty categories from being deleted", async () => {

@@ -19,7 +19,7 @@ export function DialogContent({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   description?: React.ReactNode;
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md" | "lg" | "xl";
   title: React.ReactNode;
 }) {
   return (
@@ -31,6 +31,7 @@ export function DialogContent({
           size === "sm" && "max-w-md",
           size === "md" && "max-w-lg",
           size === "lg" && "max-w-2xl",
+          size === "xl" && "max-w-4xl",
           className,
         )}
         dir="rtl"

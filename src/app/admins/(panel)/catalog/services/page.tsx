@@ -36,19 +36,24 @@ export default async function AdminServicesPage({
     Object.fromEntries(Object.entries(raw).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value])),
   );
   const list = await listAdminServices(query);
-  const filtered = Boolean(query.q || query.category || query.status !== "all");
+  const filtered = Boolean(query.q || query.category || query.special || query.status !== "all");
   const category = list.categories.find((option) => option.id === query.category);
 
   // Moving rows needs the whole category on screen, in display order.
   const reorderable =
-    Boolean(category) && query.sort === "order" && !query.q && query.status === "all" && list.total <= list.items.length;
+    Boolean(category) &&
+    query.sort === "order" &&
+    !query.q &&
+    !query.special &&
+    query.status === "all" &&
+    list.total <= list.items.length;
 
   return (
     <UsersListFrame>
       <PageHeader
         actions={<AddServiceButton categories={list.categories} categoryId={category?.id} />}
         breadcrumbs={[{ label: "مدیریت خدمات" }, { label: "لیست خدمات" }]}
-        description={`${faNumber(list.counts.all)} خدمت در ${faNumber(list.categories.length)} دسته. نام و تصویر هر خدمت در جستجوی خدمات‌گیرنده، درخواست‌ها و پروفایل خدمات‌دهندگان نمایش داده می‌شود.`}
+        description={`${faNumber(list.counts.all)} خدمت در ${faNumber(list.categories.length)} دسته. نام و تصویر هر خدمت در جستجوی خدمات‌گیرنده، درخواست‌ها و پروفایل خدمات‌دهندگان نمایش داده می‌شود؛ خدمات ویژه در صفحه اصلی اپلیکیشن.`}
         title={category ? `خدمات «${category.name}»` : "لیست خدمات"}
       />
       <div className="grid gap-4">
@@ -57,7 +62,8 @@ export default async function AdminServicesPage({
           <div className="border-b border-line p-4">
             <ServicesFilterBar
               categories={list.categories}
-              query={{ category: query.category, q: query.q, sort: query.sort }}
+              query={{ category: query.category, q: query.q, sort: query.sort, special: query.special }}
+              specialCount={list.specialCount}
             />
             {!reorderable && query.sort === "order" && !category && list.total > 1 ? (
               <p className="mt-3 text-xs text-muted-foreground">برای جابه‌جا کردن ترتیب نمایش، یک دسته‌بندی را انتخاب کنید.</p>

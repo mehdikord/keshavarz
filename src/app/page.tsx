@@ -3,8 +3,10 @@
 import { MotionConfig, motion } from "framer-motion";
 import { Leaf } from "lucide-react";
 
+import { FeaturedServices } from "@/components/home/featured-services";
 import { FieldWeatherCard } from "@/components/home/field-weather-card";
 import { HomeHero } from "@/components/home/home-hero";
+import { LatestNews } from "@/components/home/latest-news";
 import { PanelChoice } from "@/components/home/panel-choice";
 import { QuickActions } from "@/components/home/quick-actions";
 import { PageContainer } from "@/components/layout/page-container";
@@ -15,6 +17,8 @@ import { useAuthStore } from "@/stores/auth-store";
 function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
   return (
     <motion.div
+      // A section that hides itself must not leave a gap behind.
+      className="empty:hidden"
       initial={{ opacity: 0, y: 18 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay, ease: [0.16, 1, 0.3, 1] }}
@@ -47,7 +51,15 @@ function HomePageContent() {
           <QuickActions />
         </Reveal>
 
-        <Reveal delay={0.45}>
+        <Reveal delay={0.42}>
+          <FeaturedServices />
+        </Reveal>
+
+        <Reveal delay={0.46}>
+          <LatestNews />
+        </Reveal>
+
+        <Reveal delay={0.5}>
           <FieldWeatherCard
             data={weather.data}
             loading={weather.loading}

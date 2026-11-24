@@ -80,7 +80,17 @@ function ConsumerSearchContent() {
           return nextLands.length === 1 ? (nextLands[0]?.id ?? "") : "";
         });
         const hasLand = nextLands.length === 1 || nextLands.some((land) => land.id === searchParams.get("landId"));
-        setOpenStep(hasLand ? "service" : "land");
+
+        // A service intro page links here with ?service= to preselect that service.
+        const wantedService = searchParams.get("service");
+        const owner = wantedService
+          ? catalogTree.find((category) => category.services.some((service) => service.serviceId === wantedService))
+          : undefined;
+        if (owner && wantedService) {
+          setCategoryId(owner.categoryId);
+          setServiceId(wantedService);
+        }
+        setOpenStep(hasLand ? (owner ? "dates" : "service") : "land");
       })
       .catch((cause: unknown) => {
         if (controller.signal.aborted) return;

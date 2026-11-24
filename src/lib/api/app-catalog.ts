@@ -78,3 +78,29 @@ export async function fetchAppCatalogTree(signal?: AbortSignal): Promise<
   );
   return withServices;
 }
+
+export const AppFeaturedServiceSchema = z
+  .object({
+    category: z.object({ categoryId: z.string(), name: z.string() }).strict(),
+    description: z.string().nullable(),
+    image: z.string().nullable(),
+    name: z.string(),
+    serviceId: z.string(),
+  })
+  .strict();
+
+export type AppFeaturedService = z.infer<typeof AppFeaturedServiceSchema>;
+
+/** A fresh random draw of the admin's special services (home: «آیا این ادوات را می‌شناسید؟»). */
+export async function fetchAppFeaturedServices(
+  options: { exclude?: string[]; limit?: number; signal?: AbortSignal } = {},
+): Promise<AppFeaturedService[]> {
+  const result = await appApi.get<unknown>("/catalog/featured-services", {
+    query: {
+      exclude: options.exclude?.length ? options.exclude.join(",") : undefined,
+      limit: options.limit ?? 3,
+    },
+    signal: options.signal,
+  });
+  return z.object({ services: z.array(AppFeaturedServiceSchema) }).parse(result.data).services;
+}

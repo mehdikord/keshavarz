@@ -208,6 +208,8 @@ model Admin {
   updatedSystemSettings         SystemSetting[]
   moderationActions             UserModerationAction[]
   userNotes                     UserAdminNote[]
+  createdNewsItems              NewsItem[]                      @relation("NewsItemCreator")
+  updatedNewsItems              NewsItem[]                      @relation("NewsItemUpdater")
 
   @@index([createdByAdminId], map: "created_by_admin_id")
   @@index([isActive, deletedAt], map: "idx_admins_active_deleted")
@@ -260,6 +262,33 @@ model NotificationDelivery {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// A link to a story on another site («اخبار کشاورزی»); the story text is never stored.
+model NewsItem {
+  id               BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  /// ULID; also the newest-first sort key and pagination cursor.
+  publicId         String   @unique(map: "uq_news_items_public_id") @map("public_id") @db.Char(26)
+  title            String   @db.VarChar(255)
+  /// `normalizeSearchText(title)`; keep in sync on every title write.
+  searchTitle      String   @map("search_title") @db.VarChar(512)
+  link             String   @db.VarChar(4096)
+  linkHash         String   @unique(map: "uq_news_items_link_hash") @map("link_hash") @db.Char(64)
+  image            String   @db.VarChar(4096)
+  /// Set only for uploads. External images must never reach storage deletion.
+  imageKey         String?  @map("image_key") @db.VarChar(120)
+  isImportant      Boolean  @default(false) @map("is_important")
+  createdByAdminId BigInt?  @map("created_by_admin_id") @db.UnsignedBigInt
+  updatedByAdminId BigInt?  @map("updated_by_admin_id") @db.UnsignedBigInt
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @default(now()) @map("updated_at")
+  createdByAdmin   Admin?   @relation("NewsItemCreator", fields: [createdByAdminId], references: [id], map: "news_items_ibfk_1")
+  updatedByAdmin   Admin?   @relation("NewsItemUpdater", fields: [updatedByAdminId], references: [id], map: "news_items_ibfk_2")
+
+  @@index([isImportant, publicId], map: "idx_news_items_important")
+  @@index([createdByAdminId], map: "idx_news_items_creator")
+  @@index([updatedByAdminId], map: "idx_news_items_updater")
+  @@map("news_items")
+}
+
 model Notification {
   id                      BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
   publicId                String                    @unique(map: "uq_notifications_public_id") @map("public_id") @db.Char(26)
@@ -624,8 +653,12 @@ model Service {
   slug              String            @unique(map: "uq_services_slug") @db.VarChar(170)
   description       String?           @db.VarChar(1000)
   image             String?           @db.VarChar(512)
+  /// Rich-text intro page body: a sanitized Tiptap/ProseMirror JSON document.
+  details           String?           @db.MediumText
   sortOrder         Int               @default(0) @map("sort_order") @db.UnsignedSmallInt
   isActive          Int               @default(1) @map("is_active") @db.UnsignedTinyInt
+  /// Featured on the app home ("آیا این ادوات را می‌شناسید؟").
+  isSpecial         Boolean           @default(false) @map("is_special")
   createdByAdminId  BigInt?           @map("created_by_admin_id") @db.UnsignedBigInt
   updatedByAdminId  BigInt?           @map("updated_by_admin_id") @db.UnsignedBigInt
   createdAt         DateTime          @default(now()) @map("created_at")
@@ -640,6 +673,7 @@ model Service {
   @@unique([serviceCategoryId, name], map: "uq_services_category_name")
   @@index([createdByAdminId], map: "created_by_admin_id")
   @@index([serviceCategoryId, isActive, deletedAt, sortOrder], map: "idx_services_catalog")
+  @@index([isSpecial, isActive, deletedAt], map: "idx_services_special")
   @@index([updatedByAdminId], map: "updated_by_admin_id")
   @@map("services")
 }

@@ -1,0 +1,277 @@
+/*
+ * Typography for rich service intro text. Shared by the admin editor
+ * (ProseMirror surface) and the app's renderer so what the admin writes is what
+ * the farmer reads. Colours come from the surrounding theme tokens, so the admin
+ * dark theme and the light app both work.
+ */
+
+.rich-prose {
+  --rp-text: var(--foreground);
+  --rp-muted: var(--muted-foreground);
+  --rp-line: var(--border);
+  --rp-accent: var(--primary);
+  --rp-soft: color-mix(in oklab, var(--primary) 7%, transparent);
+  --rp-mark: color-mix(in oklab, #f4c430 42%, transparent);
+
+  color: var(--rp-text);
+  font-size: 15px;
+  line-height: 2;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+
+.rich-prose > :first-child {
+  margin-top: 0;
+}
+
+.rich-prose > :last-child {
+  margin-bottom: 0;
+}
+
+.rich-prose p {
+  margin: 0 0 0.9em;
+}
+
+.rich-prose h2,
+.rich-prose h3,
+.rich-prose h4 {
+  color: var(--rp-text);
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  line-height: 1.6;
+  margin: 1.6em 0 0.55em;
+}
+
+.rich-prose h2 {
+  font-size: 1.25em;
+  padding-inline-start: 0.7em;
+  position: relative;
+}
+
+.rich-prose h2::before {
+  background: linear-gradient(180deg, #f4a261, var(--rp-accent));
+  border-radius: 99px;
+  content: "";
+  inset-block: 0.32em;
+  inset-inline-start: 0;
+  position: absolute;
+  width: 4px;
+}
+
+.rich-prose h3 {
+  font-size: 1.1em;
+}
+
+.rich-prose h4 {
+  color: var(--rp-accent);
+  font-size: 1em;
+}
+
+.rich-prose strong {
+  font-weight: 800;
+}
+
+.rich-prose a {
+  color: var(--rp-accent);
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 4px;
+}
+
+.rich-prose mark {
+  background: var(--rp-mark);
+  border-radius: 4px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  color: inherit;
+  padding: 0.05em 0.2em;
+}
+
+.rich-prose ul,
+.rich-prose ol {
+  margin: 0 0 1em;
+  padding-inline-start: 1.4em;
+}
+
+.rich-prose ul {
+  list-style: none;
+}
+
+.rich-prose ul > li {
+  position: relative;
+}
+
+.rich-prose ul > li::before {
+  background: var(--rp-accent);
+  border-radius: 99px;
+  box-shadow: 0 0 0 3px var(--rp-soft);
+  content: "";
+  height: 7px;
+  inset-inline-start: -1.05em;
+  position: absolute;
+  top: 0.82em;
+  width: 7px;
+}
+
+.rich-prose ol {
+  list-style: persian;
+}
+
+.rich-prose ol > li::marker {
+  color: var(--rp-accent);
+  font-weight: 800;
+}
+
+.rich-prose li {
+  margin: 0.2em 0;
+}
+
+.rich-prose li > p {
+  margin: 0;
+}
+
+.rich-prose blockquote {
+  background: var(--rp-soft);
+  border: 1px solid color-mix(in oklab, var(--rp-accent) 16%, transparent);
+  border-radius: 14px;
+  color: var(--rp-text);
+  margin: 1.2em 0;
+  padding: 0.8em 1em;
+}
+
+.rich-prose blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.rich-prose hr {
+  border: 0;
+  height: 18px;
+  margin: 1.6em 0;
+  position: relative;
+}
+
+.rich-prose hr::before {
+  background: linear-gradient(90deg, transparent, var(--rp-line) 20%, var(--rp-line) 80%, transparent);
+  content: "";
+  height: 1px;
+  inset-inline: 0;
+  position: absolute;
+  top: 50%;
+}
+
+.rich-prose hr::after {
+  background: var(--background, #fff);
+  color: var(--rp-accent);
+  content: "❋";
+  font-size: 12px;
+  left: 50%;
+  line-height: 18px;
+  padding: 0 10px;
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+}
+
+.rich-prose img {
+  background: var(--rp-soft);
+  border-radius: 18px;
+  display: block;
+  height: auto;
+  margin: 1.1em auto;
+  max-width: 100%;
+}
+
+/* Tables scroll sideways inside their own frame on narrow screens. */
+.rich-prose .rp-table,
+.rich-prose .tableWrapper {
+  border: 1px solid var(--rp-line);
+  border-radius: 16px;
+  margin: 1.2em 0;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+.rich-prose table {
+  border-collapse: collapse;
+  font-size: 0.9em;
+  line-height: 1.8;
+  min-width: 100%;
+  table-layout: auto;
+  width: 100%;
+}
+
+.rich-prose th,
+.rich-prose td {
+  border-bottom: 1px solid var(--rp-line);
+  border-inline-start: 1px solid var(--rp-line);
+  min-width: 6em;
+  padding: 0.6em 0.85em;
+  position: relative;
+  text-align: start;
+  vertical-align: top;
+}
+
+.rich-prose th:first-child,
+.rich-prose td:first-child {
+  border-inline-start: 0;
+}
+
+.rich-prose tr:last-child > td {
+  border-bottom: 0;
+}
+
+.rich-prose th {
+  background: var(--rp-soft);
+  color: var(--rp-accent);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.rich-prose tbody tr:nth-child(even) > td {
+  background: color-mix(in oklab, var(--rp-line) 22%, transparent);
+}
+
+.rich-prose th > p,
+.rich-prose td > p {
+  margin: 0;
+}
+
+/* ------------------------------------------------------------ editor only */
+
+.rich-prose.ProseMirror {
+  min-height: 100%;
+  outline: none;
+}
+
+.rich-prose.ProseMirror p.is-editor-empty:first-child::before {
+  color: var(--rp-muted);
+  content: attr(data-placeholder);
+  float: inline-start;
+  height: 0;
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.rich-prose.ProseMirror img.ProseMirror-selectednode {
+  outline: 3px solid var(--rp-accent);
+  outline-offset: 3px;
+}
+
+.rich-prose.ProseMirror .selectedCell::after {
+  background: color-mix(in oklab, var(--rp-accent) 16%, transparent);
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+.rich-prose.ProseMirror hr.ProseMirror-selectednode::before {
+  background: var(--rp-accent);
+}
+
+.rich-prose.ProseMirror .ProseMirror-gapcursor::after {
+  border-top-color: var(--rp-text);
+}

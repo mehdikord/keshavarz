@@ -3,12 +3,14 @@
 import {
   ArrowDown,
   ArrowUp,
+  ExternalLink,
   Eye,
   EyeOff,
   ListChecks,
   MoreHorizontal,
   Pencil,
   SearchX,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 import { useState } from "react";
@@ -31,6 +33,21 @@ import { type CategoryOption, type ServiceDialogMode, ServiceFormDialog } from "
 
 export function CatalogStatusBadge({ active }: { active: boolean }) {
   return <Badge tone={active ? "success" : "neutral"}>{active ? "فعال" : "غیرفعال"}</Badge>;
+}
+
+/** Marks a featured (special) service next to its name. */
+export function SpecialMark({ compact = false }: { compact?: boolean }) {
+  return (
+    <Tooltip content="خدمت ویژه؛ در صفحه اصلی اپلیکیشن نمایش داده می‌شود.">
+      <span
+        className="inline-flex shrink-0 items-center gap-1 rounded-full bg-wheat-soft px-1.5 py-0.5 text-[10.5px] font-bold text-wheat-ink ring-1 ring-wheat/30"
+        tabIndex={0}
+      >
+        <Sparkles className="size-3" />
+        {compact ? <span className="sr-only">ویژه</span> : "ویژه"}
+      </span>
+    </Tooltip>
+  );
 }
 
 export function ServicesTable({
@@ -67,6 +84,13 @@ export function ServicesTable({
     await mutation.run(
       () => adminApi.patch(`/catalog/services/${service.id}`, { isActive: !service.isActive }),
       service.isActive ? `«${service.name}» غیرفعال شد.` : `«${service.name}» فعال شد.`,
+    );
+  }
+
+  async function toggleSpecial(service: AdminServiceItem) {
+    await mutation.run(
+      () => adminApi.patch(`/catalog/services/${service.id}`, { isSpecial: !service.isSpecial }),
+      service.isSpecial ? `«${service.name}» از خدمات ویژه خارج شد.` : `«${service.name}» به خدمات ویژه اضافه شد.`,
     );
   }
 
@@ -110,6 +134,14 @@ export function ServicesTable({
             <MenuItem disabled={mutation.pending} onSelect={() => void toggle(service)}>
               {service.isActive ? <EyeOff /> : <Eye />}
               {service.isActive ? "غیرفعال کردن" : "فعال کردن"}
+            </MenuItem>
+            <MenuItem disabled={mutation.pending} onSelect={() => void toggleSpecial(service)}>
+              <Sparkles />
+              {service.isSpecial ? "خارج کردن از ویژه" : "ویژه کردن"}
+            </MenuItem>
+            <MenuItem onSelect={() => window.open(`/services/${encodeURIComponent(service.slug)}`, "_blank", "noopener")}>
+              <ExternalLink />
+              مشاهده صفحه معرفی
             </MenuItem>
             <MenuSeparator />
             <MenuItem onSelect={() => setDeleting(service)} tone="danger">
@@ -173,7 +205,10 @@ export function ServicesTable({
                   <div className="flex min-w-0 items-center gap-3">
                     <CatalogThumb image={service.image} name={service.name} />
                     <div className="min-w-0">
-                      <p className="truncate font-bold text-foreground">{service.name}</p>
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <p className="truncate font-bold text-foreground">{service.name}</p>
+                        {service.isSpecial ? <SpecialMark /> : null}
+                      </div>
                       <p className="truncate font-mono text-[11.5px] text-muted-foreground" dir="ltr">
                         {service.slug}
                       </p>
@@ -212,7 +247,10 @@ export function ServicesTable({
             <div className="min-w-0 flex-1">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate font-bold">{service.name}</p>
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <p className="truncate font-bold">{service.name}</p>
+                    {service.isSpecial ? <SpecialMark compact /> : null}
+                  </div>
                   <p className="truncate text-xs text-muted-foreground">{service.category.name}</p>
                 </div>
                 {rowActions(service)}

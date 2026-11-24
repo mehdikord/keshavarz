@@ -46,6 +46,8 @@ const permissionCodes = [
   "payments.export",
   "notifications.view",
   "notifications.send",
+  "news.view",
+  "news.manage",
   "reports.view",
   "reports.export",
   "admins.view",

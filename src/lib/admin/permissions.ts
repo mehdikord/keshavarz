@@ -23,6 +23,8 @@ export const ADMIN_PERMISSIONS = {
   paymentsExport: "payments.export",
   notificationsView: "notifications.view",
   notificationsSend: "notifications.send",
+  newsView: "news.view",
+  newsManage: "news.manage",
   reportsView: "reports.view",
   reportsExport: "reports.export",
   adminsView: "admins.view",

@@ -14,9 +14,11 @@ import {
   countServicesInCategory,
   countServicesPerCategory,
   countServicesPerStatus,
+  countSpecialServices,
   findCategoryById,
   findCategoryIdBySlug,
   findServiceById,
+  findServiceDetails,
   findServiceIdByName,
   findServiceIdBySlug,
   hardDeleteCategory,
@@ -43,6 +45,7 @@ import type {
   ServiceUpdateInput,
   ServicesListQuery,
 } from "@/server/modules/admin/catalog/catalog-admin.schemas";
+import { parseStoredRichDoc, type RichDoc } from "@/lib/rich-content/rich-content";
 import { invalidateCatalogCache } from "@/server/modules/catalog/catalog.cache";
 
 interface Actor {
@@ -315,6 +318,7 @@ export interface AdminServiceItem {
   id: string;
   image: string | null;
   isActive: boolean;
+  isSpecial: boolean;
   name: string;
   providersCount: number;
   requestsCount: number;
@@ -328,16 +332,19 @@ export interface AdminServiceList {
   counts: { active: number; all: number; inactive: number };
   items: AdminServiceItem[];
   page: number;
+  /** Featured services in the whole catalog (ignores the list filters). */
+  specialCount: number;
   pageCount: number;
   perPage: number;
   total: number;
 }
 
 export async function listAdminServices(query: ServicesListQuery): Promise<AdminServiceList> {
-  const [{ rows, total }, counts, categories] = await Promise.all([
+  const [{ rows, total }, counts, categories, specialCount] = await Promise.all([
     listServiceRows(query),
     countServicesPerStatus(query),
     getCategoryOptions(),
+    countSpecialServices(),
   ]);
 
   return {
@@ -350,6 +357,7 @@ export async function listAdminServices(query: ServicesListQuery): Promise<Admin
       id: row.id.toString(),
       image: row.image,
       isActive: row.isActive === 1,
+      isSpecial: row.isSpecial,
       name: row.name,
       providersCount: row._count.providerServices,
       requestsCount: row._count.serviceRequests,
@@ -360,8 +368,16 @@ export async function listAdminServices(query: ServicesListQuery): Promise<Admin
     page: query.page,
     pageCount: Math.max(1, Math.ceil(total / query.perPage)),
     perPage: query.perPage,
+    specialCount,
     total,
   };
+}
+
+/** The intro-page body, loaded on demand by the edit form (kept out of the list payload). */
+export async function getAdminServiceDetails(id: string): Promise<{ details: RichDoc | null }> {
+  const row = await findServiceDetails(BigInt(id));
+  if (!row) throw new ApiError(404, API_ERROR_CODES.notFound, "خدمت پیدا نشد.");
+  return { details: parseStoredRichDoc(row.details) };
 }
 
 async function requireService(transaction: TransactionClient, id: string) {
@@ -399,7 +415,9 @@ export async function createAdminService(actor: Actor, input: ServiceCreateInput
       const row = await insertService(transaction, {
         createdByAdminId: actor.adminId,
         description: input.description,
+        details: input.details,
         isActive: input.isActive ? 1 : 0,
+        isSpecial: input.isSpecial,
         name: input.name,
         serviceCategoryId: category.id,
         slug,
@@ -415,7 +433,9 @@ export async function createAdminService(actor: Actor, input: ServiceCreateInput
           newValues: {
             categoryId: category.id,
             description: row.description,
+            detailsLength: input.details?.length ?? 0,
             isActive: row.isActive,
+            isSpecial: row.isSpecial,
             name: row.name,
             slug: row.slug,
             sortOrder,
@@ -462,25 +482,40 @@ export async function updateAdminService(actor: Actor, id: string, input: Servic
       const data = {
         ...(input.description !== undefined ? { description: input.description } : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive ? 1 : 0 } : {}),
+        ...(input.isSpecial !== undefined ? { isSpecial: input.isSpecial } : {}),
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.slug !== undefined ? { slug: input.slug } : {}),
         ...(sortOrder !== undefined ? { sortOrder } : {}),
         ...(movedCategory ? { serviceCategoryId: categoryId } : {}),
       };
-      const updated = await updateServiceRow(transaction, current.id, { ...data, updatedByAdminId: actor.adminId });
+      const updated = await updateServiceRow(transaction, current.id, {
+        ...data,
+        ...(input.details !== undefined ? { details: input.details } : {}),
+        updatedByAdminId: actor.adminId,
+      });
 
-      const onlyStatus = input.isActive !== undefined && Object.keys(data).length === 1;
+      // The rich body is too large for the audit diff; record only that it changed.
+      const changedKeys = Object.keys(data);
+      const onlyStatus = input.isActive !== undefined && changedKeys.length === 1 && input.details === undefined;
+      const onlySpecial = input.isSpecial !== undefined && changedKeys.length === 1 && input.details === undefined;
       await recordAdminAudit(
         {
           action: onlyStatus
             ? input.isActive
               ? "catalog.services.activate"
               : "catalog.services.deactivate"
-            : "catalog.services.update",
+            : onlySpecial
+              ? input.isSpecial
+                ? "catalog.services.feature"
+                : "catalog.services.unfeature"
+              : "catalog.services.update",
           adminId: actor.adminId,
+          ...(input.details !== undefined
+            ? { metadata: { detailsLength: input.details?.length ?? 0, detailsUpdated: true } }
+            : {}),
           module: MODULE,
-          newValues: pick(updated, Object.keys(data)),
-          oldValues: pick(current, Object.keys(data)),
+          newValues: pick(updated, changedKeys),
+          oldValues: pick(current, changedKeys),
           request: actor.request,
           subject: { id: current.id, type: SERVICE_SUBJECT },
         },
@@ -662,4 +697,31 @@ export async function removeCatalogImage(
 
 function pick(source: Record<string, unknown>, keys: string[]): Record<string, unknown> {
   return Object.fromEntries(keys.map((key) => [key, source[key]]));
+}
+
+// ================================================================== content images
+
+const CONTENT_IMAGE_PATH = "catalog/content";
+
+/**
+ * Stores a picture placed inside a service's intro text and returns its URL.
+ * The file is not tied to a row: the document references it by URL, so a
+ * picture removed from the text later is just an orphaned (harmless) file.
+ */
+export async function uploadServiceContentImage(
+  actor: Actor,
+  file: File,
+  storage: ObjectStorage = resolveImageStorage(CONTENT_IMAGE_PATH),
+): Promise<{ url: string }> {
+  const image = await readValidatedImage(file);
+  const key = `content-${createPublicId().toLowerCase()}${image.extension}`;
+  const url = await putImage(storage, { contentType: image.contentType, data: image.data, key });
+  await recordAdminAudit({
+    action: "catalog.services.content_image_upload",
+    adminId: actor.adminId,
+    metadata: { bytes: image.data.byteLength, url },
+    module: MODULE,
+    request: actor.request,
+  });
+  return { url };
 }
